@@ -25,7 +25,14 @@ const VentasPage = lazy(() => import('./components/pages/ventas/Ventas').then((m
 const AbonosPage = lazy(() => import('./components/pages/ventas/Abonos').then((module) => ({ default: module.Abonos })));
 const PedidosPage = lazy(() => import('./components/pages/ventas/Pedidos').then((module) => ({ default: module.Pedidos })));
 const DomiciliosPage = lazy(() => import('./components/pages/ventas/Domicilios').then((module) => ({ default: module.Domicilios })));
+const TiendaClientePage = lazy(() => import('./components/pages/cliente/TiendaCliente').then((module) => ({ default: module.TiendaCliente })));
 const MisPedidosPage = lazy(() => import('./components/pages/cliente/MisPedidos').then((module) => ({ default: module.MisPedidos })));
+const MisComprasClientePage = lazy(() =>
+  import('./components/pages/cliente/MisComprasCliente').then((module) => ({ default: module.MisComprasCliente }))
+);
+const MisDomiciliosClientePage = lazy(() =>
+  import('./components/pages/cliente/MisDomiciliosCliente').then((module) => ({ default: module.MisDomiciliosCliente }))
+);
 const MiPerfilPage = lazy(() => import('./components/pages/cliente/MiPerfil').then((module) => ({ default: module.MiPerfil })));
 
 const pageComponents: { [key: string]: React.ComponentType } = {
@@ -47,8 +54,11 @@ const pageComponents: { [key: string]: React.ComponentType } = {
   '/ventas/pedidos': PedidosPage,
   '/ventas/domicilios': DomiciliosPage,
   '/configuracion/roles': RolesPage,
+  '/cliente/tienda': TiendaClientePage,
   '/cliente/pedidos': MisPedidosPage,
-  '/cliente/perfil': MiPerfilPage
+  '/cliente/compras': MisComprasClientePage,
+  '/cliente/domicilios': MisDomiciliosClientePage,
+  '/perfil': MiPerfilPage,
 };
 
 const pageTitles: { [key: string]: string } = {
@@ -70,8 +80,11 @@ const pageTitles: { [key: string]: string } = {
   '/ventas/pedidos': 'Pedidos',
   '/ventas/domicilios': 'Domicilios',
   '/configuracion/roles': 'Gestión de Roles',
+  '/cliente/tienda': 'Tienda',
   '/cliente/pedidos': 'Mis Pedidos',
-  '/cliente/perfil': 'Mi Perfil'
+  '/cliente/compras': 'Mis compras',
+  '/cliente/domicilios': 'Mis domicilios',
+  '/perfil': 'Mi perfil',
 };
 
 function GlobalLoadingOverlay() {
@@ -118,6 +131,7 @@ function AppContent() {
     }
 
     const preferredPaths = [
+      '/cliente/tienda',
       '/cliente/pedidos',
       '/dashboard',
       '/usuarios/usuarios',
@@ -214,6 +228,7 @@ function AppContent() {
   }
 
   const fallbackPath = [
+    '/cliente/tienda',
     '/cliente/pedidos',
     '/dashboard',
     '/usuarios/usuarios',

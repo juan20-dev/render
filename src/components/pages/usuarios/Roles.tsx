@@ -77,8 +77,12 @@ const todosLosPermisos = [
   { modulo: 'Producción', permiso: 'Ver Producción' },
   { modulo: 'Producción', permiso: 'Registrar Producción' },
 
-  // Cliente
+  // Cliente (portal)
+  { modulo: 'Cliente', permiso: 'Ver Dashboard' },
+  { modulo: 'Cliente', permiso: 'Ver Tienda' },
   { modulo: 'Cliente', permiso: 'Ver Mis Pedidos' },
+  { modulo: 'Cliente', permiso: 'Ver Mis Lista de Compras' },
+  { modulo: 'Cliente', permiso: 'Ver Mis Domicilios' },
   
   // Ventas
   { modulo: 'Ventas', permiso: 'Ver Clientes' },
@@ -95,9 +99,14 @@ const todosLosPermisos = [
   { modulo: 'Ventas', permiso: 'Gestionar Domicilios' },
 ];
 
-const MODULOS_CRITICOS = new Set(['Configuración', 'Usuarios', 'Ventas']);
 const CLIENTE_ROL_NOMBRE = 'cliente';
-const CLIENTE_PERMISO_UNICO = 'Ver Mis Pedidos';
+const CLIENTE_PERMISOS_FIJOS = [
+  'Ver Dashboard',
+  'Ver Tienda',
+  'Ver Mis Pedidos',
+  'Ver Mis Lista de Compras',
+  'Ver Mis Domicilios',
+];
 const PERMISOS_CRITICOS = new Set([
   'Ver Dashboard',
   'Ver Usuarios',
@@ -140,7 +149,8 @@ const isClienteRoleName = (roleName?: string) =>
 
 const sanitizePermissionsByRoleName = (roleName: string | undefined, permissions: string[]) => {
   if (isClienteRoleName(roleName)) {
-    return [CLIENTE_PERMISO_UNICO];
+    const filtered = permissions.filter((permiso) => CLIENTE_PERMISOS_FIJOS.includes(permiso));
+    return filtered.length > 0 ? filtered : [...CLIENTE_PERMISOS_FIJOS];
   }
 
   return permissions;
@@ -270,17 +280,6 @@ export function Roles() {
       return 'Cada rol debe mantener al menos un permiso asignado.';
     }
 
-    const modulo = moduloPorPermiso.get(permiso);
-    if (!modulo || !MODULOS_CRITICOS.has(modulo)) return '';
-
-    const hasOtherPermissionInModule = permissions.some(
-      (item) => item !== permiso && moduloPorPermiso.get(item) === modulo
-    );
-
-    if (!hasOtherPermissionInModule) {
-      return `No puedes eliminar el unico permiso del modulo critico ${modulo}.`;
-    }
-
     return '';
   };
 
@@ -336,7 +335,7 @@ export function Roles() {
   };
 
   const toggleCreatePermission = (permiso: string) => {
-    if (isCreatingClienteRole && permiso !== CLIENTE_PERMISO_UNICO) return;
+    if (isCreatingClienteRole && !CLIENTE_PERMISOS_FIJOS.includes(permiso)) return;
 
     const isSelected = createPermissions.includes(permiso);
 
@@ -376,7 +375,7 @@ export function Roles() {
   };
 
   const toggleEditPermission = (permiso: string) => {
-    if (isEditingClienteRole && permiso !== CLIENTE_PERMISO_UNICO) return;
+    if (isEditingClienteRole && !CLIENTE_PERMISOS_FIJOS.includes(permiso)) return;
 
     const isSelected = editPermissions.includes(permiso);
 
@@ -612,7 +611,7 @@ export function Roles() {
       console.error('Error creando rol:', error);
       showAlert({
         title: 'Error',
-        description: 'No se pudo crear el rol',
+          description: (error as any)?.message || 'No se pudo crear el rol',
         type: 'warning',
         confirmText: 'Entendido',
         onConfirm: () => {}
@@ -679,7 +678,7 @@ export function Roles() {
         console.error('Error actualizando rol:', error);
         showAlert({
           title: 'Error',
-          description: 'No se pudo actualizar el rol',
+          description: (error as any)?.message || 'No se pudo actualizar el rol',
           type: 'warning',
           confirmText: 'Entendido',
           onConfirm: () => {}
@@ -780,7 +779,7 @@ export function Roles() {
   };
 
   const togglePermission = (permiso: string) => {
-    if (isManagingClienteRole && permiso !== CLIENTE_PERMISO_UNICO) return;
+    if (isManagingClienteRole && !CLIENTE_PERMISOS_FIJOS.includes(permiso)) return;
 
     const isSelected = selectedPermissions.includes(permiso);
 
@@ -849,7 +848,7 @@ export function Roles() {
         console.error('Error guardando permisos:', error);
         showAlert({
           title: 'Error',
-          description: 'No se pudieron guardar los permisos',
+          description: (error as any)?.message || 'No se pudieron guardar los permisos',
           type: 'warning',
           confirmText: 'Entendido',
           onConfirm: () => {}
@@ -891,20 +890,20 @@ export function Roles() {
   const createModuleEntries = getFilteredModuleEntries(createModuleFilter)
     .map(([modulo, permisos]) => [
       modulo,
-      isCreatingClienteRole ? permisos.filter((permiso) => permiso === CLIENTE_PERMISO_UNICO) : permisos,
+      isCreatingClienteRole ? permisos.filter((permiso) => CLIENTE_PERMISOS_FIJOS.includes(permiso)) : permisos,
     ] as const)
     .filter(([, permisos]) => permisos.length > 0);
 
   const editModuleEntries = getFilteredModuleEntries(editModuleFilter)
     .map(([modulo, permisos]) => [
       modulo,
-      isEditingClienteRole ? permisos.filter((permiso) => permiso === CLIENTE_PERMISO_UNICO) : permisos,
+      isEditingClienteRole ? permisos.filter((permiso) => CLIENTE_PERMISOS_FIJOS.includes(permiso)) : permisos,
     ] as const)
     .filter(([, permisos]) => permisos.length > 0);
   const manageModuleEntries = getFilteredModuleEntries(manageModuleFilter)
     .map(([modulo, permisos]) => [
       modulo,
-      isManagingClienteRole ? permisos.filter((permiso) => permiso === CLIENTE_PERMISO_UNICO) : permisos,
+      isManagingClienteRole ? permisos.filter((permiso) => CLIENTE_PERMISOS_FIJOS.includes(permiso)) : permisos,
     ] as const)
     .filter(([, permisos]) => permisos.length > 0);
 
@@ -914,19 +913,19 @@ export function Roles() {
 
   useEffect(() => {
     if (isCreatingClienteRole) {
-      setCreatePermissions([CLIENTE_PERMISO_UNICO]);
+      setCreatePermissions([...CLIENTE_PERMISOS_FIJOS]);
     }
   }, [isCreatingClienteRole]);
 
   useEffect(() => {
     if (isEditingClienteRole) {
-      setEditPermissions([CLIENTE_PERMISO_UNICO]);
+      setEditPermissions([...CLIENTE_PERMISOS_FIJOS]);
     }
   }, [isEditingClienteRole]);
 
   useEffect(() => {
     if (isManagingClienteRole) {
-      setSelectedPermissions([CLIENTE_PERMISO_UNICO]);
+      setSelectedPermissions([...CLIENTE_PERMISOS_FIJOS]);
     }
   }, [isManagingClienteRole]);
 
@@ -1127,7 +1126,7 @@ export function Roles() {
                 variant="outline"
                 size="sm"
                 type="button"
-                onClick={() => setCreatePermissions(isCreatingClienteRole ? [CLIENTE_PERMISO_UNICO] : [])}
+                onClick={() => setCreatePermissions(isCreatingClienteRole ? [...CLIENTE_PERMISOS_FIJOS] : [])}
                 disabled={isCreatingClienteRole}
               >
                 Quitar Todos
@@ -1391,7 +1390,7 @@ export function Roles() {
                 variant="outline"
                 size="sm"
                 type="button"
-                onClick={() => setEditPermissions(isEditingClienteRole ? [CLIENTE_PERMISO_UNICO] : [])}
+                onClick={() => setEditPermissions(isEditingClienteRole ? [...CLIENTE_PERMISOS_FIJOS] : [])}
                 disabled={isEditingClienteRole}
               >
                 Quitar Todos
@@ -1591,7 +1590,7 @@ export function Roles() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => setSelectedPermissions(isManagingClienteRole ? [CLIENTE_PERMISO_UNICO] : [])}
+                onClick={() => setSelectedPermissions(isManagingClienteRole ? [...CLIENTE_PERMISOS_FIJOS] : [])}
                 disabled={isManagingClienteRole}
               >
                 Quitar Todos

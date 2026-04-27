@@ -1,4 +1,5 @@
 const models = require('../models/entities.models');
+const { isClienteUser } = require('../utils/selfServiceAccess');
 
 module.exports = {
   getAll: async (req, res) => {
@@ -28,6 +29,9 @@ module.exports = {
   },
   create: async (req, res) => {
     try {
+      if (isClienteUser(req)) {
+        return res.status(403).json({ success: false, message: 'No autorizado' });
+      }
       const id = await models.Productos.create(req.body);
       res.status(201).json({ success: true, id, message: 'Producto creado exitosamente' });
     } catch (error) {
@@ -36,6 +40,9 @@ module.exports = {
   },
   update: async (req, res) => {
     try {
+      if (isClienteUser(req)) {
+        return res.status(403).json({ success: false, message: 'No autorizado' });
+      }
       await models.Productos.update(req.params.id, req.body);
       res.json({ success: true, message: 'Producto actualizado exitosamente' });
     } catch (error) {
@@ -44,6 +51,9 @@ module.exports = {
   },
   updateStatus: async (req, res) => {
     try {
+      if (isClienteUser(req)) {
+        return res.status(403).json({ success: false, message: 'No autorizado' });
+      }
       const estado = typeof req.body?.estado === 'string' ? req.body.estado.trim() : '';
       const motivo = typeof req.body?.motivo === 'string' ? req.body.motivo.trim() : '';
 
@@ -66,6 +76,9 @@ module.exports = {
   },
   delete: async (req, res) => {
     try {
+      if (isClienteUser(req)) {
+        return res.status(403).json({ success: false, message: 'No autorizado' });
+      }
       await models.Productos.delete(req.params.id);
       res.json({ success: true, message: 'Producto eliminado exitosamente' });
     } catch (error) {

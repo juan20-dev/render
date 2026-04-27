@@ -2,6 +2,7 @@ const express = require('express');
 const controller = require('../controllers/ventas.controllers');
 
 const router = express.Router();
+router.get('/cliente/:clienteId', controller.getByCliente);
 router.get('/', controller.getAll);
 router.get('/:id', controller.getById);
 router.post('/', controller.create);

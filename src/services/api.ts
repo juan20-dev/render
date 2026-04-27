@@ -474,6 +474,17 @@ export const pedidos = {
 // ==================== VENTAS ====================
 export const ventas = {
   getAll: () => apiCall('/api/ventas'),
+  getByCliente: (
+    clienteId: number,
+    params?: { numero_venta?: string; fecha_desde?: string; fecha_hasta?: string }
+  ) => {
+    const search = new URLSearchParams();
+    if (params?.numero_venta) search.set('numero_venta', params.numero_venta);
+    if (params?.fecha_desde) search.set('fecha_desde', params.fecha_desde);
+    if (params?.fecha_hasta) search.set('fecha_hasta', params.fecha_hasta);
+    const qs = search.toString();
+    return apiCall(`/api/ventas/cliente/${clienteId}${qs ? `?${qs}` : ''}`);
+  },
   getById: (id: number) => apiCall(`/api/ventas/${id}`),
   getDetalles: async (id: number) => {
     const venta = await apiCall(`/api/ventas/${id}`);
@@ -528,6 +539,7 @@ export const abonos = {
 // ==================== DOMICILIOS ====================
 export const domicilios = {
   getAll: () => apiCall('/api/domicilios'),
+  getByCliente: (clienteId: number) => apiCall(`/api/domicilios/cliente/${clienteId}`),
   getById: (id: number) => apiCall(`/api/domicilios/${id}`),
   getByPedido: (pedidoId: number) =>
     apiCall(`/api/domicilios/pedido/${pedidoId}`),

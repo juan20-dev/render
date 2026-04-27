@@ -1,64 +1,155 @@
 const models = require('../models/entities.models');
+const {
+  isClienteUser,
+  getOwnClienteId,
+  assertOwnClienteParam,
+  assertOwnPedidoId,
+} = require('../utils/selfServiceAccess');
+
+const normalizeEstado = (value) => String(value || '').trim().toLowerCase();
+
+const buildDomicilioNumber = () => `DOM-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+
+const ensureDomicilioForCompletedPedido = async (pedidoId) => {
+  const pedido = await models.Pedidos.getById(pedidoId);
+  if (!pedido) return;
+
+  if (normalizeEstado(pedido.estado) !== 'completado') return;
+
+  const existing = await models.Domicilios.getByPedido(pedidoId);
+  if (existing?.id) return;
+
+  await models.Domicilios.create({
+    numero_domicilio: buildDomicilioNumber(),
+    pedido_id: Number(pedido.id),
+    cliente_id: Number(pedido.cliente_id),
+    direccion: pedido.detalles || 'Sin direccion registrada en el pedido',
+    repartidor: null,
+    fecha: pedido.fecha_entrega || new Date().toISOString().split('T')[0],
+    hora: null,
+    estado: 'Pendiente',
+    detalle: `Domicilio autogenerado desde pedido ${pedido.numero_pedido || `PED-${pedido.id}`}`,
+  });
+};
 
 module.exports = {
   getAll: async (req, res) => {
     try {
+      if (isClienteUser(req)) {
+        const own = getOwnClienteId(req);
+        if (!own) {
+          return res.status(403).json({ success: false, message: 'Perfil cliente no vinculado' });
+        }
+        const pedidos = await models.Pedidos.getByCliente(own);
+        return res.json({ success: true, data: pedidos });
+      }
       const pedidos = await models.Pedidos.getAll();
-      res.json({ success: true, data: pedidos });
+      return res.json({ success: true, data: pedidos });
     } catch (error) {
-      res.status(500).json({ success: false, message: error.message });
+      return res.status(500).json({ success: false, message: error.message });
     }
   },
   getById: async (req, res) => {
     try {
+      const denied = await assertOwnPedidoId(req, res, req.params.id);
+      if (denied) return denied;
+
       const pedido = await models.Pedidos.getById(req.params.id);
       if (!pedido) return res.status(404).json({ success: false, message: 'Pedido no encontrado' });
       const detalles = await models.Pedidos.getDetalles(req.params.id);
-      res.json({ success: true, data: { ...pedido, detalles } });
+      return res.json({ success: true, data: { ...pedido, detalles } });
     } catch (error) {
-      res.status(500).json({ success: false, message: error.message });
+      return res.status(500).json({ success: false, message: error.message });
     }
   },
   getByCliente: async (req, res) => {
     try {
+      const denied = assertOwnClienteParam(req, res, req.params.clienteId);
+      if (denied) return denied;
+
       const pedidos = await models.Pedidos.getByCliente(req.params.clienteId);
-      res.json({ success: true, data: pedidos });
+      return res.json({ success: true, data: pedidos });
     } catch (error) {
-      res.status(500).json({ success: false, message: error.message });
+      return res.status(500).json({ success: false, message: error.message });
     }
   },
   create: async (req, res) => {
     try {
-      const id = await models.Pedidos.create(req.body);
-      res.status(201).json({ success: true, id, message: 'Pedido creado exitosamente' });
+      const body = { ...req.body };
+      if (isClienteUser(req)) {
+        const own = getOwnClienteId(req);
+        if (!own) {
+          return res.status(403).json({ success: false, message: 'Perfil cliente no vinculado' });
+        }
+        body.cliente_id = own;
+      }
+      const id = await models.Pedidos.create(body);
+      await ensureDomicilioForCompletedPedido(id);
+      return res.status(201).json({ success: true, id, message: 'Pedido creado exitosamente' });
     } catch (error) {
-      res.status(500).json({ success: false, message: error.message });
+      return res.status(500).json({ success: false, message: error.message });
     }
   },
   addProducto: async (req, res) => {
     try {
-      const { pedidoId, productoId, cantidad, precioUnitario } = req.body;
+      const { pedidoId } = req.body;
+      const denied = await assertOwnPedidoId(req, res, pedidoId);
+      if (denied) return denied;
+
+      const { productoId, cantidad, precioUnitario } = req.body;
       await models.Pedidos.addDetalle(pedidoId, productoId, cantidad, precioUnitario);
-      res.status(201).json({ success: true, message: 'Producto agregado al pedido' });
+      return res.status(201).json({ success: true, message: 'Producto agregado al pedido' });
     } catch (error) {
-      res.status(500).json({ success: false, message: error.message });
+      return res.status(500).json({ success: false, message: error.message });
     }
   },
   update: async (req, res) => {
     try {
+      const denied = await assertOwnPedidoId(req, res, req.params.id);
+      if (denied) return denied;
+
+      if (isClienteUser(req)) {
+        const pedido = await models.Pedidos.getById(req.params.id);
+        const estado = String(pedido?.estado || '');
+        if (estado !== 'Pendiente' && estado !== 'En Proceso') {
+          return res.status(403).json({
+            success: false,
+            message: 'Solo puedes editar pedidos en estado Pendiente o En Proceso',
+          });
+        }
+        const allowed = {
+          fecha_entrega: req.body.fecha_entrega,
+          detalles: req.body.detalles,
+        };
+        const merged = {
+          numero_pedido: pedido.numero_pedido,
+          fecha: pedido.fecha,
+          fecha_entrega: allowed.fecha_entrega !== undefined ? allowed.fecha_entrega : pedido.fecha_entrega,
+          detalles: allowed.detalles !== undefined ? allowed.detalles : pedido.detalles,
+          total: pedido.total,
+          estado: pedido.estado,
+        };
+        await models.Pedidos.update(req.params.id, merged);
+        return res.json({ success: true, message: 'Pedido actualizado exitosamente' });
+      }
+
       await models.Pedidos.update(req.params.id, req.body);
-      res.json({ success: true, message: 'Pedido actualizado exitosamente' });
+      await ensureDomicilioForCompletedPedido(req.params.id);
+      return res.json({ success: true, message: 'Pedido actualizado exitosamente' });
     } catch (error) {
-      res.status(500).json({ success: false, message: error.message });
+      return res.status(500).json({ success: false, message: error.message });
     }
   },
   delete: async (req, res) => {
     try {
-      await models.Pedidos.delete(req.params.id);
-      res.json({ success: true, message: 'Pedido eliminado exitosamente' });
-    } catch (error) {
-      res.status(500).json({ success: false, message: error.message });
-    }
-  }
-};
+      if (isClienteUser(req)) {
+        return res.status(403).json({ success: false, message: 'No autorizado' });
+      }
 
+      await models.Pedidos.delete(req.params.id);
+      return res.json({ success: true, message: 'Pedido eliminado exitosamente' });
+    } catch (error) {
+      return res.status(500).json({ success: false, message: error.message });
+    }
+  },
+};

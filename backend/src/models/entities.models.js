@@ -1071,6 +1071,47 @@ const Ventas = {
 
     return result.rows;
   },
+  getByCliente: async (clienteId, filters = {}) => {
+    const numero = typeof filters.numero_venta === 'string' ? filters.numero_venta.trim() : '';
+    const fechaDesde = typeof filters.fecha_desde === 'string' ? filters.fecha_desde.trim() : '';
+    const fechaHasta = typeof filters.fecha_hasta === 'string' ? filters.fecha_hasta.trim() : '';
+
+    const result = await pool.query(
+      `
+      SELECT v.*,
+             CONCAT(c.nombre, ' ', c.apellido) as cliente,
+             c.nombre as cliente_nombre,
+             c.apellido as cliente_apellido
+      FROM ventas v
+      LEFT JOIN clientes c ON v.cliente_id = c.id
+      WHERE v.cliente_id = $1
+        AND ($2 = '' OR v.numero_venta ILIKE ('%' || $2 || '%'))
+        AND (NULLIF($3, '') IS NULL OR v.fecha >= NULLIF($3, '')::date)
+        AND (NULLIF($4, '') IS NULL OR v.fecha <= NULLIF($4, '')::date)
+      ORDER BY v.fecha DESC, v.id DESC
+    `,
+      [clienteId, numero, fechaDesde, fechaHasta]
+    );
+
+    return result.rows;
+  },
+  getByPedido: async (pedidoId) => {
+    const result = await pool.query(
+      `
+      SELECT v.*,
+             CONCAT(c.nombre, ' ', c.apellido) as cliente,
+             c.nombre as cliente_nombre,
+             c.apellido as cliente_apellido
+      FROM ventas v
+      LEFT JOIN clientes c ON v.cliente_id = c.id
+      WHERE v.pedido_id = $1
+      ORDER BY v.id DESC
+      LIMIT 1
+    `,
+      [pedidoId]
+    );
+    return result.rows[0];
+  },
   getById: async (id) => {
     const result = await pool.query(`
       SELECT v.*, 
@@ -1210,6 +1251,32 @@ const Domicilios = {
   getByPedido: async (pedidoId) => {
     const result = await pool.query('SELECT * FROM domicilios WHERE pedido_id = $1', [pedidoId]);
     return result.rows[0];
+  },
+  getByCliente: async (clienteId) => {
+    const result = await pool.query(
+      `
+      SELECT d.*,
+             p.numero_pedido as pedido,
+             CONCAT(c.nombre, ' ', c.apellido) as cliente
+      FROM domicilios d
+      JOIN pedidos p ON d.pedido_id = p.id
+      JOIN clientes c ON d.cliente_id = c.id
+      WHERE d.cliente_id = $1
+      ORDER BY
+        CASE d.estado
+          WHEN 'Pendiente' THEN 1
+          WHEN 'En Camino' THEN 2
+          WHEN 'Entregado' THEN 3
+          WHEN 'Cancelado' THEN 4
+          ELSE 5
+        END ASC,
+        d.fecha DESC NULLS LAST,
+        d.hora DESC NULLS LAST,
+        d.id DESC
+    `,
+      [clienteId]
+    );
+    return result.rows;
   },
   create: async (data) => {
     const result = await pool.query(
@@ -2394,30 +2461,15 @@ const getRoleChanges = (before, after) => {
   return changed;
 };
 
-const CRITICAL_PERMISSION_MODULES = ['Configuración', 'Usuarios', 'Ventas'];
 const CLIENT_ROLE_NAME = 'cliente';
-const CLIENT_ALLOWED_PERMISSIONS = ['Ver Mis Pedidos'];
-
-const PERMISSION_MODULE_MAP = {
-  'Ver Roles': 'Configuración',
-  'Asignar Permisos': 'Configuración',
-  'Ver Usuarios': 'Usuarios',
-  'Crear Usuarios': 'Usuarios',
-  'Editar Usuarios': 'Usuarios',
-  'Eliminar Usuarios': 'Usuarios',
-  'Ver Clientes': 'Ventas',
-  'Crear Clientes': 'Ventas',
-  'Editar Clientes': 'Ventas',
-  'Ver Ventas': 'Ventas',
-  'Registrar Ventas': 'Ventas',
-  'Anular Ventas': 'Ventas',
-  'Ver Abonos': 'Ventas',
-  'Registrar Abonos': 'Ventas',
-  'Ver Pedidos': 'Ventas',
-  'Crear Pedidos': 'Ventas',
-  'Ver Domicilios': 'Ventas',
-  'Gestionar Domicilios': 'Ventas',
-};
+const CLIENT_ALLOWED_PERMISSIONS = [
+  'Ver Dashboard',
+  'Ver Tienda',
+  'Ver Mis Pedidos',
+  'Ver Mis Lista de Compras',
+  'Ver Mis Compras',
+  'Ver Mis Domicilios',
+];
 
 const normalizePermissions = (permissions) => {
   if (!Array.isArray(permissions)) return [];
@@ -2433,20 +2485,20 @@ const normalizePermissions = (permissions) => {
 const isClientRoleName = (roleName) =>
   typeof roleName === 'string' && roleName.trim().toLowerCase() === CLIENT_ROLE_NAME;
 
-const validatePermissionsPayload = ({ currentPermissions = [], nextPermissions, roleName }) => {
+const validatePermissionsPayload = ({ nextPermissions, roleName }) => {
   if (!Array.isArray(nextPermissions)) return null;
 
   if (isClientRoleName(roleName)) {
-    const hasOnlyAllowedPermissions =
-      nextPermissions.length === CLIENT_ALLOWED_PERMISSIONS.length &&
-      nextPermissions.every((permission) => CLIENT_ALLOWED_PERMISSIONS.includes(permission));
-
-    if (!hasOnlyAllowedPermissions) {
-      const error = new Error('El rol Cliente solo puede tener el permiso "Ver Mis Pedidos"');
+    const invalid = nextPermissions.filter((permission) => !CLIENT_ALLOWED_PERMISSIONS.includes(permission));
+    if (invalid.length > 0 || nextPermissions.length === 0) {
+      const error = new Error(
+        `El rol Cliente solo puede incluir permisos permitidos: ${CLIENT_ALLOWED_PERMISSIONS.join(', ')}`
+      );
       error.statusCode = 400;
       error.details = {
         reason: 'cliente_permissions_only',
         allowed: CLIENT_ALLOWED_PERMISSIONS,
+        invalid,
       };
       return error;
     }
@@ -2459,27 +2511,6 @@ const validatePermissionsPayload = ({ currentPermissions = [], nextPermissions, 
     error.statusCode = 400;
     error.details = { reason: 'missing_permissions' };
     return error;
-  }
-
-  for (const moduleName of CRITICAL_PERMISSION_MODULES) {
-    const hadBefore = currentPermissions.some(
-      (permission) => PERMISSION_MODULE_MAP[permission] === moduleName
-    );
-    const hasAfter = nextPermissions.some(
-      (permission) => PERMISSION_MODULE_MAP[permission] === moduleName
-    );
-
-    if (hadBefore && !hasAfter) {
-      const error = new Error(
-        `No se puede eliminar el ultimo permiso del modulo critico ${moduleName}`
-      );
-      error.statusCode = 400;
-      error.details = {
-        reason: 'critical_module_without_access',
-        module: moduleName,
-      };
-      return error;
-    }
   }
 
   return null;
@@ -2512,16 +2543,9 @@ const Roles = {
     return result.rows[0];
   },
   create: async (data, options = {}) => {
-    let permisosNormalizados = normalizePermissions(data.permisos || []);
-    if (isClientRoleName(data.nombre)) {
-      permisosNormalizados = [...CLIENT_ALLOWED_PERMISSIONS];
-    }
+    const permisosNormalizados = normalizePermissions(data.permisos || []);
 
-    const permissionsError = validatePermissionsPayload({
-      currentPermissions: [],
-      nextPermissions: permisosNormalizados,
-      roleName: data.nombre,
-    });
+    const permissionsError = validatePermissionsPayload({ nextPermissions: permisosNormalizados, roleName: data.nombre });
 
     if (permissionsError) throw permissionsError;
 
@@ -2550,28 +2574,9 @@ const Roles = {
 
     let nextPermissions = data.permisos;
     if (Array.isArray(data.permisos)) {
-      const currentPermissions = normalizePermissions(currentRole?.permisos || []);
       nextPermissions = normalizePermissions(data.permisos);
 
-      if (isClientRoleName(targetRoleName)) {
-        nextPermissions = [...CLIENT_ALLOWED_PERMISSIONS];
-      }
-
-      const permissionsError = validatePermissionsPayload({
-        currentPermissions,
-        nextPermissions,
-        roleName: targetRoleName,
-      });
-
-      if (permissionsError) throw permissionsError;
-    } else if (isClientRoleName(targetRoleName)) {
-      nextPermissions = [...CLIENT_ALLOWED_PERMISSIONS];
-
-      const permissionsError = validatePermissionsPayload({
-        currentPermissions: normalizePermissions(currentRole?.permisos || []),
-        nextPermissions,
-        roleName: targetRoleName,
-      });
+      const permissionsError = validatePermissionsPayload({ nextPermissions, roleName: targetRoleName });
 
       if (permissionsError) throw permissionsError;
     }
@@ -2627,16 +2632,8 @@ const Roles = {
       throw error;
     }
 
-    const currentPermissions = normalizePermissions(currentRole.permisos || []);
     let nextPermissions = normalizePermissions(permisos || []);
-    if (isClientRoleName(currentRole.nombre)) {
-      nextPermissions = [...CLIENT_ALLOWED_PERMISSIONS];
-    }
-    const permissionsError = validatePermissionsPayload({
-      currentPermissions,
-      nextPermissions,
-      roleName: currentRole.nombre,
-    });
+    const permissionsError = validatePermissionsPayload({ nextPermissions, roleName: currentRole.nombre });
 
     if (permissionsError) throw permissionsError;
 

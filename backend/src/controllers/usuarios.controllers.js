@@ -8,6 +8,7 @@ const {
   sendEmailChangeNotification,
   sendUserStatusChangeNotification,
 } = require('../services/email.service');
+const { isClienteUser } = require('../utils/selfServiceAccess');
 
 module.exports = {
   getAll: async (req, res) => {
@@ -181,6 +182,15 @@ module.exports = {
       const currentUsuario = await models.Usuarios.getById(req.params.id);
       if (!currentUsuario) {
         return res.status(404).json({ success: false, message: 'Usuario no encontrado' });
+      }
+
+      if (isClienteUser(req) && Number(req.params.id) !== Number(req.user?.id)) {
+        return res.status(403).json({ success: false, message: 'No autorizado' });
+      }
+      if (isClienteUser(req)) {
+        delete normalized.data.rol_id;
+        delete normalized.data.estado;
+        delete normalized.data.password;
       }
 
       const previousEmail = currentUsuario.email;

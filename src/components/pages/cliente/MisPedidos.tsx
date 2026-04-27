@@ -18,6 +18,13 @@ interface Pedido {
   total: number;
   estado: string;
   cliente_id: number;
+  detallesLineas?: Array<{
+    id?: number;
+    producto_nombre?: string;
+    cantidad?: number;
+    precio_unitario?: number;
+    subtotal?: number;
+  }>;
 }
 
 interface Cliente {
@@ -49,7 +56,8 @@ export function MisPedidos() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [filters, setFilters] = useState({
-    fecha: '',
+    fechaDesde: '',
+    fechaHasta: '',
     estado: ''
   });
   const [cliente, setCliente] = useState<Cliente | null>(null);
@@ -113,9 +121,11 @@ export function MisPedidos() {
       const numero = (pedido.numero_pedido || pedido.id.toString()).toLowerCase();
       const estado = (pedido.estado || '').toLowerCase();
       const matchesSearch = !query || numero.includes(query) || estado.includes(query);
-      const matchesFecha = !filters.fecha || String(pedido.fecha || '').includes(filters.fecha);
+      const f = String(pedido.fecha || '').slice(0, 10);
+      const matchesDesde = !filters.fechaDesde || f >= filters.fechaDesde;
+      const matchesHasta = !filters.fechaHasta || f <= filters.fechaHasta;
       const matchesEstado = !filters.estado || pedido.estado === filters.estado;
-      return matchesSearch && matchesFecha && matchesEstado;
+      return matchesSearch && matchesDesde && matchesHasta && matchesEstado;
     });
   }, [pedidos, search, filters]);
 
@@ -142,8 +152,9 @@ export function MisPedidos() {
 
   const handleView = async (pedido: Pedido) => {
     try {
-      const detalle = (await pedidosAPI.getById(Number(pedido.id))) as Pedido;
-      setSelectedPedido(detalle || pedido);
+      const detalle = (await pedidosAPI.getById(Number(pedido.id))) as Pedido & { detalles?: Pedido['detallesLineas'] };
+      const detallesLineas = Array.isArray((detalle as any)?.detalles) ? (detalle as any).detalles : [];
+      setSelectedPedido({ ...(detalle || pedido), detallesLineas });
       setIsDetailModalOpen(true);
     } catch (error) {
       console.error('Error consultando detalle de pedido:', error);
@@ -248,19 +259,27 @@ export function MisPedidos() {
             icon={<RotateCcw className="w-4 h-4" />}
             onClick={() => {
               setSearch('');
-              setFilters({ fecha: '', estado: '' });
+              setFilters({ fechaDesde: '', fechaHasta: '', estado: '' });
             }}
-            disabled={!search.trim() && !filters.fecha && !filters.estado}
+            disabled={!search.trim() && !filters.fechaDesde && !filters.fechaHasta && !filters.estado}
           >
             Limpiar filtros
           </Button>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs text-muted-foreground">Filtrar por:</span>
+          <span className="text-xs text-muted-foreground">Fecha pedido:</span>
           <input
             type="date"
-            value={filters.fecha}
-            onChange={(event) => setFilters((current) => ({ ...current, fecha: event.target.value }))}
+            value={filters.fechaDesde}
+            onChange={(event) => setFilters((current) => ({ ...current, fechaDesde: event.target.value }))}
+            className="h-8 rounded-md border border-border bg-card px-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+          />
+          <span className="text-xs text-muted-foreground">a</span>
+          <input
+            type="date"
+            value={filters.fechaHasta}
+            onChange={(event) => setFilters((current) => ({ ...current, fechaHasta: event.target.value }))}
             className="h-8 rounded-md border border-border bg-card px-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
           />
           <select
@@ -328,10 +347,39 @@ export function MisPedidos() {
                 <p className="mt-1">{selectedPedido.fecha_entrega || 'Sin definir'}</p>
               </div>
               <div className="col-span-2">
-                <label className="text-sm text-muted-foreground">Detalle</label>
-                <p className="mt-1">{selectedPedido.detalles || 'Sin detalle registrado'}</p>
+                <label className="text-sm text-muted-foreground">Notas / resumen</label>
+                <p className="mt-1">{selectedPedido.detalles || 'Sin notas adicionales'}</p>
               </div>
             </div>
+
+            {selectedPedido.detallesLineas && selectedPedido.detallesLineas.length > 0 ? (
+              <div className="rounded-lg border border-border overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-muted/60">
+                    <tr>
+                      <th className="px-3 py-2 text-left font-medium">Producto</th>
+                      <th className="px-3 py-2 text-right font-medium">Cant.</th>
+                      <th className="px-3 py-2 text-right font-medium">P. unit.</th>
+                      <th className="px-3 py-2 text-right font-medium">Subtotal</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {selectedPedido.detallesLineas.map((line) => (
+                      <tr key={line.id ?? `${line.producto_nombre}-${line.cantidad}`} className="border-t border-border">
+                        <td className="px-3 py-2">{line.producto_nombre || '—'}</td>
+                        <td className="px-3 py-2 text-right">{line.cantidad ?? '—'}</td>
+                        <td className="px-3 py-2 text-right">
+                          ${Number(line.precio_unitario || 0).toLocaleString('es-CO')}
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          ${Number(line.subtotal || 0).toLocaleString('es-CO')}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : null}
 
             <div className="p-4 bg-accent/50 rounded-lg">
               <label className="text-sm text-muted-foreground block mb-4">Estado del Pedido</label>

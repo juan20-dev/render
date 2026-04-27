@@ -255,7 +255,6 @@ export function Login({ onLogin }: LoginProps) {
               <div className="text-xs space-y-1 text-muted-foreground">
                 <p><strong>Administrador:</strong> admin@grandmas.com / admin123</p>
                 <p><strong>Asesor:</strong> asesor@grandmas.com / asesor123</p>
-                <p><strong>Productor:</strong> productor@grandmas.com / productor123</p>
                 <p><strong>Repartidor:</strong> repartidor@grandmas.com / repartidor123</p>
                 <p><strong>Cliente:</strong> cliente@grandmas.com / cliente123</p>
               </div>

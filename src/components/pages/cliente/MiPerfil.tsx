@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Card } from '../../Card';
 import { Button } from '../../Button';
 import { Form, FormField, FormActions } from '../../Form';
@@ -6,7 +6,7 @@ import { User, Mail, Phone, MapPin, Upload, Lock } from 'lucide-react';
 import { useAlertDialog } from '../../AlertDialog';
 import { Modal } from '../../Modal';
 import { useAuth } from '../../AuthContext';
-import { clientes as clientesAPI } from '../../../services/api';
+import { auth, clientes as clientesAPI, pedidos as pedidosAPI, usuarios as usuariosAPI } from '../../../services/api';
 
 interface PerfilCliente {
   nombre: string;
@@ -25,6 +25,12 @@ const normalizeTipoDocumento = (value: unknown): PerfilCliente['tipoDocumento'] 
   return 'CC';
 };
 
+const getHttpStatus = (error: unknown): number | undefined => {
+  if (typeof error !== 'object' || !error) return undefined;
+  const maybeStatus = (error as { status?: unknown }).status;
+  return typeof maybeStatus === 'number' ? maybeStatus : undefined;
+};
+
 export function MiPerfil() {
   const { user, isAuthLoading } = useAuth();
   const [perfil, setPerfil] = useState<PerfilCliente>({
@@ -35,9 +41,11 @@ export function MiPerfil() {
     direccion: '',
     tipoDocumento: 'CC',
     numeroDocumento: '',
-    foto: undefined
+    foto: undefined,
   });
   const [loadingPerfil, setLoadingPerfil] = useState(true);
+  const [clienteId, setClienteId] = useState<number | null>(null);
+  const [stats, setStats] = useState<{ pedidos: number; pendientes: number; totalComprado: number } | null>(null);
 
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState(perfil);
@@ -46,8 +54,10 @@ export function MiPerfil() {
   const [passwordData, setPasswordData] = useState({
     currentPassword: '',
     newPassword: '',
-    confirmPassword: ''
+    confirmPassword: '',
   });
+  const [saving, setSaving] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { showAlert, AlertComponent } = useAlertDialog();
   const roleLabel = user?.rol || 'Sin rol asignado';
@@ -61,23 +71,47 @@ export function MiPerfil() {
 
       try {
         setLoadingPerfil(true);
-        const clienteData = user.cliente_id
-          ? await clientesAPI.getByUsuarioId(user.id)
-          : null;
+        const usuario = (await usuariosAPI.getById(user.id)) as any;
+
+        let clienteData: any = null;
+        try {
+          clienteData = await clientesAPI.getByUsuarioId(user.id);
+        } catch (error) {
+          const st = getHttpStatus(error);
+          if (st !== 404) throw error;
+        }
+
         const nextPerfil: PerfilCliente = {
-          nombre: clienteData?.nombre || user.nombre || '',
-          apellido: clienteData?.apellido || user.apellido || '',
-          email: clienteData?.email || user.email || '',
-          telefono: clienteData?.telefono || '',
-          direccion: clienteData?.direccion || '',
-          tipoDocumento: normalizeTipoDocumento(clienteData?.tipo_documento || clienteData?.tipoDocumento),
-          numeroDocumento: clienteData?.documento || clienteData?.numeroDocumento || '',
-          foto: clienteData?.foto_url || user.foto || undefined,
+          nombre: clienteData?.nombre || usuario?.nombre || user.nombre || '',
+          apellido: clienteData?.apellido || usuario?.apellido || user.apellido || '',
+          email: clienteData?.email || usuario?.email || user.email || '',
+          telefono: clienteData?.telefono || usuario?.telefono || '',
+          direccion: clienteData?.direccion || usuario?.direccion || '',
+          tipoDocumento: normalizeTipoDocumento(clienteData?.tipo_documento || usuario?.tipo_documento),
+          numeroDocumento: clienteData?.documento || usuario?.documento || '',
+          foto: clienteData?.foto_url || usuario?.foto_url || undefined,
         };
 
+        setClienteId(typeof clienteData?.id === 'number' ? clienteData.id : null);
         setPerfil(nextPerfil);
         setFormData(nextPerfil);
         setFotoPreview(nextPerfil.foto || null);
+
+        if (clienteData?.id) {
+          try {
+            const pedidos = (await pedidosAPI.getByCliente(clienteData.id)) as any[];
+            const list = Array.isArray(pedidos) ? pedidos : [];
+            const pendientes = list.filter((p) =>
+              ['Pendiente', 'En Proceso'].includes(String(p?.estado || ''))
+            ).length;
+            const totalComprado = list.reduce((acc, p) => acc + Number(p?.total || 0), 0);
+            setStats({ pedidos: list.length, pendientes, totalComprado });
+          } catch {
+            setStats({ pedidos: 0, pendientes: 0, totalComprado: 0 });
+          }
+        } else {
+          setStats(null);
+        }
       } catch (error) {
         console.error('Error al cargar el perfil:', error);
         const fallbackPerfil: PerfilCliente = {
@@ -88,11 +122,13 @@ export function MiPerfil() {
           direccion: '',
           tipoDocumento: 'CC',
           numeroDocumento: '',
-          foto: user.foto || undefined
+          foto: undefined,
         };
         setPerfil(fallbackPerfil);
         setFormData(fallbackPerfil);
         setFotoPreview(fallbackPerfil.foto || null);
+        setClienteId(null);
+        setStats(null);
       } finally {
         setLoadingPerfil(false);
       }
@@ -112,18 +148,59 @@ export function MiPerfil() {
     }
   };
 
-  const handleSaveChanges = (e: React.FormEvent) => {
+  const handleSaveChanges = async (e: React.FormEvent) => {
     e.preventDefault();
-    setPerfil({ ...formData, foto: fotoPreview || formData.foto });
-    setIsEditing(false);
-    
-    showAlert({
-      title: 'Perfil actualizado',
-      description: 'Tu información ha sido actualizada exitosamente',
-      type: 'success',
-      confirmText: 'Entendido',
-      onConfirm: () => {}
-    });
+    if (!user) return;
+
+    try {
+      setSaving(true);
+      await usuariosAPI.update(user.id, {
+        nombre: formData.nombre,
+        apellido: formData.apellido,
+        email: formData.email,
+        telefono: formData.telefono,
+        direccion: formData.direccion,
+        tipo_documento: formData.tipoDocumento,
+        documento: formData.numeroDocumento,
+      });
+
+      if (clienteId) {
+        const payload: Record<string, unknown> = {
+          nombre: formData.nombre,
+          apellido: formData.apellido,
+          email: formData.email,
+          telefono: formData.telefono,
+          direccion: formData.direccion,
+          tipoDocumento: formData.tipoDocumento,
+          documento: formData.numeroDocumento,
+        };
+        if (fotoPreview && fotoPreview.startsWith('http')) {
+          payload.foto_url = fotoPreview;
+        }
+        await clientesAPI.update(clienteId, payload);
+      }
+
+      const next = { ...formData, foto: fotoPreview || formData.foto };
+      setPerfil(next);
+      setIsEditing(false);
+      showAlert({
+        title: 'Perfil actualizado',
+        description: 'Tu información se guardó correctamente.',
+        type: 'success',
+        confirmText: 'Entendido',
+        onConfirm: () => {},
+      });
+    } catch (error: any) {
+      showAlert({
+        title: 'No se pudo guardar',
+        description: typeof error?.message === 'string' ? error.message : 'Intenta de nuevo.',
+        type: 'danger',
+        confirmText: 'Entendido',
+        onConfirm: () => {},
+      });
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleCancelEdit = () => {
@@ -132,7 +209,7 @@ export function MiPerfil() {
     setIsEditing(false);
   };
 
-  const handleChangePassword = (e: React.FormEvent) => {
+  const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (passwordData.newPassword !== passwordData.confirmPassword) {
@@ -141,59 +218,60 @@ export function MiPerfil() {
         description: 'Las contraseñas no coinciden',
         type: 'danger',
         confirmText: 'Entendido',
-        onConfirm: () => {}
+        onConfirm: () => {},
       });
       return;
     }
 
-    if (passwordData.newPassword.length < 6) {
+    try {
+      const res: any = await auth.changePassword({
+        currentPassword: passwordData.currentPassword,
+        newPassword: passwordData.newPassword,
+        confirmPassword: passwordData.confirmPassword,
+      });
+      if (res?.success === false) {
+        throw new Error(res?.message || 'No se pudo cambiar la contraseña');
+      }
+      showAlert({
+        title: 'Contraseña actualizada',
+        description: 'Tu contraseña ha sido cambiada correctamente.',
+        type: 'success',
+        confirmText: 'Entendido',
+        onConfirm: () => {
+          setIsChangePasswordOpen(false);
+          setPasswordData({
+            currentPassword: '',
+            newPassword: '',
+            confirmPassword: '',
+          });
+        },
+      });
+    } catch (error: any) {
       showAlert({
         title: 'Error',
-        description: 'La contraseña debe tener al menos 6 caracteres',
+        description: typeof error?.message === 'string' ? error.message : 'No se pudo cambiar la contraseña.',
         type: 'danger',
         confirmText: 'Entendido',
-        onConfirm: () => {}
+        onConfirm: () => {},
       });
-      return;
     }
-
-    showAlert({
-      title: 'Contraseña actualizada',
-      description: 'Tu contraseña ha sido cambiada exitosamente',
-      type: 'success',
-      confirmText: 'Entendido',
-      onConfirm: () => {
-        setIsChangePasswordOpen(false);
-        setPasswordData({
-          currentPassword: '',
-          newPassword: '',
-          confirmPassword: ''
-        });
-      }
-    });
   };
 
   return (
     <div className="space-y-6">
       {AlertComponent}
-      
+
       <div className="flex items-center justify-between">
         <div>
-          <h2>Mi Perfil</h2>
+          <h2>Mi perfil</h2>
           <p className="text-muted-foreground">Gestiona tu información personal</p>
         </div>
         {!isEditing && (
           <div className="flex gap-3">
-            <Button 
-              variant="outline" 
-              icon={<Lock className="w-5 h-5" />}
-              onClick={() => setIsChangePasswordOpen(true)}
-            >
-              Cambiar Contraseña
+            <Button variant="outline" icon={<Lock className="w-5 h-5" />} onClick={() => setIsChangePasswordOpen(true)}>
+              Cambiar contraseña
             </Button>
-            <Button onClick={() => setIsEditing(true)}>
-              Editar Perfil
-            </Button>
+            <Button onClick={() => setIsEditing(true)}>Editar perfil</Button>
           </div>
         )}
       </div>
@@ -204,67 +282,68 @@ export function MiPerfil() {
         </Card>
       ) : !isEditing ? (
         <>
-          {/* Vista de Perfil */}
           <Card>
             <div className="flex items-start gap-6">
               <div className="relative">
                 {fotoPreview ? (
-                  <img 
-                    src={fotoPreview} 
-                    alt="Foto de perfil" 
-                    className="w-32 h-32 rounded-full object-cover border-4 border-border"
+                  <img
+                    src={fotoPreview}
+                    alt="Foto de perfil"
+                    className="h-32 w-32 rounded-full border-4 border-border object-cover"
                   />
                 ) : (
-                  <div className="w-32 h-32 rounded-full bg-primary/10 flex items-center justify-center border-4 border-border">
-                    <User className="w-16 h-16 text-primary" />
+                  <div className="flex h-32 w-32 items-center justify-center rounded-full border-4 border-border bg-primary/10">
+                    <User className="h-16 w-16 text-primary" />
                   </div>
                 )}
               </div>
 
               <div className="flex-1 space-y-4">
                 <div>
-                  <h3>{perfil.nombre} {perfil.apellido}</h3>
+                  <h3>
+                    {perfil.nombre} {perfil.apellido}
+                  </h3>
                   <p className="text-muted-foreground">{roleLabel}</p>
                 </div>
 
                 <div className="grid grid-cols-2 gap-6">
                   <div className="flex items-start gap-3">
-                    <Mail className="w-5 h-5 text-primary mt-0.5" />
+                    <Mail className="mt-0.5 h-5 w-5 text-primary" />
                     <div>
-                      <p className="text-sm text-muted-foreground">Correo Electrónico</p>
+                      <p className="text-sm text-muted-foreground">Correo electrónico</p>
                       <p>{perfil.email}</p>
                     </div>
                   </div>
 
                   <div className="flex items-start gap-3">
-                    <Phone className="w-5 h-5 text-primary mt-0.5" />
+                    <Phone className="mt-0.5 h-5 w-5 text-primary" />
                     <div>
                       <p className="text-sm text-muted-foreground">Teléfono</p>
-                      <p>{perfil.telefono}</p>
+                      <p>{perfil.telefono || '—'}</p>
                     </div>
                   </div>
 
-                  <div className="flex items-start gap-3 col-span-2">
-                    <MapPin className="w-5 h-5 text-primary mt-0.5" />
+                  <div className="col-span-2 flex items-start gap-3">
+                    <MapPin className="mt-0.5 h-5 w-5 text-primary" />
                     <div>
                       <p className="text-sm text-muted-foreground">Dirección</p>
-                      <p>{perfil.direccion}</p>
+                      <p>{perfil.direccion || '—'}</p>
                     </div>
                   </div>
 
                   <div className="flex items-start gap-3">
-                    <User className="w-5 h-5 text-primary mt-0.5" />
+                    <User className="mt-0.5 h-5 w-5 text-primary" />
                     <div>
-                      <p className="text-sm text-muted-foreground">Tipo de Documento</p>
+                      <p className="text-sm text-muted-foreground">Tipo de documento</p>
                       <p>{perfil.tipoDocumento}</p>
                     </div>
                   </div>
 
                   <div className="flex items-start gap-3">
-                    <User className="w-5 h-5 text-primary mt-0.5" />
+                    <User className="mt-0.5 h-5 w-5 text-primary" />
                     <div>
-                      <p className="text-sm text-muted-foreground">Número de Documento</p>
-                      <p>{perfil.numeroDocumento}</p>
+                      <p className="text-sm text-muted-foreground">Número de documento</p>
+                      <p>{perfil.numeroDocumento || '—'}</p>
                     </div>
                   </div>
                 </div>
@@ -272,49 +351,51 @@ export function MiPerfil() {
             </div>
           </Card>
 
-          {/* Estadísticas del Cliente */}
-          <div className="grid grid-cols-3 gap-6">
-            <Card>
-              <div className="text-center">
-                <p className="text-3xl text-primary mb-2">12</p>
-                <p className="text-sm text-muted-foreground">Pedidos Realizados</p>
-              </div>
-            </Card>
-            <Card>
-              <div className="text-center">
-                <p className="text-3xl text-primary mb-2">$1,245,000</p>
-                <p className="text-sm text-muted-foreground">Total Comprado</p>
-              </div>
-            </Card>
-            <Card>
-              <div className="text-center">
-                <p className="text-3xl text-primary mb-2">2</p>
-                <p className="text-sm text-muted-foreground">Pedidos Pendientes</p>
-              </div>
-            </Card>
-          </div>
+          {stats ? (
+            <div className="grid grid-cols-3 gap-6">
+              <Card>
+                <div className="text-center">
+                  <p className="mb-2 text-3xl text-primary">{stats.pedidos}</p>
+                  <p className="text-sm text-muted-foreground">Pedidos realizados</p>
+                </div>
+              </Card>
+              <Card>
+                <div className="text-center">
+                  <p className="mb-2 text-3xl text-primary">
+                    ${stats.totalComprado.toLocaleString('es-CO')}
+                  </p>
+                  <p className="text-sm text-muted-foreground">Total pedidos (histórico)</p>
+                </div>
+              </Card>
+              <Card>
+                <div className="text-center">
+                  <p className="mb-2 text-3xl text-primary">{stats.pendientes}</p>
+                  <p className="text-sm text-muted-foreground">Pedidos pendientes / en proceso</p>
+                </div>
+              </Card>
+            </div>
+          ) : null}
         </>
       ) : (
-        // Formulario de Edición
         <Card>
           <Form onSubmit={handleSaveChanges}>
-            {/* Foto de perfil */}
             <div className="mb-6">
-              <label className="block mb-3">Foto de Perfil</label>
+              <label className="mb-3 block">Foto de perfil</label>
               <div className="flex items-center gap-6">
                 {fotoPreview ? (
-                  <img 
-                    src={fotoPreview} 
-                    alt="Preview" 
-                    className="w-32 h-32 rounded-full object-cover border-4 border-border"
+                  <img
+                    src={fotoPreview}
+                    alt="Preview"
+                    className="h-32 w-32 rounded-full border-4 border-border object-cover"
                   />
                 ) : (
-                  <div className="w-32 h-32 rounded-full bg-muted flex items-center justify-center border-4 border-border">
-                    <Upload className="w-12 h-12 text-muted-foreground" />
+                  <div className="flex h-32 w-32 items-center justify-center rounded-full border-4 border-border bg-muted">
+                    <Upload className="h-12 w-12 text-muted-foreground" />
                   </div>
                 )}
                 <label className="flex-1">
                   <input
+                    ref={fileInputRef}
                     type="file"
                     accept="image/*"
                     onChange={handleFotoChange}
@@ -323,11 +404,15 @@ export function MiPerfil() {
                   <Button
                     type="button"
                     variant="outline"
-                    onClick={() => document.querySelector('input[type="file"]')?.click()}
-                    icon={<Upload className="w-4 h-4" />}
+                    onClick={() => fileInputRef.current?.click()}
+                    icon={<Upload className="h-4 w-4" />}
                   >
-                    Cambiar Foto
+                    Cambiar foto
                   </Button>
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Solo se envía al servidor si la imagen es una URL (http/https). La vista previa local es solo
+                    referencia.
+                  </p>
                 </label>
               </div>
             </div>
@@ -341,7 +426,7 @@ export function MiPerfil() {
                 placeholder="Juan"
                 required
               />
-              
+
               <FormField
                 label="Apellido"
                 name="apellido"
@@ -353,7 +438,7 @@ export function MiPerfil() {
             </div>
 
             <FormField
-              label="Correo Electrónico"
+              label="Correo electrónico"
               name="email"
               type="email"
               value={formData.email}
@@ -384,22 +469,22 @@ export function MiPerfil() {
 
             <div className="grid grid-cols-2 gap-4">
               <FormField
-                label="Tipo de Documento"
+                label="Tipo de documento"
                 name="tipoDocumento"
                 type="select"
                 value={formData.tipoDocumento}
                 onChange={(value) => setFormData({ ...formData, tipoDocumento: value as any })}
                 options={[
-                  { value: 'CC', label: 'Cédula de Ciudadanía' },
-                  { value: 'CE', label: 'Cédula de Extranjería' },
-                  { value: 'TI', label: 'Tarjeta de Identidad' },
-                  { value: 'Pasaporte', label: 'Pasaporte' }
+                  { value: 'CC', label: 'Cédula de ciudadanía' },
+                  { value: 'CE', label: 'Cédula de extranjería' },
+                  { value: 'TI', label: 'Tarjeta de identidad' },
+                  { value: 'Pasaporte', label: 'Pasaporte' },
                 ]}
                 required
               />
-              
+
               <FormField
-                label="Número de Documento"
+                label="Número de documento"
                 name="numeroDocumento"
                 value={formData.numeroDocumento}
                 onChange={(value) => setFormData({ ...formData, numeroDocumento: value as string })}
@@ -412,15 +497,14 @@ export function MiPerfil() {
               <Button variant="outline" onClick={handleCancelEdit}>
                 Cancelar
               </Button>
-              <Button type="submit">
-                Guardar Cambios
+              <Button type="submit" disabled={saving}>
+                {saving ? 'Guardando...' : 'Guardar cambios'}
               </Button>
             </FormActions>
           </Form>
         </Card>
       )}
 
-      {/* Modal de Cambiar Contraseña */}
       <Modal
         isOpen={isChangePasswordOpen}
         onClose={() => {
@@ -428,15 +512,15 @@ export function MiPerfil() {
           setPasswordData({
             currentPassword: '',
             newPassword: '',
-            confirmPassword: ''
+            confirmPassword: '',
           });
         }}
-        title="Cambiar Contraseña"
+        title="Cambiar contraseña"
         size="md"
       >
         <Form onSubmit={handleChangePassword}>
           <FormField
-            label="Contraseña Actual"
+            label="Contraseña actual"
             name="currentPassword"
             type="password"
             value={passwordData.currentPassword}
@@ -446,17 +530,17 @@ export function MiPerfil() {
           />
 
           <FormField
-            label="Nueva Contraseña"
+            label="Nueva contraseña"
             name="newPassword"
             type="password"
             value={passwordData.newPassword}
             onChange={(value) => setPasswordData({ ...passwordData, newPassword: value as string })}
-            placeholder="••••••••"
+            placeholder="Mínimo 8 caracteres, una mayúscula y un número"
             required
           />
 
           <FormField
-            label="Confirmar Nueva Contraseña"
+            label="Confirmar nueva contraseña"
             name="confirmPassword"
             type="password"
             value={passwordData.confirmPassword}
@@ -465,25 +549,29 @@ export function MiPerfil() {
             required
           />
 
-          <div className="p-4 bg-accent rounded-lg mb-4">
+          <div className="mb-4 rounded-lg bg-accent p-4">
             <p className="text-xs text-muted-foreground">
-              La contraseña debe tener al menos 6 caracteres.
+              La contraseña debe cumplir las reglas de seguridad del sistema (mínimo 8 caracteres, mayúscula y
+              número).
             </p>
           </div>
 
           <FormActions>
-            <Button variant="outline" onClick={() => {
-              setIsChangePasswordOpen(false);
-              setPasswordData({
-                currentPassword: '',
-                newPassword: '',
-                confirmPassword: ''
-              });
-            }}>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setIsChangePasswordOpen(false);
+                setPasswordData({
+                  currentPassword: '',
+                  newPassword: '',
+                  confirmPassword: '',
+                });
+              }}
+            >
               Cancelar
             </Button>
-            <Button type="submit" icon={<Lock className="w-5 h-5" />}>
-              Cambiar Contraseña
+            <Button type="submit" icon={<Lock className="h-5 w-5" />}>
+              Cambiar contraseña
             </Button>
           </FormActions>
         </Form>

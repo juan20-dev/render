@@ -109,11 +109,23 @@ const menuItems: MenuItem[] = [
     module: 'cliente/pedidos',
   },
   {
-    name: 'Mi Perfil',
+    name: 'Mis compras',
+    icon: <Receipt className="w-5 h-5" />,
+    path: '/cliente/compras',
+    module: 'cliente/compras',
+  },
+  {
+    name: 'Mis domicilios',
+    icon: <Truck className="w-5 h-5" />,
+    path: '/cliente/domicilios',
+    module: 'cliente/domicilios',
+  },
+  {
+    name: 'Mi perfil',
     icon: <User className="w-5 h-5" />,
-    path: '/cliente/perfil',
-    module: 'cliente/perfil',
-  }
+    path: '/perfil',
+    module: 'perfil',
+  },
 ];
 
 const configurationItem: MenuItem = {
@@ -233,6 +245,10 @@ export function Sidebar({ currentPath, onNavigate }: SidebarProps) {
     })
     .filter((item) => {
       if (!user) return false;
+
+      if (item.module === 'perfil') {
+        return true;
+      }
 
       if (item.module && !hasPermission(item.module)) {
         return false;

@@ -87,7 +87,11 @@ const permissionAccessMap: Record<string, { modules: string[]; actions: Record<s
   'Crear Pedidos': { modules: ['ventas'], actions: { ventas: ['create'] } },
   'Ver Domicilios': { modules: ['ventas'], actions: { ventas: ['view'] } },
   'Gestionar Domicilios': { modules: ['ventas'], actions: { ventas: ['edit'] } },
+  'Ver Tienda': { modules: ['cliente'], actions: { 'cliente/tienda': ['view'] } },
   'Ver Mis Pedidos': { modules: ['cliente'], actions: { 'cliente/pedidos': ['view'] } },
+  'Ver Mis Lista de Compras': { modules: ['cliente'], actions: { 'cliente/compras': ['view'] } },
+  'Ver Mis Compras': { modules: ['cliente'], actions: { 'cliente/compras': ['view'] } },
+  'Ver Mis Domicilios': { modules: ['cliente'], actions: { 'cliente/domicilios': ['view'] } },
 };
 
 const permissionsToAccessMap = (permissions: string[]) => {
@@ -267,6 +271,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const hasPermission = (module: string, action: string = 'view'): boolean => {
     if (!user) return false;
+
+    if (module === 'perfil') {
+      return true;
+    }
 
     const permissions = permissionsToAccessMap(user.permisos || []);
 

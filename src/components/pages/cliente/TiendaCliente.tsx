@@ -55,7 +55,8 @@ export function TiendaCliente() {
     direccion: '',
     telefono: '',
     observaciones: '',
-    metodoPago: 'Efectivo' as 'Efectivo' | 'Transferencia' | 'Contraentrega'
+    metodoPago: 'Efectivo' as 'Efectivo' | 'Transferencia' | 'Contraentrega',
+    fechaEntrega: ''
   });
 
   const loadInitialData = async () => {
@@ -132,7 +133,8 @@ export function TiendaCliente() {
         const matchCategoria = categoriaFiltro === 'Todos' || p.categoria === categoriaFiltro;
         const matchBusqueda = p.nombre.toLowerCase().includes(busqueda.toLowerCase());
         const activo = !p.estado || p.estado === 'Activo';
-        return matchCategoria && matchBusqueda && activo;
+        const conStock = Number(p.stock) > 0;
+        return matchCategoria && matchBusqueda && activo && conStock;
       }),
     [productos, categoriaFiltro, busqueda]
   );
@@ -215,6 +217,17 @@ export function TiendaCliente() {
       return;
     }
 
+    if (!datosEntrega.fechaEntrega?.trim()) {
+      showAlert({
+        title: 'Fecha de entrega',
+        description: 'Indica la fecha en la que deseas recibir el pedido.',
+        type: 'warning',
+        confirmText: 'Entendido',
+        onConfirm: () => {}
+      });
+      return;
+    }
+
     try {
       setSubmitting(true);
 
@@ -225,7 +238,7 @@ export function TiendaCliente() {
       const payloadPedido = {
         cliente_id: cliente.id,
         fecha: new Date().toISOString().split('T')[0],
-        fecha_entrega: undefined,
+        fecha_entrega: datosEntrega.fechaEntrega.trim(),
         detalles: `${detalles}${datosEntrega.observaciones ? ` | Obs: ${datosEntrega.observaciones}` : ''}`,
         total: calcularTotal(),
         estado: 'Pendiente'
@@ -260,7 +273,7 @@ export function TiendaCliente() {
       setCarrito([]);
       setIsCheckoutOpen(false);
       setIsCarritoOpen(false);
-      setDatosEntrega((prev) => ({ ...prev, observaciones: '', metodoPago: 'Efectivo' }));
+      setDatosEntrega((prev) => ({ ...prev, observaciones: '', metodoPago: 'Efectivo', fechaEntrega: '' }));
     } catch (error) {
       console.error('Error creando pedido de cliente:', error);
       showAlert({
@@ -410,7 +423,16 @@ export function TiendaCliente() {
               </div>
             ))}
 
-            <div className="border-t pt-4">
+            <div className="border-t pt-4 space-y-3">
+              <div>
+                <label className="mb-1 block text-sm text-muted-foreground">Fecha deseada de entrega</label>
+                <input
+                  type="date"
+                  value={datosEntrega.fechaEntrega}
+                  onChange={(e) => setDatosEntrega((prev) => ({ ...prev, fechaEntrega: e.target.value }))}
+                  className="w-full max-w-xs rounded-lg border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
               <div className="flex justify-between items-center mb-4">
                 <span className="text-lg">Total:</span>
                 <span className="text-2xl text-primary">${calcularTotal().toLocaleString('es-CO')}</span>
@@ -455,6 +477,15 @@ export function TiendaCliente() {
               </div>
             </div>
           </div>
+
+          <FormField
+            label="Fecha de entrega deseada"
+            name="fechaEntrega"
+            type="date"
+            value={datosEntrega.fechaEntrega}
+            onChange={(value) => setDatosEntrega({ ...datosEntrega, fechaEntrega: String(value) })}
+            required
+          />
 
           <FormField
             label="Direccion de entrega"
