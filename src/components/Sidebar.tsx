@@ -40,7 +40,6 @@ interface MenuItem {
   path?: string;
   module?: string;
   subItems?: SubMenuItem[];
-  roles?: string[];  // Roles que pueden ver este item
 }
 
 const menuItems: MenuItem[] = [
@@ -49,20 +48,17 @@ const menuItems: MenuItem[] = [
     icon: <Home className="w-5 h-5" />,
     path: '/',
     module: 'dashboard',
-    roles: ['Administrador', 'Asesor', 'Productor', 'Repartidor']
   },
   {
     name: 'Dashboard',
     icon: <BarChart3 className="w-5 h-5" />,
     path: '/dashboard',
     module: 'dashboard',
-    roles: ['Administrador', 'Asesor', 'Productor', 'Repartidor']
   },
   {
     name: 'Usuarios',
     icon: <Users className="w-5 h-5" />,
     module: 'usuarios',
-    roles: ['Administrador'],
     subItems: [
       { name: 'Gestión de Usuarios', icon: <Users className="w-4 h-4" />, path: '/usuarios/usuarios', module: 'usuarios' }
     ]
@@ -71,7 +67,6 @@ const menuItems: MenuItem[] = [
     name: 'Compras',
     icon: <ShoppingCart className="w-5 h-5" />,
     module: 'compras',
-    roles: ['Administrador', 'Asesor', 'Productor'],
     subItems: [
       { name: 'Proveedores', icon: <Building2 className="w-4 h-4" />, path: '/compras/proveedores', module: 'compras' },
       { name: 'Compras', icon: <ShoppingCart className="w-4 h-4" />, path: '/compras/compras', module: 'compras' },
@@ -83,7 +78,6 @@ const menuItems: MenuItem[] = [
     name: 'Producción',
     icon: <Factory className="w-5 h-5" />,
     module: 'produccion',
-    roles: ['Administrador', 'Productor'],
     subItems: [
       { name: 'Entrega de Insumos', icon: <Truck className="w-4 h-4" />, path: '/produccion/insumos', module: 'produccion' },
       { name: 'Producción', icon: <Boxes className="w-4 h-4" />, path: '/produccion/produccion', module: 'produccion' }
@@ -93,7 +87,6 @@ const menuItems: MenuItem[] = [
     name: 'Ventas',
     icon: <ShoppingBag className="w-5 h-5" />,
     module: 'ventas',
-    roles: ['Administrador', 'Asesor', 'Repartidor'],
     subItems: [
       { name: 'Clientes', icon: <UserCircle className="w-4 h-4" />, path: '/ventas/clientes', module: 'ventas' },
       { name: 'Ventas', icon: <Receipt className="w-4 h-4" />, path: '/ventas/ventas', module: 'ventas' },
@@ -107,42 +100,29 @@ const menuItems: MenuItem[] = [
     name: 'Tienda',
     icon: <Store className="w-5 h-5" />,
     path: '/cliente/tienda',
-    module: 'cliente',
-    roles: ['Cliente']
+    module: 'cliente/tienda',
   },
   {
     name: 'Mis Pedidos',
     icon: <ClipboardList className="w-5 h-5" />,
     path: '/cliente/pedidos',
-    module: 'cliente',
-    roles: ['Cliente']
+    module: 'cliente/pedidos',
   },
   {
     name: 'Mi Perfil',
     icon: <User className="w-5 h-5" />,
     path: '/cliente/perfil',
-    module: 'cliente',
-    roles: ['Cliente']
+    module: 'cliente/perfil',
   }
 ];
 
-// Item de configuración que aparecerá en la parte inferior (solo para Administrador)
 const configurationItem: MenuItem = {
   name: 'Configuración',
   icon: <Settings className="w-5 h-5" />,
   module: 'configuracion',
-  roles: ['Administrador'],
   subItems: [
     { name: 'Gestión de Roles', icon: <Shield className="w-4 h-4" />, path: '/configuracion/roles', module: 'configuracion' }
   ]
-};
-
-// Item de configuración simple para otros roles
-const simpleConfigurationItem: MenuItem = {
-  name: 'Configuración',
-  icon: <Settings className="w-5 h-5" />,
-  module: 'settings',
-  roles: ['Asesor', 'Productor', 'Repartidor', 'Cliente']
 };
 
 interface SidebarProps {
@@ -353,88 +333,73 @@ export function Sidebar({ currentPath, onNavigate }: SidebarProps) {
         ))}
       </nav>
 
-      {/* Configuration at bottom - Para Administrador con submenú */}
-      {user && hasPermission(configurationItem.module!) && (
-        <div className="p-2 border-t border-sidebar-border">
-          <div className="mb-1">
-            <button
-              onClick={() => toggleItem(configurationItem.name)}
-              className={`w-full flex items-center px-3 py-2 hover:bg-sidebar-accent rounded-lg transition-colors group ${
-                isCollapsed ? 'justify-center' : 'justify-start gap-3'
-              }`}
-              title={isCollapsed ? configurationItem.name : ''}
-            >
-              <span className="text-sidebar-foreground w-5 h-5 flex items-center justify-center shrink-0">{configurationItem.icon}</span>
-              {!isCollapsed && (
-                <>
-                  <span className="flex-1 text-left text-sidebar-foreground">{configurationItem.name}</span>
+      {user && hasPermission('configuracion') && (
+        <div className="p-2 border-t border-sidebar-border" ref={configDropdownRef}>
+          <button
+            onClick={() => {
+              if (configurationItem.subItems && configurationItem.subItems.length > 0) {
+                toggleItem(configurationItem.name);
+                setIsConfigDropdownOpen(false);
+                return;
+              }
+
+              setIsConfigDropdownOpen((current) => !current);
+            }}
+            className={`w-full flex items-center px-3 py-2 hover:bg-sidebar-accent rounded-lg transition-colors group ${
+              isCollapsed ? 'justify-center' : 'justify-start gap-3'
+            }`}
+            title={isCollapsed ? configurationItem.name : ''}
+          >
+            <span className="text-sidebar-foreground w-5 h-5 flex items-center justify-center shrink-0">{configurationItem.icon}</span>
+            {!isCollapsed && (
+              <>
+                <span className="flex-1 text-left text-sidebar-foreground">{configurationItem.name}</span>
+                {configurationItem.subItems ? (
                   <ChevronDown
                     className={`w-4 h-4 transition-transform text-sidebar-foreground ${
                       expandedItems.includes(configurationItem.name) ? 'rotate-180' : ''
                     }`}
                   />
-                </>
-              )}
-            </button>
-            {expandedItems.includes(configurationItem.name) && !isCollapsed && configurationItem.subItems && (
-              <div className="ml-4 mt-1 space-y-1">
-                {configurationItem.subItems.map((subItem) => (
-                  <button
-                    key={subItem.path}
-                    onClick={() => onNavigate(subItem.path)}
-                    className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${
-                      currentPath === subItem.path
-                        ? 'bg-sidebar-primary text-sidebar-primary-foreground'
-                        : 'hover:bg-sidebar-accent text-sidebar-foreground'
-                    }`}
-                  >
-                    {subItem.icon}
-                    <span>{subItem.name}</span>
-                  </button>
-                ))}
-              </div>
+                ) : null}
+              </>
             )}
-          </div>
-        </div>
-      )}
+          </button>
 
-      {/* Configuration at bottom - Para otros roles (simple) */}
-      {user && user.rol !== 'Administrador' && hasPermission('configuracion') && (
-        <div className="p-2 border-t border-sidebar-border">
-          <div className="mb-1" ref={configDropdownRef}>
-            <div className="relative">
-              <button
-                onClick={() => setIsConfigDropdownOpen(!isConfigDropdownOpen)}
-                className={`w-full flex items-center px-3 py-2 hover:bg-sidebar-accent rounded-lg transition-colors group ${
-                  isCollapsed ? 'justify-center' : 'justify-start gap-3'
-                }`}
-                title={isCollapsed ? simpleConfigurationItem.name : ''}
-              >
-                <span className="text-sidebar-foreground w-5 h-5 flex items-center justify-center shrink-0">{simpleConfigurationItem.icon}</span>
-                {!isCollapsed && (
-                  <span className="flex-1 text-left text-sidebar-foreground">{simpleConfigurationItem.name}</span>
-                )}
-              </button>
-
-              {/* Dropdown de Configuración */}
-              {isConfigDropdownOpen && !isCollapsed && (
-                <div className="absolute bottom-full left-0 right-0 mb-2 bg-sidebar border border-sidebar-border rounded-lg shadow-lg z-50 animate-in fade-in slide-in-from-bottom-2 duration-200">
-                  <div className="p-2">
-                    <button
-                      onClick={() => {
-                        setIsConfigDropdownOpen(false);
-                        setIsChangePasswordOpen(true);
-                      }}
-                      className="w-full flex items-center gap-3 px-3 py-2 hover:bg-sidebar-accent rounded-lg transition-colors text-left"
-                    >
-                      <KeyRound className="w-4 h-4 text-sidebar-foreground" />
-                      <span className="text-sm text-sidebar-foreground">Restablecer contraseña</span>
-                    </button>
-                  </div>
-                </div>
-              )}
+          {configurationItem.subItems && expandedItems.includes(configurationItem.name) && !isCollapsed && (
+            <div className="ml-4 mt-1 space-y-1">
+              {configurationItem.subItems.map((subItem) => (
+                <button
+                  key={subItem.path}
+                  onClick={() => onNavigate(subItem.path)}
+                  className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${
+                    currentPath === subItem.path
+                      ? 'bg-sidebar-primary text-sidebar-primary-foreground'
+                      : 'hover:bg-sidebar-accent text-sidebar-foreground'
+                  }`}
+                >
+                  {subItem.icon}
+                  <span>{subItem.name}</span>
+                </button>
+              ))}
             </div>
-          </div>
+          )}
+
+          {isConfigDropdownOpen && !isCollapsed && (
+            <div className="mt-2 bg-sidebar border border-sidebar-border rounded-lg shadow-lg z-50 animate-in fade-in slide-in-from-bottom-2 duration-200">
+              <div className="p-2">
+                <button
+                  onClick={() => {
+                    setIsConfigDropdownOpen(false);
+                    setIsChangePasswordOpen(true);
+                  }}
+                  className="w-full flex items-center gap-3 px-3 py-2 hover:bg-sidebar-accent rounded-lg transition-colors text-left"
+                >
+                  <KeyRound className="w-4 h-4 text-sidebar-foreground" />
+                  <span className="text-sm text-sidebar-foreground">Restablecer contraseña</span>
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

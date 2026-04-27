@@ -9,6 +9,7 @@ export interface User {
   nombre: string;
   apellido: string;
   rol: UserRole;
+  cliente_id?: number | null;
   permisos?: string[];
   foto?: string;
 }
@@ -29,57 +30,6 @@ export interface AuthLoginResult {
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
-
-// Definición de permisos por rol
-const rolePermissions: Record<UserRole, {
-  modules: string[];
-  actions: Record<string, string[]>;
-}> = {
-  Administrador: {
-    modules: ['dashboard', 'usuarios', 'compras', 'produccion', 'ventas', 'configuracion'],
-    actions: {
-      '*': ['view', 'create', 'edit', 'delete', 'pdf', 'cancel']
-    }
-  },
-  Asesor: {
-    modules: ['dashboard', 'ventas', 'compras'],
-    actions: {
-      'ventas': ['view', 'create', 'edit', 'pdf'],
-      'ventas/clientes': ['view', 'create', 'edit'],
-      'ventas/ventas': ['view', 'create', 'pdf'],
-      'ventas/pedidos': ['view', 'create', 'edit', 'pdf'],
-      'ventas/abonos': ['view', 'create', 'pdf'],
-      'ventas/domicilios': ['view'],
-      'compras/productos': ['view']
-    }
-  },
-  Productor: {
-    modules: ['dashboard', 'produccion', 'compras'],
-    actions: {
-      'produccion': ['view', 'create', 'edit', 'pdf'],
-      'produccion/insumos': ['view', 'create', 'edit'],
-      'produccion/produccion': ['view', 'create', 'edit', 'pdf'],
-      'compras/productos': ['view'],
-      'compras/compras': ['view']
-    }
-  },
-  Repartidor: {
-    modules: ['dashboard', 'ventas'],
-    actions: {
-      'ventas/domicilios': ['view', 'edit'],
-      'ventas/pedidos': ['view']
-    }
-  },
-  Cliente: {
-    modules: ['cliente'],
-    actions: {
-      'cliente': ['view', 'create', 'edit'],
-      'cliente/tienda': ['view'],
-      'cliente/pedidos': ['view', 'create'],
-      'cliente/perfil': ['view', 'edit']
-    }
-  }
-};
 
 const normalizePermissions = (permissions: unknown): string[] => {
   if (typeof permissions === 'string') {
@@ -137,6 +87,7 @@ const permissionAccessMap: Record<string, { modules: string[]; actions: Record<s
   'Crear Pedidos': { modules: ['ventas'], actions: { ventas: ['create'] } },
   'Ver Domicilios': { modules: ['ventas'], actions: { ventas: ['view'] } },
   'Gestionar Domicilios': { modules: ['ventas'], actions: { ventas: ['edit'] } },
+  'Ver Mis Pedidos': { modules: ['cliente'], actions: { 'cliente/pedidos': ['view'] } },
 };
 
 const permissionsToAccessMap = (permissions: string[]) => {
@@ -184,6 +135,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       nombre: result.nombre,
       apellido: result.apellido,
       rol: result.rol as UserRole,
+      cliente_id: typeof result.cliente_id === 'number' ? result.cliente_id : (Number.isFinite(Number(result.cliente_id)) ? Number(result.cliente_id) : null),
       permisos: normalizePermissions(result.permisos),
     };
   };
@@ -316,12 +268,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const hasPermission = (module: string, action: string = 'view'): boolean => {
     if (!user) return false;
 
-    const permissions = user.permisos?.length
-      ? permissionsToAccessMap(user.permisos)
-      : rolePermissions[user.rol];
-    
-    // Administrador tiene acceso total
-    if (user.rol === 'Administrador') return true;
+    const permissions = permissionsToAccessMap(user.permisos || []);
 
     // Verificar si tiene acceso al módulo base
     const moduleBase = module.split('/')[0];

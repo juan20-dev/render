@@ -6,6 +6,7 @@ import { Button } from '../../Button';
 import { Plus, Search, RotateCcw } from 'lucide-react';
 import { useAlertDialog } from '../../AlertDialog';
 import { abonos as abonosAPI, pedidos as pedidosAPI } from '../../../services/api';
+import { downloadPdfText } from '../../../utils/pdf';
 
 interface Abono {
   id: string;
@@ -421,7 +422,7 @@ Fecha Impresión:    ${new Date().toLocaleString('es-CO')}
         title="Registrar Abono"
         size="lg"
       >
-        <Form onSubmit={handleSubmit}>
+        <Form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <FormField
               label="Pedido ID"
@@ -432,7 +433,7 @@ Fecha Impresión:    ${new Date().toLocaleString('es-CO')}
               placeholder="ID del pedido"
               required
             />
-            
+
             <FormField
               label="Cliente ID"
               name="cliente_id"
@@ -442,7 +443,7 @@ Fecha Impresión:    ${new Date().toLocaleString('es-CO')}
               placeholder="ID del cliente"
               required
             />
-            
+
             <FormField
               label="Monto del Abono"
               name="monto"
@@ -452,7 +453,7 @@ Fecha Impresión:    ${new Date().toLocaleString('es-CO')}
               placeholder="0"
               required
             />
-            
+
             <FormField
               label="Método de Pago"
               name="metodo_pago"
@@ -468,7 +469,7 @@ Fecha Impresión:    ${new Date().toLocaleString('es-CO')}
               ]}
               required
             />
-            
+
             <div className="col-span-2">
               <FormField
                 label="Fecha"
@@ -498,9 +499,22 @@ Fecha Impresión:    ${new Date().toLocaleString('es-CO')}
         title="Comprobante de Abono"
         size="lg"
       >
-        <pre className="whitespace-pre-wrap">
-          {pdfContent}
-        </pre>
+        <div className="space-y-4">
+          <pre className="whitespace-pre-wrap text-sm">
+            {pdfContent}
+          </pre>
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={() => downloadPdfText(pdfContent, `abono-${selectedAbono?.numero_abono || selectedAbono?.id || 'abono'}.pdf`)}
+            >
+              Descargar PDF
+            </Button>
+            <Button variant="outline" onClick={() => setIsPdfModalOpen(false)}>
+              Cerrar
+            </Button>
+          </div>
+        </div>
       </Modal>
     </div>
   );

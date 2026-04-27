@@ -117,9 +117,19 @@ function AppContent() {
       return;
     }
 
-    const defaultPath = user.rol === 'Cliente' ? '/cliente/pedidos' : '/';
+    const preferredPaths = [
+      '/cliente/pedidos',
+      '/dashboard',
+      '/usuarios/usuarios',
+      '/compras/compras',
+      '/produccion/produccion',
+      '/ventas/ventas',
+      '/home',
+    ];
+
+    const defaultPath = preferredPaths.find((path) => hasPermission(path.substring(1))) || '/';
     setCurrentPath(defaultPath);
-  }, [user?.id, user?.rol]);
+  }, [user?.id, user?.permisos, hasPermission]);
 
   React.useEffect(() => {
     const unsubscribe = subscribeApiLoading((loading) => {
@@ -203,7 +213,15 @@ function AppContent() {
     );
   }
 
-  const CurrentPage = pageComponents[currentPath] || (user.rol === 'Cliente' ? MisPedidosPage : HomePage);
+  const fallbackPath = [
+    '/cliente/pedidos',
+    '/dashboard',
+    '/usuarios/usuarios',
+    '/compras/compras',
+    '/produccion/produccion',
+    '/ventas/ventas',
+  ].find((path) => hasPermission(path.substring(1))) || '/';
+  const CurrentPage = pageComponents[currentPath] || pageComponents[fallbackPath] || HomePage;
   const pageTitle = pageTitles[currentPath] || 'Grandma\'s Liqueurs';
 
   return (

@@ -6,6 +6,7 @@ import { Form, FormField, FormActions } from '../../Form';
 import { Plus, Eye, Trash2, Minus, DollarSign, Search, RotateCcw } from 'lucide-react';
 import { useAlertDialog } from '../../AlertDialog';
 import { pedidos as pedidosAPI, clientes as clientesAPI, productos as productosAPI } from '../../../services/api';
+import { downloadPdfText } from '../../../utils/pdf';
 
 interface Pedido {
   id: string;
@@ -1065,7 +1066,13 @@ Fecha Impresión:    ${new Date().toLocaleString('es-CO')}
           <pre className="p-4 bg-accent rounded-lg text-sm">
             {pdfContent}
           </pre>
-          <div className="flex justify-end">
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={() => downloadPdfText(pdfContent, `pedido-${selectedPedido?.numero_pedido || selectedPedido?.id || 'pedido'}.pdf`)}
+            >
+              Descargar PDF
+            </Button>
             <Button 
               variant="outline" 
               onClick={() => setIsPdfModalOpen(false)}

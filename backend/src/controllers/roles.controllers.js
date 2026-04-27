@@ -38,6 +38,21 @@ module.exports = {
       });
     }
   },
+  updatePermissions: async (req, res) => {
+    try {
+      await models.Roles.updatePermissions(req.params.id, req.body?.permisos, {
+        usuarioId: req.user?.id || null,
+        reason: req.body?.motivo,
+      });
+      res.json({ success: true, message: 'Permisos actualizados exitosamente' });
+    } catch (error) {
+      res.status(error.statusCode || 500).json({
+        success: false,
+        message: error.message,
+        details: error.details,
+      });
+    }
+  },
   delete: async (req, res) => {
     try {
       await models.Roles.delete(req.params.id, {

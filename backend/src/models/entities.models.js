@@ -1021,6 +1021,26 @@ const Pedidos = {
 
 // ------- VENTAS -------
 const Ventas = {
+  validateClienteActivo: async (clienteId) => {
+    if (clienteId === null || clienteId === undefined) {
+      return null;
+    }
+
+    const cliente = await Clientes.getById(clienteId);
+    if (!cliente) {
+      const error = new Error('Cliente no encontrado');
+      error.statusCode = 404;
+      throw error;
+    }
+
+    if (String(cliente.estado || '').toLowerCase() !== 'activo') {
+      const error = new Error('No se puede crear o actualizar una venta con un cliente inactivo');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    return cliente;
+  },
   getAll: async () => {
     const result = await pool.query(`
       SELECT v.*, 
@@ -1084,6 +1104,8 @@ const Ventas = {
     return result.rows;
   },
   create: async (data) => {
+    await Ventas.validateClienteActivo(data.cliente_id);
+
     const result = await pool.query(
       'INSERT INTO ventas (numero_venta, tipo, cliente_id, pedido_id, fecha, metodopago, total, estado) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id',
       [data.numero_venta, data.tipo, data.cliente_id, data.pedido_id, data.fecha, data.metodopago, data.total, data.estado || 'Completada']
@@ -1099,9 +1121,25 @@ const Ventas = {
     return true;
   },
   update: async (id, data) => {
+    const current = await Ventas.getById(id);
+    if (!current) {
+      const error = new Error('Venta no encontrada');
+      error.statusCode = 404;
+      throw error;
+    }
+
+    if (data.cliente_id !== undefined) {
+      await Ventas.validateClienteActivo(data.cliente_id);
+    }
+
+    const mergedData = {
+      ...current,
+      ...data,
+    };
+
     await pool.query(
       'UPDATE ventas SET numero_venta = $1, tipo = $2, cliente_id = $3, pedido_id = $4, fecha = $5, metodopago = $6, total = $7, estado = $8 WHERE id = $9',
-      [data.numero_venta, data.tipo, data.cliente_id, data.pedido_id, data.fecha, data.metodopago, data.total, data.estado, id]
+      [mergedData.numero_venta, mergedData.tipo, mergedData.cliente_id, mergedData.pedido_id, mergedData.fecha, mergedData.metodopago, mergedData.total, mergedData.estado, id]
     );
     return true;
   },
@@ -2357,6 +2395,8 @@ const getRoleChanges = (before, after) => {
 };
 
 const CRITICAL_PERMISSION_MODULES = ['Configuración', 'Usuarios', 'Ventas'];
+const CLIENT_ROLE_NAME = 'cliente';
+const CLIENT_ALLOWED_PERMISSIONS = ['Ver Mis Pedidos'];
 
 const PERMISSION_MODULE_MAP = {
   'Ver Roles': 'Configuración',
@@ -2390,8 +2430,29 @@ const normalizePermissions = (permissions) => {
   return [...new Set(normalized)];
 };
 
-const validatePermissionsPayload = ({ currentPermissions = [], nextPermissions }) => {
+const isClientRoleName = (roleName) =>
+  typeof roleName === 'string' && roleName.trim().toLowerCase() === CLIENT_ROLE_NAME;
+
+const validatePermissionsPayload = ({ currentPermissions = [], nextPermissions, roleName }) => {
   if (!Array.isArray(nextPermissions)) return null;
+
+  if (isClientRoleName(roleName)) {
+    const hasOnlyAllowedPermissions =
+      nextPermissions.length === CLIENT_ALLOWED_PERMISSIONS.length &&
+      nextPermissions.every((permission) => CLIENT_ALLOWED_PERMISSIONS.includes(permission));
+
+    if (!hasOnlyAllowedPermissions) {
+      const error = new Error('El rol Cliente solo puede tener el permiso "Ver Mis Pedidos"');
+      error.statusCode = 400;
+      error.details = {
+        reason: 'cliente_permissions_only',
+        allowed: CLIENT_ALLOWED_PERMISSIONS,
+      };
+      return error;
+    }
+
+    return null;
+  }
 
   if (nextPermissions.length === 0) {
     const error = new Error('Cada rol debe mantener al menos un permiso asignado');
@@ -2451,10 +2512,15 @@ const Roles = {
     return result.rows[0];
   },
   create: async (data, options = {}) => {
-    const permisosNormalizados = normalizePermissions(data.permisos || []);
+    let permisosNormalizados = normalizePermissions(data.permisos || []);
+    if (isClientRoleName(data.nombre)) {
+      permisosNormalizados = [...CLIENT_ALLOWED_PERMISSIONS];
+    }
+
     const permissionsError = validatePermissionsPayload({
       currentPermissions: [],
       nextPermissions: permisosNormalizados,
+      roleName: data.nombre,
     });
 
     if (permissionsError) throw permissionsError;
@@ -2480,15 +2546,31 @@ const Roles = {
   },
   update: async (id, data, options = {}) => {
     const currentRole = await Roles.getById(id);
+    const targetRoleName = data.nombre ?? currentRole?.nombre;
 
     let nextPermissions = data.permisos;
     if (Array.isArray(data.permisos)) {
       const currentPermissions = normalizePermissions(currentRole?.permisos || []);
       nextPermissions = normalizePermissions(data.permisos);
 
+      if (isClientRoleName(targetRoleName)) {
+        nextPermissions = [...CLIENT_ALLOWED_PERMISSIONS];
+      }
+
       const permissionsError = validatePermissionsPayload({
         currentPermissions,
         nextPermissions,
+        roleName: targetRoleName,
+      });
+
+      if (permissionsError) throw permissionsError;
+    } else if (isClientRoleName(targetRoleName)) {
+      nextPermissions = [...CLIENT_ALLOWED_PERMISSIONS];
+
+      const permissionsError = validatePermissionsPayload({
+        currentPermissions: normalizePermissions(currentRole?.permisos || []),
+        nextPermissions,
+        roleName: targetRoleName,
       });
 
       if (permissionsError) throw permissionsError;
@@ -2532,6 +2614,52 @@ const Roles = {
         after: toRoleSnapshot(updatedRole),
         changedFields,
         reason: typeof data.motivo === 'string' && data.motivo.trim() ? data.motivo.trim() : null,
+      },
+    });
+
+    return true;
+  },
+  updatePermissions: async (id, permisos, options = {}) => {
+    const currentRole = await Roles.getById(id);
+    if (!currentRole) {
+      const error = new Error('Rol no encontrado');
+      error.statusCode = 404;
+      throw error;
+    }
+
+    const currentPermissions = normalizePermissions(currentRole.permisos || []);
+    let nextPermissions = normalizePermissions(permisos || []);
+    if (isClientRoleName(currentRole.nombre)) {
+      nextPermissions = [...CLIENT_ALLOWED_PERMISSIONS];
+    }
+    const permissionsError = validatePermissionsPayload({
+      currentPermissions,
+      nextPermissions,
+      roleName: currentRole.nombre,
+    });
+
+    if (permissionsError) throw permissionsError;
+
+    await pool.query(
+      `UPDATE roles
+       SET permisos = $1,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $2`,
+      [nextPermissions, id]
+    );
+
+    const updatedRole = await Roles.getById(id);
+    const changedFields = getRoleChanges(toRoleSnapshot(currentRole), toRoleSnapshot(updatedRole));
+
+    await registerRoleAudit({
+      rolId: Number(id),
+      accion: 'UPDATE',
+      usuarioId: options.usuarioId ?? null,
+      cambios: {
+        before: toRoleSnapshot(currentRole),
+        after: toRoleSnapshot(updatedRole),
+        changedFields,
+        reason: typeof options.reason === 'string' && options.reason.trim() ? options.reason.trim() : null,
       },
     });
 

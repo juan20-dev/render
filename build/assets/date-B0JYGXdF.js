@@ -1,0 +1,1 @@
+const n=r=>{if(r==null||r==="")return"";const t=String(r).trim();if(!t)return"";if(/^\d{2}\/\d{2}\/\d{4}$/.test(t))return t;const e=t.match(/^(\d{4})-(\d{2})-(\d{2})/);if(e)return`${e[3]}/${e[2]}/${e[1]}`;const i=new Date(t);return Number.isNaN(i.getTime())?t:new Intl.DateTimeFormat("es-CO",{day:"2-digit",month:"2-digit",year:"numeric"}).format(i)};export{n as f};

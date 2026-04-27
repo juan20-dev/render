@@ -96,6 +96,55 @@ const todosLosPermisos = [
 ];
 
 const MODULOS_CRITICOS = new Set(['Configuración', 'Usuarios', 'Ventas']);
+const CLIENTE_ROL_NOMBRE = 'cliente';
+const CLIENTE_PERMISO_UNICO = 'Ver Mis Pedidos';
+const PERMISOS_CRITICOS = new Set([
+  'Ver Dashboard',
+  'Ver Usuarios',
+  'Crear Usuarios',
+  'Editar Usuarios',
+  'Eliminar Usuarios',
+  'Ver Roles',
+  'Asignar Permisos',
+  'Ver Proveedores',
+  'Crear Proveedores',
+  'Editar Proveedores',
+  'Ver Compras',
+  'Registrar Compras',
+  'Anular Compras',
+  'Ver Productos',
+  'Crear Productos',
+  'Editar Productos',
+  'Ver Categorías',
+  'Crear Categorías',
+  'Ver Insumos',
+  'Entregar Insumos',
+  'Ver Producción',
+  'Registrar Producción',
+  'Ver Clientes',
+  'Crear Clientes',
+  'Editar Clientes',
+  'Ver Ventas',
+  'Registrar Ventas',
+  'Anular Ventas',
+  'Ver Abonos',
+  'Registrar Abonos',
+  'Ver Pedidos',
+  'Crear Pedidos',
+  'Ver Domicilios',
+  'Gestionar Domicilios',
+]);
+
+const isClienteRoleName = (roleName?: string) =>
+  typeof roleName === 'string' && roleName.trim().toLowerCase() === CLIENTE_ROL_NOMBRE;
+
+const sanitizePermissionsByRoleName = (roleName: string | undefined, permissions: string[]) => {
+  if (isClienteRoleName(roleName)) {
+    return [CLIENTE_PERMISO_UNICO];
+  }
+
+  return permissions;
+};
 
 export function Roles() {
   const [roles, setRoles] = useState<Role[]>([]);
@@ -252,15 +301,17 @@ export function Roles() {
     !editNameValidation;
   const createCanSubmit = createStepOneValid && createPermissions.length > 0;
   const editCanSubmit = editFormValid && editPermissions.length > 0;
+  const isCreatingClienteRole = isClienteRoleName(createFormData.nombre);
+  const isEditingClienteRole = isClienteRoleName(formData.nombre);
+  const isManagingClienteRole = isClienteRoleName(selectedRole?.nombre);
 
   const shouldConfirmCriticalPermission = (permiso: string) => {
-    const modulo = moduloPorPermiso.get(permiso);
-    return Boolean(modulo && MODULOS_CRITICOS.has(modulo));
+    return PERMISOS_CRITICOS.has(permiso);
   };
 
   const getCriticalPermissionMessage = (permiso: string, action: 'agregar' | 'quitar') => {
-    const modulo = moduloPorPermiso.get(permiso) || 'Critico';
-    return `Vas a ${action} el permiso "${permiso}" del modulo critico ${modulo}. ¿Deseas continuar?`;
+    const modulo = moduloPorPermiso.get(permiso) || 'General';
+    return `Vas a ${action} el permiso "${permiso}" del modulo ${modulo}. ¿Deseas continuar?`;
   };
 
   const validateDeleteReason = (reason: string) => {
@@ -285,6 +336,8 @@ export function Roles() {
   };
 
   const toggleCreatePermission = (permiso: string) => {
+    if (isCreatingClienteRole && permiso !== CLIENTE_PERMISO_UNICO) return;
+
     const isSelected = createPermissions.includes(permiso);
 
     if (isSelected) {
@@ -323,6 +376,8 @@ export function Roles() {
   };
 
   const toggleEditPermission = (permiso: string) => {
+    if (isEditingClienteRole && permiso !== CLIENTE_PERMISO_UNICO) return;
+
     const isSelected = editPermissions.includes(permiso);
 
     if (isSelected) {
@@ -522,7 +577,8 @@ export function Roles() {
       return;
     }
 
-    const permissionsValidationError = validatePermissionsCount(createPermissions);
+    const createPermissionsToSave = sanitizePermissionsByRoleName(createFormData.nombre, createPermissions);
+    const permissionsValidationError = validatePermissionsCount(createPermissionsToSave);
     if (permissionsValidationError) {
       showAlert({
         title: 'Permisos requeridos',
@@ -538,7 +594,7 @@ export function Roles() {
       const newRole = {
         nombre: nombreNormalizado,
         descripcion: createFormData.descripcion,
-        permisos: createPermissions,
+        permisos: createPermissionsToSave,
         estado: createFormData.estado
       };
       await rolesAPI.create(newRole);
@@ -586,10 +642,12 @@ export function Roles() {
       }
 
       const permissionsValidationError = validatePermissionsCount(editPermissions);
-      if (permissionsValidationError) {
+      const editPermissionsToSave = sanitizePermissionsByRoleName(formData.nombre, editPermissions);
+      const normalizedPermissionsValidationError = validatePermissionsCount(editPermissionsToSave);
+      if (permissionsValidationError || normalizedPermissionsValidationError) {
         showAlert({
           title: 'Permisos requeridos',
-          description: permissionsValidationError,
+          description: permissionsValidationError || normalizedPermissionsValidationError,
           type: 'warning',
           confirmText: 'Entendido',
           onConfirm: () => {}
@@ -602,7 +660,7 @@ export function Roles() {
           nombre: nombreNormalizado,
           descripcion: formData.descripcion,
           estado: formData.estado,
-          permisos: editPermissions,
+          permisos: editPermissionsToSave,
         });
         await loadRoles();
         setIsEditModalOpen(false);
@@ -644,7 +702,7 @@ export function Roles() {
 
     setSelectedRole(role);
     setFormData({ nombre: role.nombre, descripcion: role.descripcion, estado: role.estado || 'Activo' });
-    setEditPermissions(Array.isArray(role.permisos) ? role.permisos : []);
+    setEditPermissions(sanitizePermissionsByRoleName(role.nombre, Array.isArray(role.permisos) ? role.permisos : []));
     setEditNameError('');
     setEditModuleFilter('Todos');
     loadRoleAudit(role.id);
@@ -715,13 +773,15 @@ export function Roles() {
 
   const handleManagePermissions = (role: Role) => {
     setSelectedRole(role);
-    setSelectedPermissions(role.permisos);
+    setSelectedPermissions(sanitizePermissionsByRoleName(role.nombre, Array.isArray(role.permisos) ? role.permisos : []));
     setManageModuleFilter('Todos');
     loadRoleAudit(role.id);
     setIsPermissionsModalOpen(true);
   };
 
   const togglePermission = (permiso: string) => {
+    if (isManagingClienteRole && permiso !== CLIENTE_PERMISO_UNICO) return;
+
     const isSelected = selectedPermissions.includes(permiso);
 
     if (isSelected) {
@@ -761,7 +821,8 @@ export function Roles() {
 
   const handleSavePermissions = async () => {
     if (selectedRole) {
-      const permissionsValidationError = validatePermissionsCount(selectedPermissions);
+      const permissionsToSave = sanitizePermissionsByRoleName(selectedRole.nombre, selectedPermissions);
+      const permissionsValidationError = validatePermissionsCount(permissionsToSave);
       if (permissionsValidationError) {
         showAlert({
           title: 'Permisos requeridos',
@@ -774,7 +835,7 @@ export function Roles() {
       }
 
       try {
-        await rolesAPI.update(Number(selectedRole.id), { permisos: selectedPermissions });
+        await rolesAPI.updatePermissions(Number(selectedRole.id), { permisos: permissionsToSave });
         await loadRoles();
         setIsPermissionsModalOpen(false);
         showAlert({
@@ -827,9 +888,47 @@ export function Roles() {
       .filter((modulo) => moduleFilter === 'Todos' || modulo === moduleFilter)
       .map((modulo) => [modulo, permisosPorModulo[modulo]] as const);
 
-  const createModuleEntries = getFilteredModuleEntries(createModuleFilter);
-  const editModuleEntries = getFilteredModuleEntries(editModuleFilter);
-  const manageModuleEntries = getFilteredModuleEntries(manageModuleFilter);
+  const createModuleEntries = getFilteredModuleEntries(createModuleFilter)
+    .map(([modulo, permisos]) => [
+      modulo,
+      isCreatingClienteRole ? permisos.filter((permiso) => permiso === CLIENTE_PERMISO_UNICO) : permisos,
+    ] as const)
+    .filter(([, permisos]) => permisos.length > 0);
+
+  const editModuleEntries = getFilteredModuleEntries(editModuleFilter)
+    .map(([modulo, permisos]) => [
+      modulo,
+      isEditingClienteRole ? permisos.filter((permiso) => permiso === CLIENTE_PERMISO_UNICO) : permisos,
+    ] as const)
+    .filter(([, permisos]) => permisos.length > 0);
+  const manageModuleEntries = getFilteredModuleEntries(manageModuleFilter)
+    .map(([modulo, permisos]) => [
+      modulo,
+      isManagingClienteRole ? permisos.filter((permiso) => permiso === CLIENTE_PERMISO_UNICO) : permisos,
+    ] as const)
+    .filter(([, permisos]) => permisos.length > 0);
+
+  const createAvailablePermissions = createModuleEntries.flatMap(([, permisos]) => permisos);
+  const editAvailablePermissions = editModuleEntries.flatMap(([, permisos]) => permisos);
+  const manageAvailablePermissions = manageModuleEntries.flatMap(([, permisos]) => permisos);
+
+  useEffect(() => {
+    if (isCreatingClienteRole) {
+      setCreatePermissions([CLIENTE_PERMISO_UNICO]);
+    }
+  }, [isCreatingClienteRole]);
+
+  useEffect(() => {
+    if (isEditingClienteRole) {
+      setEditPermissions([CLIENTE_PERMISO_UNICO]);
+    }
+  }, [isEditingClienteRole]);
+
+  useEffect(() => {
+    if (isManagingClienteRole) {
+      setSelectedPermissions([CLIENTE_PERMISO_UNICO]);
+    }
+  }, [isManagingClienteRole]);
 
   const roleFilterOptions = React.useMemo(() => {
     const uniqueRoles = Array.from(new Set(roles.map((role) => role.nombre))).sort((left, right) =>
@@ -1014,13 +1113,13 @@ export function Roles() {
           {createNameError ? <p className="text-sm text-destructive">{createNameError}</p> : null}
 
           <div className="flex items-center justify-between p-3 bg-muted rounded-lg">
-            <span>Permisos seleccionados: <strong>{createPermissions.length}</strong> de {todosLosPermisos.length}</span>
+            <span>Permisos seleccionados: <strong>{createPermissions.length}</strong> de {createAvailablePermissions.length}</span>
             <div className="flex gap-2">
               <Button
                 variant="outline"
                 size="sm"
                 type="button"
-                onClick={() => setCreatePermissions(todosLosPermisos.map((p) => p.permiso))}
+                onClick={() => setCreatePermissions([...createAvailablePermissions])}
               >
                 Seleccionar Todos
               </Button>
@@ -1028,7 +1127,8 @@ export function Roles() {
                 variant="outline"
                 size="sm"
                 type="button"
-                onClick={() => setCreatePermissions([])}
+                onClick={() => setCreatePermissions(isCreatingClienteRole ? [CLIENTE_PERMISO_UNICO] : [])}
+                disabled={isCreatingClienteRole}
               >
                 Quitar Todos
               </Button>
@@ -1277,13 +1377,13 @@ export function Roles() {
           {editNameError ? <p className="text-sm text-destructive">{editNameError}</p> : null}
 
           <div className="flex items-center justify-between p-3 bg-muted rounded-lg">
-            <span>Permisos seleccionados: <strong>{editPermissions.length}</strong> de {todosLosPermisos.length}</span>
+            <span>Permisos seleccionados: <strong>{editPermissions.length}</strong> de {editAvailablePermissions.length}</span>
             <div className="flex gap-2">
               <Button
                 variant="outline"
                 size="sm"
                 type="button"
-                onClick={() => setEditPermissions(todosLosPermisos.map((p) => p.permiso))}
+                onClick={() => setEditPermissions([...editAvailablePermissions])}
               >
                 Seleccionar Todos
               </Button>
@@ -1291,7 +1391,8 @@ export function Roles() {
                 variant="outline"
                 size="sm"
                 type="button"
-                onClick={() => setEditPermissions([])}
+                onClick={() => setEditPermissions(isEditingClienteRole ? [CLIENTE_PERMISO_UNICO] : [])}
+                disabled={isEditingClienteRole}
               >
                 Quitar Todos
               </Button>
@@ -1478,19 +1579,20 @@ export function Roles() {
           </div>
 
           <div className="flex items-center justify-between p-3 bg-muted rounded-lg">
-            <span>Permisos seleccionados: <strong>{selectedPermissions.length}</strong> de {todosLosPermisos.length}</span>
+            <span>Permisos seleccionados: <strong>{selectedPermissions.length}</strong> de {manageAvailablePermissions.length}</span>
             <div className="flex gap-2">
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => setSelectedPermissions(todosLosPermisos.map(p => p.permiso))}
+                onClick={() => setSelectedPermissions([...manageAvailablePermissions])}
               >
                 Seleccionar Todos
               </Button>
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => setSelectedPermissions([])}
+                onClick={() => setSelectedPermissions(isManagingClienteRole ? [CLIENTE_PERMISO_UNICO] : [])}
+                disabled={isManagingClienteRole}
               >
                 Quitar Todos
               </Button>

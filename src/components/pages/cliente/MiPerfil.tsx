@@ -50,6 +50,7 @@ export function MiPerfil() {
   });
 
   const { showAlert, AlertComponent } = useAlertDialog();
+  const roleLabel = user?.rol || 'Sin rol asignado';
 
   useEffect(() => {
     const loadPerfil = async () => {
@@ -60,7 +61,9 @@ export function MiPerfil() {
 
       try {
         setLoadingPerfil(true);
-        const clienteData = await clientesAPI.getByUsuarioId(user.id);
+        const clienteData = user.cliente_id
+          ? await clientesAPI.getByUsuarioId(user.id)
+          : null;
         const nextPerfil: PerfilCliente = {
           nombre: clienteData?.nombre || user.nombre || '',
           apellido: clienteData?.apellido || user.apellido || '',
@@ -221,7 +224,7 @@ export function MiPerfil() {
               <div className="flex-1 space-y-4">
                 <div>
                   <h3>{perfil.nombre} {perfil.apellido}</h3>
-                  <p className="text-muted-foreground">Cliente</p>
+                  <p className="text-muted-foreground">{roleLabel}</p>
                 </div>
 
                 <div className="grid grid-cols-2 gap-6">

@@ -6,6 +6,7 @@ import { Button } from '../../Button';
 import { Plus, Truck, FileText, Search, RotateCcw } from 'lucide-react';
 import { useAlertDialog } from '../../AlertDialog';
 import { entregas_insumos as entregasAPI } from '../../../services/api';
+import { downloadPdfText } from '../../../utils/pdf';
 
 interface EntregaInsumo {
   id: string;
@@ -13,17 +14,6 @@ interface EntregaInsumo {
   insumo: string;
   cantidad: number;
   unidad: string;
-  operario: string;
-  fecha: string;
-  hora: string;
-}
-
-interface EntregaInsumoForm {
-  numero_entrega: string;
-  insumo: string;
-  cantidad: number;
-  unidad: string;
-  operario: string;
   fecha: string;
   hora: string;
 }
@@ -471,10 +461,26 @@ Fecha Impresión:    ${new Date().toLocaleString('es-CO')}
         title="PDF de Entrega de Insumo"
         size="lg"
       >
-        <div className="p-4 bg-accent/50 rounded-lg">
-          <pre className="text-sm">
-            {pdfContent}
-          </pre>
+        <div className="space-y-4">
+          <div className="p-4 bg-accent/50 rounded-lg">
+            <pre className="text-sm text-muted-foreground">
+              {pdfContent}
+            </pre>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={() => downloadPdfText(pdfContent, `entrega-insumo-${selectedEntrega?.numero_entrega || selectedEntrega?.id || 'entrega'}.pdf`)}
+            >
+              Descargar PDF
+            </Button>
+            <Button 
+              variant="outline" 
+              onClick={() => setIsPdfModalOpen(false)}
+            >
+              Cerrar
+            </Button>
+          </div>
         </div>
       </Modal>
     </div>

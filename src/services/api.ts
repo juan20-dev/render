@@ -678,6 +678,8 @@ export const roles = {
     const merged = await mergeWithCurrent(`/api/roles/${id}`, data);
     return apiCall(`/api/roles/${id}`, 'PUT', merged);
   },
+  updatePermissions: (id: number, data: { permisos: string[]; motivo?: string }) =>
+    apiCall(`/api/roles/${id}/permisos`, 'PUT', data),
   delete: (id: number, data?: { motivo?: string }) => apiCall(`/api/roles/${id}`, 'DELETE', data),
 };
 

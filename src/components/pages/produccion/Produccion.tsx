@@ -6,6 +6,7 @@ import { Button } from '../../Button';
 import { Plus, FileText, Search, RotateCcw, X } from 'lucide-react';
 import { useAlertDialog } from '../../AlertDialog';
 import { produccion as produccionAPI, productos as productosAPI } from '../../../services/api';
+import { downloadPdfText } from '../../../utils/pdf';
 
 interface ProductionItem {
   producto_id: number;
@@ -1006,18 +1007,26 @@ Fecha Impresión:    ${new Date().toLocaleString('es-CO')}
         title="Orden de Producción"
         size="lg"
       >
-        <div className="p-4 bg-accent/50 rounded-lg">
-          <pre className="text-sm text-muted-foreground">
-            {pdfContent}
-          </pre>
-        </div>
-        <div className="flex justify-end mt-4">
-          <Button 
-            variant="outline" 
-            onClick={() => setIsPdfModalOpen(false)}
-          >
-            Cerrar
-          </Button>
+        <div className="space-y-4">
+          <div className="p-4 bg-accent/50 rounded-lg">
+            <pre className="text-sm text-muted-foreground">
+              {pdfContent}
+            </pre>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={() => downloadPdfText(pdfContent, `orden-produccion-${selectedOrden?.numero_produccion || selectedOrden?.id || 'produccion'}.pdf`)}
+            >
+              Descargar PDF
+            </Button>
+            <Button 
+              variant="outline" 
+              onClick={() => setIsPdfModalOpen(false)}
+            >
+              Cerrar
+            </Button>
+          </div>
         </div>
       </Modal>
     </div>

@@ -6,6 +6,7 @@ import { Button } from '../../Button';
 import { Plus, ShoppingBag, Trash2, Search, RotateCcw } from 'lucide-react';
 import { useAlertDialog } from '../../AlertDialog';
 import { ventas as ventasAPI, clientes as clientesAPI, productos as productosAPI } from '../../../services/api';
+import { downloadPdfText } from '../../../utils/pdf';
 
 interface VentaItem {
   producto: string;
@@ -48,6 +49,24 @@ interface StateChangeRequest {
   to: string;
 }
 
+const formatDateOnly = (value: string) => {
+  if (!value) return '';
+
+  if (/^\d{4}-\d{2}-\d{2}/.test(value)) {
+    return value.slice(0, 10);
+  }
+
+  const parsed = new Date(value);
+  if (!Number.isNaN(parsed.getTime())) {
+    const year = parsed.getFullYear();
+    const month = String(parsed.getMonth() + 1).padStart(2, '0');
+    const day = String(parsed.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  return value;
+};
+
 export function Ventas() {
   const [ventas, setVentas] = useState<Venta[]>([]);
   const [clientes, setClientes] = useState<Cliente[]>([]);
@@ -81,7 +100,10 @@ export function Ventas() {
   const loadClientes = async () => {
     try {
       const data = await clientesAPI.getAll();
-      setClientes(data);
+      const activos = Array.isArray(data)
+        ? data.filter((cliente: any) => String(cliente?.estado || 'Activo').toLowerCase() === 'activo')
+        : [];
+      setClientes(activos);
     } catch (error) {
       console.error('Error al cargar clientes:', error);
     }
@@ -131,7 +153,11 @@ export function Ventas() {
     { key: 'numero_venta', label: 'Número Venta' },
     { key: 'tipo', label: 'Tipo' },
     { key: 'cliente', label: 'Cliente' },
-    { key: 'fecha', label: 'Fecha' },
+    {
+      key: 'fecha',
+      label: 'Fecha',
+      render: (fecha: string) => formatDateOnly(fecha),
+    },
     { 
       key: 'items', 
       label: 'Items',
@@ -250,7 +276,7 @@ export function Ventas() {
 
 Número Venta:       ${venta.numero_venta}
 Cliente:            ${venta.cliente || 'N/A'}
-Fecha:              ${venta.fecha}
+Fecha:              ${formatDateOnly(venta.fecha)}
 Método de Pago:     ${venta.metodopago}
 Estado:             ${venta.estado}
 
@@ -299,6 +325,18 @@ Fecha Impresión:    ${new Date().toLocaleString('es-CO')}
   const handleSaveVenta = async () => {
     if (formData.cliente_id && formData.items.length > 0) {
       try {
+        const clienteSeleccionado = clientes.find((cliente) => cliente.id.toString() === formData.cliente_id);
+        if (!clienteSeleccionado) {
+          showAlert({
+            title: 'Cliente no disponible',
+            description: 'Solo puedes crear ventas con clientes activos.',
+            type: 'warning',
+            confirmText: 'Entendido',
+            onConfirm: () => {}
+          });
+          return;
+        }
+
         const newVenta = {
           numero_venta: `VEN-${Date.now()}`,
           tipo: formData.tipo,
@@ -515,7 +553,7 @@ Fecha Impresión:    ${new Date().toLocaleString('es-CO')}
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Fecha</p>
-                <p>{selectedVenta.fecha}</p>
+                <p>{formatDateOnly(selectedVenta.fecha)}</p>
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Método de Pago</p>
@@ -574,9 +612,22 @@ Fecha Impresión:    ${new Date().toLocaleString('es-CO')}
         title="Factura de Venta"
         size="lg"
       >
-        <pre className="p-4 bg-accent/50 rounded-lg text-sm">
-          {pdfContent}
-        </pre>
+        <div className="space-y-4">
+          <pre className="p-4 bg-accent/50 rounded-lg text-sm">
+            {pdfContent}
+          </pre>
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={() => downloadPdfText(pdfContent, `factura-venta-${selectedVenta?.numero_venta || 'venta'}.pdf`)}
+            >
+              Descargar PDF
+            </Button>
+            <Button variant="outline" onClick={() => setIsPdfModalOpen(false)}>
+              Cerrar
+            </Button>
+          </div>
+        </div>
       </Modal>
 
       <Modal

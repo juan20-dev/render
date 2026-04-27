@@ -7,6 +7,7 @@ import { Plus, Trash2, RotateCcw, Search, FileText } from 'lucide-react';
 import { useAlertDialog } from '../../AlertDialog';
 import { compras as comprasAPI, productos as productosAPI, proveedores as proveedoresAPI } from '../../../services/api';
 import { useAuth } from '../../AuthContext';
+import { downloadPdfText } from '../../../utils/pdf';
 
 interface CompraItem {
   productoId: number;
@@ -1099,9 +1100,22 @@ Fecha Impresión:    ${new Date().toLocaleString('es-CO')}
         title="Orden de Compra"
         size="xl"
       >
-        <pre className="whitespace-pre-wrap text-sm">
-          {pdfContent}
-        </pre>
+        <div className="space-y-4">
+          <pre className="whitespace-pre-wrap text-sm">
+            {pdfContent}
+          </pre>
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={() => downloadPdfText(pdfContent, `compra-${selectedCompra?.numero_compra || selectedCompra?.id || 'compra'}.pdf`)}
+            >
+              Descargar PDF
+            </Button>
+            <Button variant="outline" onClick={() => setIsPdfModalOpen(false)}>
+              Cerrar
+            </Button>
+          </div>
+        </div>
       </Modal>
     </div>
   );
