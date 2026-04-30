@@ -73,6 +73,8 @@ export function Pedidos() {
     cliente_id: 0,
     fecha: new Date().toISOString().split('T')[0],
     fecha_entrega: new Date().toISOString().split('T')[0],
+    metodo_pago: 'Efectivo',
+    esquema_abono: '100%'
   });
 
   useEffect(() => {
@@ -214,7 +216,7 @@ export function Pedidos() {
           ...newProductos[index],
           producto_id: String(producto.id),
           nombre: producto.nombre,
-          precio_unitario: Number(producto.precio) || 0,
+          precio_unitario: Number(producto.precio) || 0, // ← AUTO-CARGADO
           subtotal: (Number(producto.precio) || 0) * newProductos[index].cantidad
         };
       }
@@ -226,12 +228,9 @@ export function Pedidos() {
         subtotal: newProductos[index].precio_unitario * cantidad
       };
     } else if (field === 'precio_unitario') {
-      const precio = parseFloat(value) || 0;
-      newProductos[index] = {
-        ...newProductos[index],
-        precio_unitario: precio,
-        subtotal: precio * newProductos[index].cantidad
-      };
+      // ← IGNORADO: El precio se carga automáticamente desde el producto
+      // No permitir cambios manuales del precio
+      return;
     }
     
     setProductosEnPedido(newProductos);
@@ -269,7 +268,9 @@ export function Pedidos() {
         total: calcularTotal(),
         fecha: formData.fecha,
         fecha_entrega: formData.fecha_entrega,
-        estado: 'Pendiente' as const
+        estado: 'Pendiente' as const,
+        metodo_pago: formData.metodo_pago,
+        esquema_abono: formData.esquema_abono
       };
 
       const createResult: any = await pedidosAPI.create(newPedido);
@@ -481,6 +482,25 @@ export function Pedidos() {
     }
   };
 
+  const handleVerDetalles = async (pedido: Pedido) => {
+    setSelectedPedido(pedido);
+    setIsDetailModalOpen(true);
+    try {
+      const detalles = await pedidosAPI.getDetalles(Number(pedido.id));
+      const productos = Array.isArray(detalles) ? detalles.map((detalle: any) => ({
+        producto_id: String(detalle.producto_id),
+        nombre: detalle.producto_nombre || `Producto #${detalle.producto_id}`,
+        cantidad: Number(detalle.cantidad),
+        precio_unitario: Number(detalle.precio_unitario),
+        subtotal: Number(detalle.subtotal)
+      })) : [];
+      setProductosEnPedido(productos);
+    } catch (error) {
+      console.error('Error cargando detalles del pedido:', error);
+      setProductosEnPedido([]);
+    }
+  };
+
   const getPedidoAbonos = () => {
     return abonosDelPedido;
   };
@@ -611,10 +631,12 @@ Fecha Impresión:    ${new Date().toLocaleString('es-CO')}
         columns={columns}
         data={pedidosFiltrados}
         actions={[
-          commonActions.view((pedido) => {
-            setSelectedPedido(pedido);
-            setIsDetailModalOpen(true);
-          }),
+          {
+            label: 'Ver Detalles',
+            icon: <Eye className="w-4 h-4" />,
+            onClick: handleVerDetalles,
+            variant: 'outline'
+          },
           {
             label: 'Ver Abonos',
             icon: <DollarSign className="w-4 h-4" />,
@@ -712,6 +734,40 @@ Fecha Impresión:    ${new Date().toLocaleString('es-CO')}
               onChange={(value) => setFormData({ ...formData, fecha_entrega: value as string })}
               required
             />
+
+            <FormField
+              label="Método de Pago"
+              name="metodo_pago"
+              type="select"
+              value={formData.metodo_pago || 'Efectivo'}
+              onChange={(value) => setFormData({ ...formData, metodo_pago: value as string })}
+              options={[
+                { label: '💵 Efectivo', value: 'Efectivo' },
+                { label: '🏦 Transferencia', value: 'Transferencia' }
+              ]}
+              required
+            />
+
+            <FormField
+              label="Esquema de Abono"
+              name="esquema_abono"
+              type="select"
+              value={formData.esquema_abono || '100%'}
+              onChange={(value) => setFormData({ ...formData, esquema_abono: value as string })}
+              options={[
+                { label: '50% (Abono Inicial)', value: '50%' },
+                { label: '100% (Total)', value: '100%' }
+              ]}
+              required
+            />
+
+            {formData.esquema_abono === '50%' && (
+              <div className="p-3 bg-yellow-50 border border-yellow-300 rounded-lg">
+                <p className="text-sm text-yellow-700 font-semibold">
+                  💡 Abono requerido: {formatCurrency((calcularTotal() * 0.5))}
+                </p>
+              </div>
+            )}
           </div>
 
           <div className="space-y-3">
@@ -769,9 +825,9 @@ Fecha Impresión:    ${new Date().toLocaleString('es-CO')}
                           <input
                             type="number"
                             min="0"
-                            className="w-full px-3 py-1 border rounded"
+                            className="w-full px-3 py-1 border rounded bg-gray-100 text-gray-600 cursor-not-allowed"
                             value={producto.precio_unitario}
-                            onChange={(e) => handleUpdateProducto(index, 'precio_unitario', e.target.value)}
+                            disabled
                             required
                           />
                         </td>
@@ -985,9 +1041,9 @@ Fecha Impresión:    ${new Date().toLocaleString('es-CO')}
                             <input
                               type="number"
                               min="0"
-                              className="w-full px-3 py-1 border rounded"
+                              className="w-full px-3 py-1 border rounded bg-gray-100 text-gray-600 cursor-not-allowed"
                               value={producto.precio_unitario}
-                              onChange={(e) => handleUpdateProducto(index, 'precio_unitario', e.target.value)}
+                              disabled
                               required
                             />
                           </td>
@@ -1107,6 +1163,114 @@ Fecha Impresión:    ${new Date().toLocaleString('es-CO')}
             </Button>
           </div>
         </div>
+      </Modal>
+
+      {/* Modal de Detalle del Pedido */}
+      <Modal
+        isOpen={isDetailModalOpen}
+        onClose={() => {
+          setIsDetailModalOpen(false);
+          setSelectedPedido(null);
+        }}
+        title={`Detalle del Pedido ${selectedPedido?.numero_pedido || selectedPedido?.id || ''}`}
+        size="lg"
+      >
+        {selectedPedido && (
+          <div className="space-y-6">
+            {/* Información general del pedido */}
+            <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+              <div className="rounded-lg border border-border bg-white p-4">
+                <label className="text-sm text-muted-foreground">ID Pedido</label>
+                <p className="mt-1 font-medium">{selectedPedido.numero_pedido || selectedPedido.id}</p>
+              </div>
+              <div className="rounded-lg border border-border bg-white p-4">
+                <label className="text-sm text-muted-foreground">Cliente</label>
+                <p className="mt-1 font-medium">{selectedPedido.cliente || `Cliente #${selectedPedido.cliente_id}`}</p>
+              </div>
+              <div className="rounded-lg border border-border bg-white p-4">
+                <label className="text-sm text-muted-foreground">Fecha Pedido</label>
+                <p className="mt-1 font-medium">{selectedPedido.fecha}</p>
+              </div>
+              <div className="rounded-lg border border-border bg-white p-4">
+                <label className="text-sm text-muted-foreground">Fecha Entrega</label>
+                <p className="mt-1 font-medium">{selectedPedido.fecha_entrega}</p>
+              </div>
+              <div className="rounded-lg border border-border bg-white p-4">
+                <label className="text-sm text-muted-foreground">Estado</label>
+                <p className={`mt-1 font-medium px-2 py-1 rounded text-sm text-center ${
+                  selectedPedido.estado === 'Completado' ? 'bg-green-100 text-green-700' :
+                  selectedPedido.estado === 'En Proceso' ? 'bg-blue-100 text-blue-700' :
+                  selectedPedido.estado === 'Pendiente' ? 'bg-yellow-100 text-yellow-700' :
+                  'bg-red-100 text-red-700'
+                }`}>{selectedPedido.estado}</p>
+              </div>
+              <div className="rounded-lg border border-border bg-white p-4">
+                <label className="text-sm text-muted-foreground">Cantidad Productos</label>
+                <p className="mt-1 font-medium">{selectedPedido.productos || 0}</p>
+              </div>
+              <div className="rounded-lg border border-border bg-white p-4 md:col-span-2">
+                <label className="text-sm text-muted-foreground">Total</label>
+                <p className="mt-1 font-medium text-lg">{formatCurrency(selectedPedido.total)}</p>
+              </div>
+            </div>
+
+            {/* Tabla de productos del pedido */}
+            <div className="rounded-lg border border-border overflow-hidden">
+              <div className="bg-accent px-4 py-3">
+                <h3 className="font-semibold">Productos del Pedido</h3>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-muted border-b border-border">
+                    <tr>
+                      <th className="px-4 py-2 text-left text-sm font-medium">Producto</th>
+                      <th className="px-4 py-2 text-right text-sm font-medium">Cantidad</th>
+                      <th className="px-4 py-2 text-right text-sm font-medium">Precio Unitario</th>
+                      <th className="px-4 py-2 text-right text-sm font-medium">Subtotal</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {productosEnPedido && productosEnPedido.length > 0 ? (
+                      productosEnPedido.map((producto, index) => (
+                        <tr key={index} className="border-b border-border hover:bg-accent/30">
+                          <td className="px-4 py-3 text-sm">{producto.nombre}</td>
+                          <td className="px-4 py-3 text-right text-sm">{producto.cantidad}</td>
+                          <td className="px-4 py-3 text-right text-sm">{formatCurrency(producto.precio_unitario)}</td>
+                          <td className="px-4 py-3 text-right text-sm font-medium">{formatCurrency(producto.subtotal)}</td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan={4} className="px-4 py-8 text-center text-muted-foreground">
+                          Cargando productos...
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                  <tfoot className="bg-muted border-t-2 border-border">
+                    <tr>
+                      <td colSpan={3} className="px-4 py-3 text-right font-semibold">Total Pedido:</td>
+                      <td className="px-4 py-3 text-right font-semibold">{formatCurrency(selectedPedido.total)}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+
+            {/* Acciones */}
+            <div className="flex justify-end gap-2">
+              <Button 
+                variant="outline" 
+                onClick={() => {
+                  setIsDetailModalOpen(false);
+                  setSelectedPedido(null);
+                }}
+              >
+                Cerrar
+              </Button>
+            </div>
+          </div>
+        )}
       </Modal>
 
       {/* Modal de PDF */}

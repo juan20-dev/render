@@ -11,38 +11,43 @@ const normalizeEstado = (value) => String(value || '').trim().toLowerCase();
 const buildVentaNumber = () => `VEN-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
 
 const ensureVentaForDeliveredDomicilio = async (domicilioId) => {
-  const domicilio = await models.Domicilios.getById(domicilioId);
-  if (!domicilio) return;
-  if (normalizeEstado(domicilio.estado) !== 'entregado') return;
+  try {
+    const domicilio = await models.Domicilios.getById(domicilioId);
+    if (!domicilio) return;
+    if (normalizeEstado(domicilio.estado) !== 'entregado') return;
 
-  const pedido = await models.Pedidos.getById(domicilio.pedido_id);
-  if (!pedido) return;
+    const pedido = await models.Pedidos.getById(domicilio.pedido_id);
+    if (!pedido) return;
 
-  const ventaExistente = await models.Ventas.getByPedido(domicilio.pedido_id);
-  if (ventaExistente?.id) return;
+    const ventaExistente = await models.Ventas.getByPedido(domicilio.pedido_id);
+    if (ventaExistente?.id) return;
 
-  const ventaId = await models.Ventas.create({
-    numero_venta: buildVentaNumber(),
-    tipo: 'Por Pedido',
-    cliente_id: pedido.cliente_id,
-    pedido_id: pedido.id,
-    fecha: new Date().toISOString().split('T')[0],
-    metodopago: 'Contraentrega',
-    total: Number(pedido.total || 0),
-    estado: 'Completada',
-  });
+    const ventaId = await models.Ventas.create({
+      numero_venta: buildVentaNumber(),
+      tipo: 'Por Pedido',
+      cliente_id: pedido.cliente_id,
+      pedido_id: pedido.id,
+      fecha: new Date().toISOString().split('T')[0],
+      metodopago: 'Contraentrega',
+      total: Number(pedido.total || 0),
+      estado: 'Pendiente', // ✅ CORRECTO: Venta inicia en Pendiente, no Completada
+    });
 
-  const detalles = await models.Pedidos.getDetalles(pedido.id);
-  await Promise.all(
-    (Array.isArray(detalles) ? detalles : []).map((item) =>
-      models.Ventas.addDetalle(
-        ventaId,
-        Number(item.producto_id),
-        Number(item.cantidad || 0),
-        Number(item.precio_unitario || 0)
+    const detalles = await models.Pedidos.getDetalles(pedido.id);
+    await Promise.all(
+      (Array.isArray(detalles) ? detalles : []).map((item) =>
+        models.Ventas.addDetalle(
+          ventaId,
+          Number(item.producto_id),
+          Number(item.cantidad || 0),
+          Number(item.precio_unitario || 0)
+        )
       )
-    )
-  );
+    );
+  } catch (error) {
+    console.error('Error creando venta automática desde domicilio entregado:', error.message);
+    // No lanzar error para no afectar el flujo del domicilio
+  }
 };
 
 module.exports = {

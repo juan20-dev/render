@@ -71,7 +71,6 @@ export function Productos() {
     categoria_id: 0,
     descripcion: '',
     precio: 0,
-    stock: 0,
     stock_minimo: 0,
     imagen_url: '',
   });
@@ -185,7 +184,6 @@ export function Productos() {
       categoria_id: 0,
       descripcion: '',
       precio: 0,
-      stock: 0,
       stock_minimo: 0,
       imagen_url: '',
     });
@@ -201,7 +199,6 @@ export function Productos() {
       categoria_id: producto.categoria_id,
       descripcion: producto.descripcion || '',
       precio: producto.precio,
-      stock: producto.stock,
       stock_minimo: producto.stock_minimo,
       imagen_url: producto.imagen_url || '',
     });
@@ -345,7 +342,6 @@ export function Productos() {
         categoria_id: Number(formData.categoria_id),
         descripcion: formData.descripcion,
         precio: selectedProducto ? Number(formData.precio) : 0,
-        stock: Number(formData.stock),
         stock_minimo: Number(formData.stock_minimo),
         imagen_url: formData.imagen_url || undefined,
       };
@@ -520,14 +516,12 @@ export function Productos() {
               </div>
             )}
 
-            <FormField
-              label="Stock Actual"
-              name="stock"
-              type="number"
-              value={formData.stock}
-              onChange={(value) => setFormData((current) => ({ ...current, stock: Number(value) }))}
-              required
-            />
+            <div className="rounded-lg border border-dashed border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-700">
+              <p className="font-medium">📦 Stock Inicial</p>
+              <p className="mt-1 text-xs">
+                El stock se gestiona automáticamente desde <strong>Compras</strong>. Siempre inicia en 0.
+              </p>
+            </div>
 
             <FormField
               label="Stock Minimo"

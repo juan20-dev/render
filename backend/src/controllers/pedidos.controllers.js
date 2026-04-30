@@ -108,8 +108,22 @@ module.exports = {
       const denied = await assertOwnPedidoId(req, res, req.params.id);
       if (denied) return denied;
 
+      const rol = String(req.user?.rol || '').trim();
+      const pedido = await models.Pedidos.getById(req.params.id);
+      if (!pedido) {
+        return res.status(404).json({ success: false, message: 'Pedido no encontrado' });
+      }
+
+      // Definir transiciones permitidas de estado
+      const transiciones = {
+        'Pendiente': ['En Proceso', 'Completado', 'Cancelado'],
+        'En Proceso': ['Completado', 'Cancelado', 'Pendiente'],
+        'Completado': [], // Final
+        'Cancelado': [] // Final
+      };
+
+      // CLIENTE: Solo puede editar fecha_entrega y detalles si está en Pendiente o En Proceso
       if (isClienteUser(req)) {
-        const pedido = await models.Pedidos.getById(req.params.id);
         const estado = String(pedido?.estado || '');
         if (estado !== 'Pendiente' && estado !== 'En Proceso') {
           return res.status(403).json({
@@ -133,11 +147,56 @@ module.exports = {
         return res.json({ success: true, message: 'Pedido actualizado exitosamente' });
       }
 
+      // ASESOR y ADMIN: Pueden cambiar estado si la transición es válida
+      if (req.body.estado) {
+        const estadoActual = String(pedido.estado || '').trim();
+        const estadoNuevo = String(req.body.estado).trim();
+
+        // Validar transición
+        if (!transiciones[estadoActual]?.includes(estadoNuevo)) {
+          return res.status(400).json({
+            success: false,
+            message: `Transición no permitida: ${estadoActual} → ${estadoNuevo}`,
+            permitidas: transiciones[estadoActual] || []
+          });
+        }
+
+        // ASESOR: Puede cambiar estado, pero sin editar otros campos
+        if (rol === 'Asesor') {
+          const merged = {
+            numero_pedido: pedido.numero_pedido,
+            fecha: pedido.fecha,
+            fecha_entrega: pedido.fecha_entrega,
+            detalles: pedido.detalles,
+            total: pedido.total,
+            estado: estadoNuevo, // Solo cambiar estado
+          };
+          await models.Pedidos.update(req.params.id, merged);
+          
+          // Si el estado nuevo es Completado, crear domicilio automáticamente
+          if (estadoNuevo === 'Completado' && estadoActual !== 'Completado') {
+            await ensureDomicilioForCompletedPedido(req.params.id);
+          }
+          
+          return res.json({ success: true, message: 'Pedido actualizado exitosamente' });
+        }
+
+        // ADMIN: Puede cambiar todo
+        await models.Pedidos.update(req.params.id, req.body);
+        
+        // Si el estado nuevo es Completado, crear domicilio automáticamente
+        if (estadoNuevo === 'Completado' && estadoActual !== 'Completado') {
+          await ensureDomicilioForCompletedPedido(req.params.id);
+        }
+        
+        return res.json({ success: true, message: 'Pedido actualizado exitosamente' });
+      }
+
+      // Sin cambio de estado: actualizar como antes
       await models.Pedidos.update(req.params.id, req.body);
-      await ensureDomicilioForCompletedPedido(req.params.id);
       return res.json({ success: true, message: 'Pedido actualizado exitosamente' });
     } catch (error) {
-      return res.status(500).json({ success: false, message: error.message });
+      return res.status(error.statusCode || 500).json({ success: false, message: error.message });
     }
   },
   delete: async (req, res) => {

@@ -242,6 +242,13 @@ const Productos = {
     const precioInicial = Number(data?.precio);
     const precioSeguro = Number.isFinite(precioInicial) && precioInicial >= 0 ? precioInicial : 0;
 
+    // Validar que stock sea 0 (stock se gestiona solo desde Compras)
+    if (data.stock && Number(data.stock) !== 0) {
+      const error = new Error('Stock inicial debe ser 0. Se modifica solo via Compras/Ajustes.');
+      error.statusCode = 400;
+      throw error;
+    }
+
     const result = await pool.query(
       'INSERT INTO productos (nombre, categoria_id, descripcion, precio, stock, stock_minimo, imagen_url, estado) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id',
       [
@@ -249,7 +256,7 @@ const Productos = {
         data.categoria_id,
         data.descripcion,
         precioSeguro,
-        data.stock || 0,
+        0, // ✅ Stock siempre inicia en 0
         data.stock_minimo || 10,
         data.imagen_url,
         'Activo',
@@ -277,9 +284,11 @@ const Productos = {
       throw error;
     }
 
-    const previous = await pool.query('SELECT categoria_id FROM productos WHERE id = $1', [id]);
+    const previous = await pool.query('SELECT categoria_id, stock FROM productos WHERE id = $1', [id]);
     const previousCategoriaId = previous.rows[0]?.categoria_id ?? null;
+    const stockActual = previous.rows[0]?.stock ?? 0; // Mantener stock actual
 
+    // Stock NO se puede editar desde productos, solo desde Compras/Ajustes
     await pool.query(
       `UPDATE productos
        SET nombre = $1,
@@ -291,7 +300,7 @@ const Productos = {
            imagen_url = $7,
            updated_at = CURRENT_TIMESTAMP
        WHERE id = $8`,
-      [nombre, data.categoria_id, data.descripcion, data.precio, data.stock, data.stock_minimo, data.imagen_url, id]
+      [nombre, data.categoria_id, data.descripcion, data.precio, stockActual, data.stock_minimo, data.imagen_url, id]
     );
     await syncCategoriaProductCount(data.categoria_id);
     if (previousCategoriaId && Number(previousCategoriaId) !== Number(data.categoria_id)) {
@@ -1041,15 +1050,23 @@ const Proveedores = {
 // ------- PEDIDOS -------
 const Pedidos = {
   getAll: async () => {
-    const result = await pool.query(`
-      SELECT p.*, 
-             CONCAT(c.nombre, ' ', c.apellido) as cliente,
-             c.email
-      FROM pedidos p
-      JOIN clientes c ON p.cliente_id = c.id
-      ORDER BY p.fecha DESC
-    `);
-    return result.rows;
+    try {
+      const result = await pool.query(`
+        SELECT p.*, 
+               CONCAT(c.nombre, ' ', c.apellido) as cliente,
+               c.email,
+               COALESCE(COUNT(dp.id), 0) as productos
+        FROM pedidos p
+        JOIN clientes c ON p.cliente_id = c.id
+        LEFT JOIN detalle_pedidos dp ON p.id = dp.pedido_id
+        GROUP BY p.id, c.nombre, c.apellido, c.email
+        ORDER BY p.fecha DESC
+      `);
+      return result.rows;
+    } catch (error) {
+      error.statusCode = error.statusCode || 500;
+      throw error;
+    }
   },
   getById: async (id) => {
     const result = await pool.query(`
@@ -1085,8 +1102,8 @@ const Pedidos = {
   },
   create: async (data) => {
     const result = await pool.query(
-      'INSERT INTO pedidos (numero_pedido, cliente_id, fecha, fecha_entrega, detalles, total, estado) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id',
-      [data.numero_pedido, data.cliente_id, data.fecha, data.fecha_entrega, data.detalles, data.total || 0, data.estado || 'Pendiente']
+      'INSERT INTO pedidos (numero_pedido, cliente_id, fecha, fecha_entrega, detalles, total, estado, metodo_pago, esquema_abono) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id',
+      [data.numero_pedido, data.cliente_id, data.fecha, data.fecha_entrega, data.detalles, data.total || 0, data.estado || 'Pendiente', data.metodo_pago || 'Efectivo', data.esquema_abono || '100%']
     );
     return result.rows[0].id;
   },
@@ -1099,24 +1116,55 @@ const Pedidos = {
     return true;
   },
   update: async (id, data) => {
-    const current = await Pedidos.getById(id);
-    if (!current) {
-      const error = new Error('Pedido no encontrado');
-      error.statusCode = 404;
+    try {
+      const current = await Pedidos.getById(id);
+      if (!current) {
+        const error = new Error('Pedido no encontrado');
+        error.statusCode = 404;
+        throw error;
+      }
+
+      const estado = data?.estado ? String(data.estado).trim() : current.estado;
+      const estadosPermitidos = ['Pendiente', 'En Proceso', 'Completado', 'Cancelado'];
+      
+      if (!estadosPermitidos.includes(estado)) {
+        const error = new Error(`Estado inválido: ${estado}. Permitidos: ${estadosPermitidos.join(', ')}`);
+        error.statusCode = 400;
+        throw error;
+      }
+
+      await pool.query(
+        `UPDATE pedidos 
+         SET numero_pedido = COALESCE($2, numero_pedido),
+             fecha = COALESCE($3, fecha),
+             fecha_entrega = COALESCE($4, fecha_entrega),
+             detalles = COALESCE($5, detalles),
+             total = COALESCE($6, total),
+             metodo_pago = COALESCE($8, metodo_pago),
+             esquema_abono = COALESCE($9, esquema_abono),
+             estado = $7,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = $1`,
+        [id, data.numero_pedido || null, data.fecha || null, data.fecha_entrega || null, data.detalles || null, data.total || null, estado, data.metodo_pago || null, data.esquema_abono || null]
+      );
+
+      // Verificación post-update
+      const verificacion = await pool.query('SELECT estado FROM pedidos WHERE id = $1', [id]);
+      if (verificacion.rows.length === 0) {
+        const error = new Error('No se pudo actualizar el pedido');
+        error.statusCode = 500;
+        throw error;
+      }
+
+      if (verificacion.rows[0].estado !== estado) {
+        console.warn(`Discrepancia en estado: esperado ${estado}, obtenido ${verificacion.rows[0].estado}`);
+      }
+
+      return true;
+    } catch (error) {
+      error.statusCode = error.statusCode || 500;
       throw error;
     }
-
-    if (['Completado', 'Cancelado'].includes(String(current.estado || ''))) {
-      const error = new Error('El pedido ya está en estado final y no puede modificarse');
-      error.statusCode = 409;
-      throw error;
-    }
-
-    await pool.query(
-      'UPDATE pedidos SET numero_pedido = $1, fecha = $2, fecha_entrega = $3, detalles = $4, total = $5, estado = $6 WHERE id = $7',
-      [data.numero_pedido, data.fecha, data.fecha_entrega, data.detalles, data.total, data.estado, id]
-    );
-    return true;
   },
   delete: async (id) => {
     await pool.query('DELETE FROM detalle_pedidos WHERE pedido_id = $1', [id]);
@@ -1335,13 +1383,41 @@ const Ventas = {
     return result.rows;
   },
   create: async (data) => {
-    await Ventas.validateClienteActivo(data.cliente_id);
+    try {
+      await Ventas.validateClienteActivo(data.cliente_id);
 
-    const result = await pool.query(
-      'INSERT INTO ventas (numero_venta, tipo, cliente_id, pedido_id, fecha, metodopago, total, estado) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id',
-      [data.numero_venta, data.tipo, data.cliente_id, data.pedido_id, data.fecha, data.metodopago, data.total, data.estado || 'Completada']
-    );
-    return result.rows[0].id;
+      const estado = String(data?.estado || 'Pendiente').trim();
+      if (!['Pendiente', 'Completada', 'Cancelada'].includes(estado)) {
+        const error = new Error(`Estado inválido: ${estado}. Valores permitidos: Pendiente, Completada, Cancelada`);
+        error.statusCode = 400;
+        throw error;
+      }
+
+      // Validar método de pago
+      const metodo_pago = String(data?.metodo_pago || 'Efectivo').trim();
+      if (!['Efectivo', 'Transferencia'].includes(metodo_pago)) {
+        const error = new Error(`Método de pago inválido: ${metodo_pago}`);
+        error.statusCode = 400;
+        throw error;
+      }
+
+      // Validar esquema de abono
+      const esquema_abono = String(data?.esquema_abono || '100%').trim();
+      if (!['50%', '100%'].includes(esquema_abono)) {
+        const error = new Error(`Esquema de abono inválido: ${esquema_abono}`);
+        error.statusCode = 400;
+        throw error;
+      }
+
+      const result = await pool.query(
+        'INSERT INTO ventas (numero_venta, tipo, cliente_id, pedido_id, fecha, metodopago, total, estado, metodo_pago, esquema_abono, abono_recibido) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id',
+        [data.numero_venta, data.tipo, data.cliente_id, data.pedido_id || null, data.fecha, data.metodopago, data.total, estado, metodo_pago, esquema_abono, data.abono_recibido || 0]
+      );
+      return result.rows[0].id;
+    } catch (error) {
+      error.statusCode = error.statusCode || 500;
+      throw error;
+    }
   },
   /**
    * Crea venta y todos sus ítems en una sola transacción (descuenta stock por línea).
@@ -2019,51 +2095,120 @@ const Insumos = {
     return result.rows[0];
   },
   create: async (data) => {
-    const result = await pool.query(
-      'INSERT INTO insumos (nombre, descripcion, cantidad, unidad, stock_minimo, estado) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
-      [data.nombre, data.descripcion, data.cantidad || 0, data.unidad, data.stock_minimo || 10, data.estado || 'Activo']
+    // Validaciones
+    const nombre = String(data?.nombre || '').trim();
+    if (!nombre) {
+      const error = new Error('El nombre del insumo es obligatorio');
+      error.statusCode = 400;
+      throw error;
+    }
+    
+    // Verificar nombre no duplicado
+    const duplicate = await pool.query(
+      'SELECT id FROM insumos WHERE LOWER(TRIM(nombre)) = LOWER(TRIM($1)) LIMIT 1',
+      [nombre]
     );
-    return result.rows[0].id;
-  },
-  update: async (id, data) => {
-    await pool.query(
-      'UPDATE insumos SET nombre = $1, descripcion = $2, cantidad = $3, unidad = $4, stock_minimo = $5, estado = $6 WHERE id = $7',
-      [data.nombre, data.descripcion, data.cantidad, data.unidad, data.stock_minimo, data.estado, id]
-    );
-    return true;
-  },
-  delete: async (id) => {
-    await pool.query('DELETE FROM insumos WHERE id = $1', [id]);
-    return true;
-  }
-};
+    if (duplicate.rows[0]) {
+      const error = new Error('Ya existe un insumo con ese nombre');
+      error.statusCode = 409;
+      throw error;
+    }
+    
+    const unidad = String(data?.unidad || '').trim();
+    const unidadesValidas = ['Litros', 'Kilogramos', 'Gramos', 'Unidades', 'Cajas', 'Botellas', 'Mililitros'];
+    if (!unidad || !unidadesValidas.includes(unidad)) {\n      const error = new Error(`Unidad inválida. Valores permitidos: ${unidadesValidas.join(', ')}`);\n      error.statusCode = 400;\n      throw error;\n    }\n    \n    const cantidad = Number(data?.cantidad) || 0;\n    if (cantidad < 0) {\n      const error = new Error('La cantidad no puede ser negativa');\n      error.statusCode = 400;\n      throw error;\n    }\n    \n    const stockMinimo = Number(data?.stock_minimo) || 10;\n    if (stockMinimo < 0) {\n      const error = new Error('El stock mínimo no puede ser negativo');\n      error.statusCode = 400;\n      throw error;\n    }\n    \n    const estado = String(data?.estado || 'Activo').trim();\n    if (!['Activo', 'Inactivo'].includes(estado)) {\n      const error = new Error('Estado inválido. Valores permitidos: Activo, Inactivo');\n      error.statusCode = 400;\n      throw error;\n    }\n    \n    const descripcion = String(data?.descripcion || '').trim() || null;\n    \n    const result = await pool.query(\n      'INSERT INTO insumos (nombre, descripcion, cantidad, unidad, stock_minimo, estado) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',\n      [nombre, descripcion, cantidad, unidad, stockMinimo, estado]\n    );\n    return result.rows[0].id;\n  },\n  update: async (id, data) => {\n    const current = await Insumos.getById(id);\n    if (!current) {\n      const error = new Error('Insumo no encontrado');\n      error.statusCode = 404;\n      throw error;\n    }\n    \n    const nombre = data.nombre !== undefined ? String(data.nombre).trim() : current.nombre;\n    if (!nombre) {\n      const error = new Error('El nombre del insumo no puede estar vacío');\n      error.statusCode = 400;\n      throw error;\n    }\n    \n    // Verificar nombre no duplicado (excepto el actual)\n    if (data.nombre !== undefined) {\n      const duplicate = await pool.query(\n        'SELECT id FROM insumos WHERE LOWER(TRIM(nombre)) = LOWER(TRIM($1)) AND id != $2 LIMIT 1',\n        [nombre, id]\n      );\n      if (duplicate.rows[0]) {\n        const error = new Error('Ya existe otro insumo con ese nombre');\n        error.statusCode = 409;\n        throw error;\n      }\n    }\n    \n    const unidad = data.unidad !== undefined ? String(data.unidad).trim() : current.unidad;\n    const unidadesValidas = ['Litros', 'Kilogramos', 'Gramos', 'Unidades', 'Cajas', 'Botellas', 'Mililitros'];\n    if (!unidadesValidas.includes(unidad)) {\n      const error = new Error(`Unidad inválida. Valores permitidos: ${unidadesValidas.join(', ')}`);\n      error.statusCode = 400;\n      throw error;\n    }\n    \n    const cantidad = data.cantidad !== undefined ? Number(data.cantidad) : current.cantidad;\n    if (cantidad < 0) {\n      const error = new Error('La cantidad no puede ser negativa');\n      error.statusCode = 400;\n      throw error;\n    }\n    \n    const stockMinimo = data.stock_minimo !== undefined ? Number(data.stock_minimo) : current.stock_minimo;\n    if (stockMinimo < 0) {\n      const error = new Error('El stock mínimo no puede ser negativo');\n      error.statusCode = 400;\n      throw error;\n    }\n    \n    const estado = data.estado !== undefined ? String(data.estado).trim() : current.estado;\n    if (!['Activo', 'Inactivo'].includes(estado)) {\n      const error = new Error('Estado inválido. Valores permitidos: Activo, Inactivo');\n      error.statusCode = 400;\n      throw error;\n    }\n    \n    // Si cambia a Inactivo, verificar que no tiene entregas pendientes\n    if (estado === 'Inactivo' && current.estado === 'Activo') {\n      const entregas = await pool.query(\n        'SELECT COUNT(*) FROM entregas_insumos WHERE insumo_id = $1',\n        [id]\n      );\n      if (Number(entregas.rows[0].count) > 0) {\n        const error = new Error('No se puede desactivar un insumo con entregas registradas');\n        error.statusCode = 409;\n        throw error;\n      }\n    }\n    \n    const descripcion = data.descripcion !== undefined ? String(data.descripcion).trim() : current.descripcion;\n    \n    await pool.query(\n      'UPDATE insumos SET nombre = $1, descripcion = $2, cantidad = $3, unidad = $4, stock_minimo = $5, estado = $6, updated_at = CURRENT_TIMESTAMP WHERE id = $7',\n      [nombre, descripcion || null, cantidad, unidad, stockMinimo, estado, id]\n    );\n    return true;\n  },\n  delete: async (id) => {\n    const current = await Insumos.getById(id);\n    if (!current) {\n      const error = new Error('Insumo no encontrado');\n      error.statusCode = 404;\n      throw error;\n    }\n    \n    // Verificar que no tiene referencias en entregas_insumos\n    const entregas = await pool.query(\n      'SELECT COUNT(*) FROM entregas_insumos WHERE insumo_id = $1',\n      [id]\n    );\n    if (Number(entregas.rows[0].count) > 0) {\n      const error = new Error('No se puede eliminar un insumo con entregas registradas. Desactívalo en su lugar.');\n      error.statusCode = 409;\n      throw error;\n    }\n    \n    // Verificar que no tiene referencias en producto_insumos\n    const productos = await pool.query(\n      'SELECT COUNT(*) FROM producto_insumos WHERE insumo_id = $1',\n      [id]\n    );\n    if (Number(productos.rows[0].count) > 0) {\n      const error = new Error('No se puede eliminar un insumo que está asignado a productos');\n      error.statusCode = 409;\n      throw error;\n    }\n    \n    await pool.query('DELETE FROM insumos WHERE id = $1', [id]);\n    return true;\n  }\n};
 
 // ------- ENTREGAS INSUMOS -------
 const EntregasInsumos = {
   getAll: async () => {
     const result = await pool.query(`
-      SELECT ei.*, i.nombre as insumo_nombre
+      SELECT ei.*, i.nombre as insumo_nombre, CONCAT(COALESCE(u.nombre, ''), ' ', COALESCE(u.apellido, '')) as operario_nombre
       FROM entregas_insumos ei
       JOIN insumos i ON ei.insumo_id = i.id
+      LEFT JOIN usuarios u ON ei.operario_id = u.id
       ORDER BY ei.fecha DESC
     `);
     return result.rows;
   },
   getById: async (id) => {
-    const result = await pool.query('SELECT * FROM entregas_insumos WHERE id = $1', [id]);
+    const result = await pool.query(`
+      SELECT ei.*, i.nombre as insumo_nombre, CONCAT(COALESCE(u.nombre, ''), ' ', COALESCE(u.apellido, '')) as operario_nombre
+      FROM entregas_insumos ei
+      JOIN insumos i ON ei.insumo_id = i.id
+      LEFT JOIN usuarios u ON ei.operario_id = u.id
+      WHERE ei.id = $1
+    `, [id]);
     return result.rows[0];
   },
   create: async (data) => {
+    if (!data.numero_entrega || !String(data.numero_entrega).trim()) {
+      const error = new Error('El número de entrega es obligatorio');
+      error.statusCode = 400;
+      throw error;
+    }
+    if (!data.insumo_id || data.insumo_id <= 0) {
+      const error = new Error('El ID del insumo es obligatorio y debe ser válido');
+      error.statusCode = 400;
+      throw error;
+    }
+    const cantidad = Number(data?.cantidad) || 0;
+    if (cantidad <= 0) {
+      const error = new Error('La cantidad debe ser un valor positivo');
+      error.statusCode = 400;
+      throw error;
+    }
+    const unidad = String(data?.unidad || '').trim();
+    const unidadesValidas = ['Litros', 'Kilogramos', 'Gramos', 'Unidades', 'Cajas', 'Botellas', 'Mililitros'];
+    if (!unidad || !unidadesValidas.includes(unidad)) {
+      const error = new Error(`Unidad inválida. Valores permitidos: ${unidadesValidas.join(', ')}`);
+      error.statusCode = 400;
+      throw error;
+    }
+    if (!data.operario_id || data.operario_id <= 0) {
+      const error = new Error('El operario es obligatorio');
+      error.statusCode = 400;
+      throw error;
+    }
+    if (!data.fecha) {
+      const error = new Error('La fecha es obligatoria');
+      error.statusCode = 400;
+      throw error;
+    }
     const result = await pool.query(
-      'INSERT INTO entregas_insumos (numero_entrega, insumo_id, cantidad, unidad, operario, fecha, hora) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id',
-      [data.numero_entrega, data.insumo_id, data.cantidad, data.unidad, data.operario, data.fecha, data.hora]
+      'INSERT INTO entregas_insumos (numero_entrega, insumo_id, cantidad, unidad, operario_id, fecha, hora) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id',
+      [data.numero_entrega, data.insumo_id, cantidad, unidad, data.operario_id, data.fecha, data.hora || null]
     );
     return result.rows[0].id;
   },
   update: async (id, data) => {
+    const current = await EntregasInsumos.getById(id);
+    if (!current) {
+      const error = new Error('Entrega no encontrada');
+      error.statusCode = 404;
+      throw error;
+    }
+    const cantidad = data.cantidad !== undefined ? Number(data.cantidad) : current.cantidad;
+    if (cantidad <= 0) {
+      const error = new Error('La cantidad debe ser un valor positivo');
+      error.statusCode = 400;
+      throw error;
+    }
+    const unidad = data.unidad !== undefined ? String(data.unidad).trim() : current.unidad;
+    const unidadesValidas = ['Litros', 'Kilogramos', 'Gramos', 'Unidades', 'Cajas', 'Botellas', 'Mililitros'];
+    if (!unidadesValidas.includes(unidad)) {
+      const error = new Error(`Unidad inválida. Valores permitidos: ${unidadesValidas.join(', ')}`);
+      error.statusCode = 400;
+      throw error;
+    }
+    const operarioId = data.operario_id !== undefined ? data.operario_id : current.operario_id;
+    if (!operarioId || operarioId <= 0) {
+      const error = new Error('El operario es obligatorio');
+      error.statusCode = 400;
+      throw error;
+    }
     await pool.query(
-      'UPDATE entregas_insumos SET insumo_id = $1, cantidad = $2, unidad = $3, operario = $4, fecha = $5, hora = $6 WHERE id = $7',
-      [data.insumo_id, data.cantidad, data.unidad, data.operario, data.fecha, data.hora, id]
+      'UPDATE entregas_insumos SET insumo_id = $1, cantidad = $2, unidad = $3, operario_id = $4, fecha = $5, hora = $6 WHERE id = $7',
+      [data.insumo_id || current.insumo_id, cantidad, unidad, operarioId, data.fecha || current.fecha, data.hora || current.hora, id]
     );
     return true;
   },
@@ -2309,6 +2454,222 @@ const Produccion = {
     } finally {
       client.release();
     }
+  }
+};
+
+// ------- PRODUCTO INSUMOS (RELACIÓN N:N) -------
+const ProductoInsumos = {
+  getAll: async () => {
+    const result = await pool.query(`
+      SELECT pi.*, p.nombre as producto_nombre, i.nombre as insumo_nombre
+      FROM producto_insumos pi
+      JOIN productos p ON pi.producto_id = p.id
+      JOIN insumos i ON pi.insumo_id = i.id
+      ORDER BY p.nombre, i.nombre
+    `);
+    return result.rows;
+  },
+  getByProducto: async (productoId) => {
+    const result = await pool.query(`
+      SELECT pi.*, i.nombre as insumo_nombre, i.cantidad as stock_actual, i.stock_minimo
+      FROM producto_insumos pi
+      JOIN insumos i ON pi.insumo_id = i.id
+      WHERE pi.producto_id = $1
+      ORDER BY i.nombre
+    `, [productoId]);
+    return result.rows;
+  },
+  getByInsumo: async (insumoId) => {
+    const result = await pool.query(`
+      SELECT pi.*, p.nombre as producto_nombre
+      FROM producto_insumos pi
+      JOIN productos p ON pi.producto_id = p.id
+      WHERE pi.insumo_id = $1
+      ORDER BY p.nombre
+    `, [insumoId]);
+    return result.rows;
+  },
+  getById: async (id) => {
+    const result = await pool.query(
+      `SELECT pi.*, p.nombre as producto_nombre, i.nombre as insumo_nombre
+       FROM producto_insumos pi
+       JOIN productos p ON pi.producto_id = p.id
+       JOIN insumos i ON pi.insumo_id = i.id
+       WHERE pi.id = $1`,
+      [id]
+    );
+    return result.rows[0];
+  },
+  create: async (data) => {
+    if (!data.producto_id || data.producto_id <= 0) {
+      const error = new Error('El ID del producto es obligatorio y debe ser válido');
+      error.statusCode = 400;
+      throw error;
+    }
+    if (!data.insumo_id || data.insumo_id <= 0) {
+      const error = new Error('El ID del insumo es obligatorio y debe ser válido');
+      error.statusCode = 400;
+      throw error;
+    }
+    if (!data.cantidad_requerida || data.cantidad_requerida <= 0) {
+      const error = new Error('La cantidad requerida debe ser un valor positivo');
+      error.statusCode = 400;
+      throw error;
+    }
+    if (!data.unidad || !String(data.unidad).trim()) {
+      const error = new Error('La unidad es obligatoria');
+      error.statusCode = 400;
+      throw error;
+    }
+    const result = await pool.query(
+      'INSERT INTO producto_insumos (producto_id, insumo_id, cantidad_requerida, unidad, notas) VALUES ($1, $2, $3, $4, $5) RETURNING id',
+      [data.producto_id, data.insumo_id, data.cantidad_requerida, data.unidad, data.notas || null]
+    );
+    return result.rows[0].id;
+  },
+  update: async (id, data) => {
+    if (data.cantidad_requerida !== undefined && data.cantidad_requerida <= 0) {
+      const error = new Error('La cantidad requerida debe ser un valor positivo');
+      error.statusCode = 400;
+      throw error;
+    }
+    if (data.unidad && !String(data.unidad).trim()) {
+      const error = new Error('La unidad no puede estar vacía');
+      error.statusCode = 400;
+      throw error;
+    }
+    await pool.query(
+      'UPDATE producto_insumos SET cantidad_requerida = $1, unidad = $2, notas = $3 WHERE id = $4',
+      [data.cantidad_requerida, data.unidad, data.notas || null, id]
+    );
+    return true;
+  },
+  delete: async (id) => {
+    await pool.query('DELETE FROM producto_insumos WHERE id = $1', [id]);
+    return true;
+  }
+};
+
+// ------- INSUMO MOVIMIENTOS (AUDITORÍA) -------
+const InsumoMovimientos = {
+  getAll: async (filters = {}) => {
+    let query = `
+      SELECT im.*, i.nombre as insumo_nombre, u.nombre as usuario_nombre
+      FROM insumo_movimientos im
+      JOIN insumos i ON im.insumo_id = i.id
+      LEFT JOIN usuarios u ON im.usuario_id = u.id
+      WHERE 1=1
+    `;
+    const params = [];
+    
+    if (filters.insumo_id) {
+      query += ` AND im.insumo_id = $${params.length + 1}`;
+      params.push(filters.insumo_id);
+    }
+    if (filters.tipo_movimiento) {
+      query += ` AND im.tipo_movimiento = $${params.length + 1}`;
+      params.push(filters.tipo_movimiento);
+    }
+    if (filters.usuario_id) {
+      query += ` AND im.usuario_id = $${params.length + 1}`;
+      params.push(filters.usuario_id);
+    }
+    if (filters.fecha_desde) {
+      query += ` AND im.created_at >= $${params.length + 1}`;
+      params.push(filters.fecha_desde);
+    }
+    if (filters.fecha_hasta) {
+      query += ` AND im.created_at <= $${params.length + 1}`;
+      params.push(filters.fecha_hasta);
+    }
+    
+    query += ' ORDER BY im.created_at DESC';
+    const result = await pool.query(query, params);
+    return result.rows;
+  },
+  getById: async (id) => {
+    const result = await pool.query(
+      `SELECT im.*, i.nombre as insumo_nombre, u.nombre as usuario_nombre
+       FROM insumo_movimientos im
+       JOIN insumos i ON im.insumo_id = i.id
+       LEFT JOIN usuarios u ON im.usuario_id = u.id
+       WHERE im.id = $1`,
+      [id]
+    );
+    return result.rows[0];
+  },
+  create: async (data) => {
+    if (!data.insumo_id || data.insumo_id <= 0) {
+      const error = new Error('El ID del insumo es obligatorio y debe ser válido');
+      error.statusCode = 400;
+      throw error;
+    }
+    if (!['Entrega', 'Consumo', 'Ajuste'].includes(data.tipo_movimiento)) {
+      const error = new Error('Tipo de movimiento inválido. Valores permitidos: Entrega, Consumo, Ajuste');
+      error.statusCode = 400;
+      throw error;
+    }
+    if (data.cantidad === undefined || data.cantidad === 0) {
+      const error = new Error('La cantidad debe ser un valor diferente de cero');
+      error.statusCode = 400;
+      throw error;
+    }
+    if (!data.unidad || !String(data.unidad).trim()) {
+      const error = new Error('La unidad es obligatoria');
+      error.statusCode = 400;
+      throw error;
+    }
+    
+    const result = await pool.query(
+      `INSERT INTO insumo_movimientos 
+       (insumo_id, tipo_movimiento, cantidad, unidad, saldo_anterior, saldo_nuevo, referencia_tabla, referencia_id, usuario_id, razon) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) 
+       RETURNING id`,
+      [
+        data.insumo_id,
+        data.tipo_movimiento,
+        data.cantidad,
+        data.unidad,
+        data.saldo_anterior || null,
+        data.saldo_nuevo || null,
+        data.referencia_tabla || null,
+        data.referencia_id || null,
+        data.usuario_id || null,
+        data.razon || null
+      ]
+    );
+    return result.rows[0].id;
+  },
+  getHistorialByInsumo: async (insumoId, limit = 50) => {
+    const result = await pool.query(`
+      SELECT im.*, i.nombre as insumo_nombre, u.nombre as usuario_nombre
+      FROM insumo_movimientos im
+      JOIN insumos i ON im.insumo_id = i.id
+      LEFT JOIN usuarios u ON im.usuario_id = u.id
+      WHERE im.insumo_id = $1
+      ORDER BY im.created_at DESC
+      LIMIT $2
+    `, [insumoId, limit]);
+    return result.rows;
+  },
+  getResumenByInsumo: async (insumoId) => {
+    const result = await pool.query(`
+      SELECT 
+        i.id,
+        i.nombre,
+        i.cantidad as stock_actual,
+        COUNT(CASE WHEN im.tipo_movimiento = 'Entrega' THEN 1 END) as total_entregas,
+        COUNT(CASE WHEN im.tipo_movimiento = 'Consumo' THEN 1 END) as total_consumos,
+        COUNT(CASE WHEN im.tipo_movimiento = 'Ajuste' THEN 1 END) as total_ajustes,
+        COALESCE(SUM(CASE WHEN im.tipo_movimiento = 'Entrega' THEN im.cantidad ELSE 0 END), 0) as total_cantidad_entregada,
+        COALESCE(SUM(CASE WHEN im.tipo_movimiento = 'Consumo' THEN ABS(im.cantidad) ELSE 0 END), 0) as total_cantidad_consumida,
+        MAX(im.created_at) as ultimo_movimiento
+      FROM insumos i
+      LEFT JOIN insumo_movimientos im ON i.id = im.insumo_id
+      WHERE i.id = $1
+      GROUP BY i.id, i.nombre, i.cantidad
+    `, [insumoId]);
+    return result.rows[0] || null;
   }
 };
 
@@ -3481,6 +3842,8 @@ module.exports = {
   Insumos,
   EntregasInsumos,
   Produccion,
+  ProductoInsumos,
+  InsumoMovimientos,
   Roles,
   Usuarios
 };

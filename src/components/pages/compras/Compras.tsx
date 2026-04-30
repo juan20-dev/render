@@ -861,11 +861,20 @@ Fecha Impresión:    ${new Date().toLocaleString('es-CO')}
           {/* Add Items Section */}
           <div className="border-t border-border pt-4 mt-4">
             <h4 className="mb-3">Agregar Productos</h4>
-            {!canCreateCompra ? (
-              <div className="mb-3 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-900">
-                {creationHelpMessage}
+            
+            {formData.items.length === 0 ? (
+              <div className="mb-4 rounded-lg border-2 border-red-400 bg-red-50 px-4 py-3 text-sm">
+                <p className="font-bold text-red-700">❌ ADVERTENCIA: Compra sin productos</p>
+                <p className="text-red-600 mt-1 text-xs">
+                  Debes agregar <strong>mínimo 1 producto</strong> antes de guardar la compra.
+                </p>
               </div>
-            ) : null}
+            ) : (
+              <div className="mb-4 rounded-lg border border-green-300 bg-green-50 px-4 py-3 text-sm">
+                <p className="font-semibold text-green-700">✅ {formData.items.length} producto{formData.items.length !== 1 ? 's' : ''} agregado{formData.items.length !== 1 ? 's' : ''}</p>
+              </div>
+            )}
+
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-6 lg:items-end mb-3">
               <div className="lg:col-span-2">
                 <FormField

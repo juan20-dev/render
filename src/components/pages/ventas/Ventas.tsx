@@ -5,7 +5,7 @@ import { Form, FormField, FormActions } from '../../Form';
 import { Button } from '../../Button';
 import { Plus, ShoppingBag, Trash2, Search, RotateCcw } from 'lucide-react';
 import { useAlertDialog } from '../../AlertDialog';
-import { ventas as ventasAPI, clientes as clientesAPI, productos as productosAPI } from '../../../services/api';
+import { ventas as ventasAPI, clientes as clientesAPI, productos as productosAPI, pedidos as pedidosAPI } from '../../../services/api';
 import { downloadPdfText } from '../../../utils/pdf';
 
 interface VentaItem {
@@ -92,6 +92,9 @@ export function Ventas() {
   const [ventas, setVentas] = useState<Venta[]>([]);
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [productos, setProductos] = useState<Producto[]>([]);
+  const [pedidosDisponibles, setPedidosDisponibles] = useState<any[]>([]);
+  const [pedidoSeleccionado, setPedidoSeleccionado] = useState<any>(null);
+  const [isProductosFromPedido, setIsProductosFromPedido] = useState(false);
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState({
     query: '',
@@ -104,6 +107,7 @@ export function Ventas() {
     loadVentas();
     loadClientes();
     loadProductos();
+    loadPedidos();
   }, []);
 
   const loadVentas = async (options?: { rethrow?: boolean }) => {
@@ -151,6 +155,20 @@ export function Ventas() {
     }
   };
 
+  const loadPedidos = async () => {
+    try {
+      const data = await pedidosAPI.getAll();
+      if (!Array.isArray(data)) {
+        throw new Error('Respuesta de pedidos inválida');
+      }
+      // Filtrar pedidos que no estén Cancelados
+      const pedidosActivos = data.filter((p: any) => p.estado !== 'Cancelado');
+      setPedidosDisponibles(pedidosActivos);
+    } catch (error) {
+      console.error('Error al cargar pedidos:', error);
+    }
+  };
+
   const [selectedVenta, setSelectedVenta] = useState<Venta | null>(null);
   const [pendingStateChange, setPendingStateChange] = useState<StateChangeRequest | null>(null);
   const [stateChangeReason, setStateChangeReason] = useState('');
@@ -165,6 +183,9 @@ export function Ventas() {
     cliente_id: '',
     pedido: '',
     metodopago: 'Efectivo',
+    metodo_pago: 'Efectivo',
+    esquema_abono: '100%',
+    abono_recibido: 0,
     items: [] as VentaItem[]
   });
   const [currentItem, setCurrentItem] = useState({
@@ -515,6 +536,22 @@ Fecha Impresión:    ${new Date().toLocaleString('es-CO')}
           }
         }
 
+        // Validar abono si esquema es 50%
+        const totalVenta = formData.items.reduce((acc, item) => acc + item.subtotal, 0);
+        if (formData.esquema_abono === '50%') {
+          const abonoRequerido = totalVenta * 0.5;
+          if (formData.abono_recibido < abonoRequerido) {
+            showAlert({
+              title: 'Abono insuficiente',
+              description: `Debe recibir mínimo ${formatCurrency(abonoRequerido)} (50% del total)`,
+              type: 'warning',
+              confirmText: 'Entendido',
+              onConfirm: () => {}
+            });
+            return;
+          }
+        }
+
         const newVenta = {
           numero_venta: `VEN-${Date.now()}`,
           tipo: formData.tipo,
@@ -522,7 +559,10 @@ Fecha Impresión:    ${new Date().toLocaleString('es-CO')}
           pedido_id: formData.pedido ? parseInt(formData.pedido) : null,
           fecha: new Date().toISOString().split('T')[0],
           metodopago: formData.metodopago,
-          total: formData.items.reduce((acc, item) => acc + item.subtotal, 0),
+          metodo_pago: formData.metodo_pago,
+          esquema_abono: formData.esquema_abono,
+          abono_recibido: formData.abono_recibido,
+          total: totalVenta,
           estado: 'Completada',
           items: formData.items.map((item) => {
             const productoSeleccionado = productos.find((p) => p.nombre === item.producto);
@@ -553,8 +593,14 @@ Fecha Impresión:    ${new Date().toLocaleString('es-CO')}
           cliente_id: '',
           pedido: '',
           metodopago: 'Efectivo',
+          metodo_pago: 'Efectivo',
+          esquema_abono: '100%',
+          abono_recibido: 0,
           items: []
         });
+        setIsProductosFromPedido(false);
+        setPedidoSeleccionado(null);
+        setCurrentItem({ producto: '', producto_id: '', cantidad: 0, precio_unitario: 0 });
         showAlert({
           title: 'Éxito',
           description: `Venta #${rawId} guardada correctamente.`,
@@ -618,6 +664,51 @@ Fecha Impresión:    ${new Date().toLocaleString('es-CO')}
         producto_id: '',
         producto: '',
         precio_unitario: 0
+      });
+    }
+  };
+
+  const handlePedidoSelected = async (pedidoId: string) => {
+    try {
+      // Cargar detalles del pedido
+      const detalles = await pedidosAPI.getDetalles(pedidoId);
+      if (!Array.isArray(detalles)) {
+        throw new Error('Respuesta de detalles inválida');
+      }
+
+      // Convertir detalles a items de venta
+      const itemsDelPedido: VentaItem[] = detalles.map((detalle: any) => ({
+        producto: detalle.producto_nombre || detalle.nombre,
+        cantidad: Number(detalle.cantidad),
+        precio_unitario: Number(detalle.precio_unitario),
+        subtotal: Number(detalle.subtotal)
+      }));
+
+      // Actualizar formData
+      setFormData({
+        ...formData,
+        pedido: pedidoId,
+        items: itemsDelPedido
+      });
+
+      setPedidoSeleccionado(pedidosDisponibles.find(p => p.id.toString() === pedidoId));
+      setIsProductosFromPedido(true);
+
+      showAlert({
+        title: 'Pedido cargado',
+        description: `Se cargaron ${itemsDelPedido.length} producto(s) del pedido`,
+        type: 'success',
+        confirmText: 'Entendido',
+        onConfirm: () => {}
+      });
+    } catch (error) {
+      console.error('Error al cargar pedido:', error);
+      showAlert({
+        title: 'Error',
+        description: 'No se pudo cargar el pedido y sus productos',
+        type: 'danger',
+        confirmText: 'Entendido',
+        onConfirm: () => {}
       });
     }
   };
@@ -866,9 +957,17 @@ Fecha Impresión:    ${new Date().toLocaleString('es-CO')}
             <FormField
               label="Número de Pedido"
               name="pedido"
+              type="select"
               value={formData.pedido}
-              onChange={(value) => setFormData({ ...formData, pedido: value as string })}
-              placeholder="PED-001"
+              onChange={(value) => handlePedidoSelected(value as string)}
+              options={[
+                { value: '', label: 'Seleccionar pedido...' },
+                ...pedidosDisponibles.map(p => ({
+                  value: p.id.toString(),
+                  label: `[ID: ${p.id} | ${p.numero_pedido}] - Cliente: ${p.cliente} - ${p.productos} producto${p.productos !== 1 ? 's' : ''}`
+                }))
+              ]}
+              placeholder="Buscar y seleccionar pedido"
               required
             />
           )}
@@ -887,62 +986,117 @@ Fecha Impresión:    ${new Date().toLocaleString('es-CO')}
             required
           />
 
+          <FormField
+            label="Esquema de Abono"
+            name="esquema_abono"
+            type="select"
+            value={formData.esquema_abono}
+            onChange={(value) => setFormData({ ...formData, esquema_abono: value as string })}
+            options={[
+              { label: '50% (Abono Inicial)', value: '50%' },
+              { label: '100% (Total)', value: '100%' }
+            ]}
+            required
+          />
+
+          {formData.esquema_abono === '50%' && (
+            <>
+              <FormField
+                label="Abono Recibido"
+                name="abono_recibido"
+                type="number"
+                value={formData.abono_recibido}
+                onChange={(value) => setFormData({ ...formData, abono_recibido: parseFloat(value as string) || 0 })}
+                min="0"
+                step="0.01"
+                placeholder="0"
+              />
+              <div className="p-3 bg-orange-50 border border-orange-300 rounded-lg">
+                <p className="text-sm text-orange-700">
+                  📊 Total: {formatCurrency(formData.items.reduce((acc, item) => acc + item.subtotal, 0))} | 
+                  Abono requerido (50%): {formatCurrency((formData.items.reduce((acc, item) => acc + item.subtotal, 0) * 0.5))} |
+                  Recibido: {formatCurrency(formData.abono_recibido)}
+                </p>
+              </div>
+            </>
+          )}
+
           <div className="space-y-4 border-t border-border pt-4">
-            <h4>Agregar Productos</h4>
-            <div className="grid grid-cols-3 gap-4">
-              <FormField
-                label="Producto"
-                name="producto"
-                type="select"
-                value={currentItem.producto_id}
-                onChange={(value) => handleProductoChange(value as string)}
-                options={[
-                  { value: '', label: 'Seleccionar producto...' },
-                  ...productos.map(p => ({
-                    value: p.id.toString(),
-                    label: `${p.nombre} (Stock: ${p.stock}) - ${formatCurrency(p.precio)}`
-                  }))
-                ]}
-                placeholder="Seleccionar producto"
-              />
+            {!isProductosFromPedido && (
+              <>
+                <h4>Agregar Productos</h4>
+                <div className="grid grid-cols-3 gap-4">
+                  <FormField
+                    label="Producto"
+                    name="producto"
+                    type="select"
+                    value={currentItem.producto_id}
+                    onChange={(value) => handleProductoChange(value as string)}
+                    options={[
+                      { value: '', label: 'Seleccionar producto...' },
+                      ...productos.map(p => ({
+                        value: p.id.toString(),
+                        label: `${p.nombre} (Stock: ${p.stock}) - ${formatCurrency(p.precio)}`
+                      }))
+                    ]}
+                    placeholder="Seleccionar producto"
+                  />
 
-              <FormField
-                label="Cantidad"
-                name="cantidad"
-                type="number"
-                value={currentItem.cantidad}
-                onChange={(value) => setCurrentItem({ ...currentItem, cantidad: value as number })}
-                placeholder="0"
-              />
+                  <FormField
+                    label="Cantidad"
+                    name="cantidad"
+                    type="number"
+                    value={currentItem.cantidad}
+                    onChange={(value) => setCurrentItem({ ...currentItem, cantidad: value as number })}
+                    placeholder="0"
+                  />
 
-              <FormField
-                label="Precio Unitario"
-                name="precio_unitario"
-                type="number"
-                value={currentItem.precio_unitario}
-                onChange={(value) => setCurrentItem({ ...currentItem, precio_unitario: value as number })}
-                placeholder="0"
-                disabled
-              />
-            </div>
+                  <FormField
+                    label="Precio Unitario"
+                    name="precio_unitario"
+                    type="number"
+                    value={currentItem.precio_unitario}
+                    onChange={(value) => setCurrentItem({ ...currentItem, precio_unitario: value as number })}
+                    placeholder="0"
+                    disabled
+                  />
+                </div>
 
-            {disponibleParaLineaActual !== null ? (
-              <p className="text-xs text-muted-foreground">
-                Puedes agregar hasta {disponibleParaLineaActual.disponible} unidad
-                {disponibleParaLineaActual.disponible !== 1 ? 'es' : ''} (
-                inventario actual: {disponibleParaLineaActual.stock}
-                ).
-              </p>
-            ) : null}
+                {disponibleParaLineaActual !== null ? (
+                  <p className="text-xs text-muted-foreground">
+                    Puedes agregar hasta {disponibleParaLineaActual.disponible} unidad
+                    {disponibleParaLineaActual.disponible !== 1 ? 'es' : ''} (
+                    inventario actual: {disponibleParaLineaActual.stock}
+                    ).
+                  </p>
+                ) : null}
 
-            <Button type="button" onClick={handleAddItem} icon={<Plus className="w-4 h-4" />}>
-              Agregar Producto
-            </Button>
-          </div>
+                <Button type="button" onClick={handleAddItem} icon={<Plus className="w-4 h-4" />}>
+                  Agregar Producto
+                </Button>
+              </>
+            )}
+
+            {isProductosFromPedido && (
+              <div className="p-4 bg-green-50 border border-green-300 rounded-lg">
+                <h4 className="font-semibold text-green-700 mb-2">✓ Productos cargados del Pedido</h4>
+                <p className="text-sm text-green-600">
+                  {formData.items.length} producto{formData.items.length !== 1 ? 's' : ''} del pedido seleccionado
+                </p>
+                <p className="text-xs text-gray-600 mt-2">
+                  🔒 Los productos están vinculados al pedido. No se pueden modificar.
+                </p>
+              </div>
+            )}
 
           {formData.items.length > 0 && (
             <div className="space-y-2">
               <h4>Productos Agregados</h4>
+              {isProductosFromPedido && (
+                <div className="absolute top-2 right-2 bg-blue-100 text-blue-700 px-3 py-1 rounded text-xs font-semibold">
+                  🔒 Vinculados al pedido
+                </div>
+              )}
               <table className="w-full border border-border rounded-lg">
                 <thead className="bg-muted">
                   <tr>
@@ -955,19 +1109,23 @@ Fecha Impresión:    ${new Date().toLocaleString('es-CO')}
                 </thead>
                 <tbody>
                   {formData.items.map((item, index) => (
-                    <tr key={index} className="border-t border-border">
-                      <td className="p-3">{item.producto}</td>
-                      <td className="p-3 text-right">{item.cantidad}</td>
-                      <td className="p-3 text-right">{formatCurrency(item.precio_unitario)}</td>
-                      <td className="p-3 text-right">{formatCurrency(item.subtotal)}</td>
+                    <tr key={index} className={`border-t border-border ${isProductosFromPedido ? 'bg-gray-50' : ''}`}>
+                      <td className={`p-3 ${isProductosFromPedido ? 'text-gray-600' : ''}`}>{item.producto}</td>
+                      <td className={`p-3 text-right ${isProductosFromPedido ? 'text-gray-600' : ''}`}>{item.cantidad}</td>
+                      <td className={`p-3 text-right ${isProductosFromPedido ? 'text-gray-600' : ''}`}>{formatCurrency(item.precio_unitario)}</td>
+                      <td className={`p-3 text-right ${isProductosFromPedido ? 'text-gray-600' : ''}`}>{formatCurrency(item.subtotal)}</td>
                       <td className="p-3 text-right">
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveItem(index)}
-                          className="text-destructive hover:text-destructive/80"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        {!isProductosFromPedido ? (
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveItem(index)}
+                            className="text-destructive hover:text-destructive/80"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        ) : (
+                          <span className="text-gray-400 text-xs">🔒 Bloqueado</span>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -982,7 +1140,25 @@ Fecha Impresión:    ${new Date().toLocaleString('es-CO')}
           )}
 
           <div className="flex gap-3 pt-4 justify-end">
-            <Button variant="outline" onClick={() => setIsModalOpen(false)}>
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setIsModalOpen(false);
+                setFormData({
+                  tipo: 'Directa',
+                  cliente_id: '',
+                  pedido: '',
+                  metodopago: 'Efectivo',
+                  metodo_pago: 'Efectivo',
+                  esquema_abono: '100%',
+                  abono_recibido: 0,
+                  items: []
+                });
+                setIsProductosFromPedido(false);
+                setPedidoSeleccionado(null);
+                setCurrentItem({ producto: '', producto_id: '', cantidad: 0, precio_unitario: 0 });
+              }}
+            >
               Cancelar
             </Button>
             <Button onClick={handleSaveVenta} disabled={formData.items.length === 0}>
