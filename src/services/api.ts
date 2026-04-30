@@ -568,6 +568,8 @@ export const pedidos = {
     const merged = await mergeWithCurrent(`/api/pedidos/${id}`, data);
     return apiCall(`/api/pedidos/${id}`, 'PUT', normalizePedidoPayload(merged));
   },
+  updateStatus: (id: number, data: { estado: string; motivo?: string }) =>
+    apiCall(`/api/pedidos/${id}/estado`, 'PUT', data),
   delete: (id: number) => apiCall(`/api/pedidos/${id}`, 'DELETE'),
 };
 
@@ -647,6 +649,8 @@ export const abonos = {
     const merged = await mergeWithCurrent(`/api/abonos/${id}`, data);
     return apiCall(`/api/abonos/${id}`, 'PUT', normalizeAbonoPayload(merged));
   },
+  updateStatus: (id: number, data: { estado: string; motivo?: string }) =>
+    apiCall(`/api/abonos/${id}/estado`, 'PUT', data),
   delete: (id: number) => apiCall(`/api/abonos/${id}`, 'DELETE'),
 };
 

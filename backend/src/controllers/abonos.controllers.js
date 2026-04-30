@@ -60,6 +60,43 @@ module.exports = {
     } catch (error) {
       res.status(500).json({ success: false, message: error.message });
     }
+  },
+  updateStatus: async (req, res) => {
+    try {
+      const { estado, motivo } = req.body;
+      if (!estado) {
+        return res.status(400).json({ success: false, message: 'Estado es requerido' });
+      }
+
+      const estadosValidos = ['Registrado', 'Verificado', 'Cancelado'];
+      if (!estadosValidos.includes(estado)) {
+        return res.status(400).json({ success: false, message: `Estado inválido. Válidos: ${estadosValidos.join(', ')}` });
+      }
+
+      const abonoActual = await models.Abonos.getById(req.params.id);
+      if (!abonoActual) {
+        return res.status(404).json({ success: false, message: 'Abono no encontrado' });
+      }
+
+      // Validar transiciones de estado permitidas
+      const transicionesPermitidas = {
+        'Registrado': ['Verificado', 'Cancelado'],
+        'Verificado': ['Cancelado'],
+        'Cancelado': []
+      };
+
+      if (!transicionesPermitidas[abonoActual.estado]?.includes(estado)) {
+        return res.status(400).json({ 
+          success: false, 
+          message: `No se puede cambiar de ${abonoActual.estado} a ${estado}` 
+        });
+      }
+
+      await models.Abonos.update(req.params.id, { estado });
+      return res.json({ success: true, message: 'Estado actualizado exitosamente' });
+    } catch (error) {
+      res.status(500).json({ success: false, message: error.message });
+    }
   }
 };
 

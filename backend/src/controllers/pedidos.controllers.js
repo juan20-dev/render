@@ -152,4 +152,57 @@ module.exports = {
       return res.status(500).json({ success: false, message: error.message });
     }
   },
+  updateStatus: async (req, res) => {
+    try {
+      const denied = await assertOwnPedidoId(req, res, req.params.id);
+      if (denied) return denied;
+
+      const { estado, motivo } = req.body;
+      if (!estado) {
+        return res.status(400).json({ success: false, message: 'Estado es requerido' });
+      }
+
+      const estadosValidos = ['Pendiente', 'En Proceso', 'Completado', 'Cancelado'];
+      if (!estadosValidos.includes(estado)) {
+        return res.status(400).json({ success: false, message: `Estado inválido. Válidos: ${estadosValidos.join(', ')}` });
+      }
+
+      const pedidoActual = await models.Pedidos.getById(req.params.id);
+      if (!pedidoActual) {
+        return res.status(404).json({ success: false, message: 'Pedido no encontrado' });
+      }
+
+      // Validar transiciones de estado permitidas
+      const transicionesPermitidas = {
+        'Pendiente': ['En Proceso', 'Cancelado'],
+        'En Proceso': ['Completado', 'Cancelado'],
+        'Completado': [],
+        'Cancelado': []
+      };
+
+      if (!transicionesPermitidas[pedidoActual.estado]?.includes(estado)) {
+        return res.status(400).json({ 
+          success: false, 
+          message: `No se puede cambiar de ${pedidoActual.estado} a ${estado}` 
+        });
+      }
+
+      // Si se cancela, guardar motivo si se proporciona
+      const datosActualizar = { estado };
+      if (estado === 'Cancelado' && motivo) {
+        datosActualizar.detalles = `${pedidoActual.detalles || ''} [CANCELADO: ${motivo}]`.trim();
+      }
+
+      await models.Pedidos.update(req.params.id, datosActualizar);
+      
+      // Si se completa, crear automáticamente domicilio
+      if (estado === 'Completado') {
+        await ensureDomicilioForCompletedPedido(req.params.id);
+      }
+
+      return res.json({ success: true, message: 'Estado actualizado exitosamente' });
+    } catch (error) {
+      return res.status(500).json({ success: false, message: error.message });
+    }
+  },
 };

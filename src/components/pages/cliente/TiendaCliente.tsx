@@ -69,16 +69,18 @@ export function TiendaCliente() {
       setLoading(true);
       const productosData = await productosAPI.getAll();
 
-      const productosNormalizados = (Array.isArray(productosData) ? productosData : []).map((p: any) => ({
-        id: Number(p.id),
-        nombre: p.nombre,
-        categoria: p.categoria || 'General',
-        precio: Number(p.precio || 0),
-        stock: Number(p.stock || 0),
-        imagen: p.imagen_url || '',
-        descripcion: p.descripcion || '',
-        estado: p.estado
-      }));
+      const productosNormalizados = (Array.isArray(productosData) ? productosData : [])
+        .filter((p: any) => p.estado === 'Activo')
+        .map((p: any) => ({
+          id: Number(p.id),
+          nombre: p.nombre,
+          categoria: p.categoria || 'General',
+          precio: Number(p.precio || 0),
+          stock: Number(p.stock || 0),
+          imagen: p.imagen_url || '',
+          descripcion: p.descripcion || '',
+          estado: p.estado
+        }));
 
       setProductos(productosNormalizados);
 

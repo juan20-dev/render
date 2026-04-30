@@ -19,11 +19,11 @@ Backend completo para la aplicación de Gestión de Ventas de Licores. Proporcio
 backend/
 ├── index.js              # Entrada principal del servidor
 ├── config.js             # Configuración (variables de entorno)
-├── db.js                 # Pool de conexiones MySQL
+├── db.js                 # Pool de conexiones PostgreSQL
 ├── models.js             # Modelos de datos (CRUD)
 ├── controllers.js        # Controladores de rutas
 ├── routes.js             # Definición de rutas API
-├── schema.sql            # Script de base de datos
+├── db.pgsql              # Script de base de datos PostgreSQL
 ├── .env                  # Variables de entorno
 ├── API_ENDPOINTS.md      # Documentación de endpoints
 └── README.md             # Este archivo
@@ -34,7 +34,7 @@ backend/
 ## Requisitos Previos
 
 - **Node.js** (v14 o superior)
-- **MySQL** (v5.7 o superior)
+- **PostgreSQL** (v12 o superior)
 - **npm** o **yarn**
 
 ---
@@ -61,10 +61,10 @@ yarn install
 npm run setup-db
 ```
 
-#### Opción B: Importar manualmente en MySQL
+#### Opción B: Importar manualmente en PostgreSQL
 
 ```bash
-mysql -u root -p liqueur_sales < backend/schema.sql
+psql -U postgres -d grandmas_liquors -f backend/db.pgsql
 ```
 
 ### 3. Configurar Variables de Entorno
@@ -72,15 +72,15 @@ mysql -u root -p liqueur_sales < backend/schema.sql
 Actualiza el archivo `.env` con tus credenciales:
 
 ```env
-# Configuración de Base de Datos
+# Configuración de Base de Datos (PostgreSQL)
 DB_HOST=localhost
-DB_PORT=3306
-DB_USER=root
+DB_PORT=5432
+DB_USER=postgres
 DB_PASSWORD=your_password
-DB_NAME=liqueur_sales
+DB_DATABASE=grandmas_liquors
 
 # Configuración del Servidor
-PORT=5000
+PORT=3002
 NODE_ENV=development
 ```
 
@@ -92,7 +92,7 @@ NODE_ENV=development
 {
   "express": "^4.18.0",
   "cors": "^2.8.5",
-  "mysql2": "^3.0.0",
+  "pg": "^8.8.0",
   "dotenv": "^16.0.0"
 }
 ```
@@ -100,7 +100,7 @@ NODE_ENV=development
 **Instalar todas:**
 
 ```bash
-npm install express cors mysql2 dotenv
+npm install express cors pg dotenv
 ```
 
 ---
@@ -137,9 +137,9 @@ Al iniciar el servidor, deberías ver:
 ╚════════════════════════════════════════════════════════════╝
 
 ✓ Servidor Backend iniciado exitosamente
-✓ Puerto: 5000
+✓ Puerto: 3002 (configurable en .env con PORT)
 ✓ Ambiente: development
-✓ Base de Datos: Conectada
+✓ Base de Datos: PostgreSQL Conectada
 ✓ Conexión App-Backend: Establecida
 
 📋 ENDPOINTS DISPONIBLES:
@@ -149,7 +149,7 @@ Al iniciar el servidor, deberías ver:
    - GET    /api/clientes               (Listar clientes)
    ...más endpoints...
 
-🌐 URL Base: http://localhost:5000
+🌐 URL Base: http://localhost:3002
 
 ════════════════════════════════════════════════════════════
 ```
@@ -166,7 +166,7 @@ Cliente (Frontend)
     ├─→ Express API (routes.js)
     ├─→ Controladores (controllers.js)
     ├─→ Modelos (models.js)
-    └─→ Base de Datos MySQL
+    └─→ Base de Datos PostgreSQL
 ```
 
 ### Capas
@@ -213,15 +213,15 @@ DELETE /api/productos/:id       - Eliminar
 ## Variables de Entorno
 
 ```env
-# Base de Datos
-DB_HOST          # Host del servidor MySQL (default: localhost)
-DB_PORT          # Puerto MySQL (default: 3306)
-DB_USER          # Usuario MySQL (default: root)
-DB_PASSWORD      # Contraseña MySQL
-DB_NAME          # Nombre de la base de datos (default: liqueur_sales)
+# Base de Datos (PostgreSQL)
+DB_HOST          # Host del servidor PostgreSQL (default: localhost)
+DB_PORT          # Puerto PostgreSQL (default: 5432)
+DB_USER          # Usuario PostgreSQL (default: postgres)
+DB_PASSWORD      # Contraseña PostgreSQL
+DB_DATABASE      # Nombre de la base de datos (default: grandmas_liquors)
 
 # Servidor
-PORT             # Puerto del servidor (default: 5000)
+PORT             # Puerto del servidor (default: 3002)
 NODE_ENV         # Ambiente: development, production (default: development)
 ```
 
@@ -268,13 +268,13 @@ NODE_ENV         # Ambiente: development, production (default: development)
 ### Test Health Endpoint
 
 ```bash
-curl http://localhost:5000/api/health
+curl http://localhost:3002/api/health
 ```
 
 ### Test Crear Cliente
 
 ```bash
-curl -X POST http://localhost:5000/api/clientes \
+curl -X POST http://localhost:3002/api/clientes \
   -H "Content-Type: application/json" \
   -d '{
     "nombre": "Juan",

@@ -147,6 +147,7 @@ export function Produccion() {
     try {
       const data = await productosAPI.getAll();
       const normalized = (Array.isArray(data) ? data : [])
+        .filter((producto: any) => producto.estado === 'Activo')
         .map((producto: any) => ({
           id: Number(producto?.id),
           nombre: String(producto?.nombre || '').trim(),

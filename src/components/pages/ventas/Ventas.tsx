@@ -142,7 +142,7 @@ export function Ventas() {
       if (!Array.isArray(data)) {
         throw new Error('No se pudieron obtener los productos: respuesta inválida.');
       }
-      setProductos(data);
+      setProductos(data.filter((p: any) => p.estado === 'Activo'));
     } catch (error) {
       console.error('Error al cargar productos:', error);
       if (options?.rethrow) {

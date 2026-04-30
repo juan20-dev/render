@@ -183,6 +183,7 @@ export function Roles() {
   const [editNameError, setEditNameError] = useState('');
   const [roleAudit, setRoleAudit] = useState<RoleAuditEntry[]>([]);
   const [loadingRoleAudit, setLoadingRoleAudit] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [pendingStateChange, setPendingStateChange] = useState<StateChangeRequest | null>(null);
   const [stateChangeReason, setStateChangeReason] = useState('');
   const [stateChangeSaving, setStateChangeSaving] = useState(false);
@@ -423,10 +424,35 @@ export function Roles() {
 
   const loadRoles = async () => {
     try {
+      setLoadError(null);
       const data = await rolesAPI.getAll();
-      setRoles(data);
+      const list = Array.isArray(data) ? data : (data && Array.isArray((data as any).data) ? (data as any).data : []);
+      const normalized = list.map((r: any) => ({
+        id: r?.id?.toString?.() ?? String(Math.random()),
+        nombre: typeof r?.nombre === 'string' ? r.nombre : '',
+        descripcion: typeof r?.descripcion === 'string' ? r.descripcion : '',
+        permisos: Array.isArray(r?.permisos) ? r.permisos : [],
+        estado: r?.estado === 'Inactivo' ? 'Inactivo' : 'Activo',
+        usuarios: typeof r?.usuarios === 'number' ? r.usuarios : Number(r?.usuarios) || 0,
+        usuarios_activos: typeof r?.usuarios_activos === 'number' ? r.usuarios_activos : Number(r?.usuarios_activos) || 0,
+        created_at: r?.created_at ?? undefined,
+        updated_at: r?.updated_at ?? undefined,
+      } as Role));
+      setRoles(normalized);
     } catch (error) {
       console.error('Error cargando roles:', error);
+      setRoles([]);
+      setLoadError('No fue posible cargar los roles. Revisa la consola para más detalles.');
+      try {
+        showAlert({
+          title: 'Error cargando roles',
+          description: 'No fue posible cargar la lista de roles. Intenta de nuevo o revisa la consola.',
+          type: 'danger',
+          confirmText: 'Cerrar'
+        });
+      } catch (e) {
+        // fall back silently if alert system isn't available
+      }
     }
   };
 
@@ -992,6 +1018,12 @@ export function Roles() {
         </Button>
       </div>
 
+      {loadError && (
+        <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-destructive text-sm">
+          {loadError}
+        </div>
+      )}
+
       <div className="rounded-lg border border-border bg-white p-4 space-y-3">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
           <div className="relative flex-1">
@@ -1051,7 +1083,6 @@ export function Roles() {
             variant: 'default'
           },
           commonActions.edit(handleEdit),
-          (role: Role) => !isAdminRoleName(role?.nombre),
           commonActions.delete(handleDelete)
         ]}
       />
@@ -1699,7 +1730,6 @@ export function Roles() {
               Guardar Permisos
             </Button>
           </div>
-        </div>
         </div>
       </Modal>
     </div>

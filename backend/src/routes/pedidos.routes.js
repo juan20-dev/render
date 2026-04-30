@@ -5,6 +5,7 @@ const router = express.Router();
 // Las rutas específicas deben ir ANTES de las dinámicas
 router.get('/cliente/:clienteId', controller.getByCliente);
 router.post('/producto', controller.addProducto);
+router.put('/:id/estado', controller.updateStatus);
 
 // Luego las rutas dinámicas
 router.get('/', controller.getAll);

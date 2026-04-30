@@ -167,7 +167,10 @@ export function Abonos() {
 
     try {
       setStateChangeSaving(true);
-      await abonosAPI.update(Number(pendingStateChange.abono.id), { estado: pendingStateChange.to });
+      await abonosAPI.updateStatus(Number(pendingStateChange.abono.id), { 
+        estado: pendingStateChange.to,
+        motivo: pendingStateChange.to === 'Cancelado' ? stateChangeReason : undefined
+      });
       await loadAbonos();
       setPendingStateChange(null);
       setStateChangeReason('');

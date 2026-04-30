@@ -5,7 +5,7 @@ import { Button } from '../../Button';
 import { Form, FormField, FormActions } from '../../Form';
 import { Plus, Eye, Trash2, Minus, DollarSign, Search, RotateCcw } from 'lucide-react';
 import { useAlertDialog } from '../../AlertDialog';
-import { pedidos as pedidosAPI, clientes as clientesAPI, productos as productosAPI } from '../../../services/api';
+import { pedidos as pedidosAPI, clientes as clientesAPI, productos as productosAPI, abonos as abonosAPI } from '../../../services/api';
 import { downloadPdfText } from '../../../utils/pdf';
 
 interface Pedido {
@@ -64,6 +64,8 @@ export function Pedidos() {
   const [pedidoParaAbonos, setPedidoParaAbonos] = useState<Pedido | null>(null);
   const [isPdfModalOpen, setIsPdfModalOpen] = useState(false);
   const [pdfContent, setPdfContent] = useState('');
+  const [abonosDelPedido, setAbonosDelPedido] = useState<any[]>([]);
+  const [loadingAbonos, setLoadingAbonos] = useState(false);
   const { showAlert, AlertComponent } = useAlertDialog();
   
   // Form data para crear/editar
@@ -94,7 +96,7 @@ export function Pedidos() {
   const loadProductos = async () => {
     try {
       const data = await productosAPI.getAll();
-      setProductosDisponibles(data);
+      setProductosDisponibles(data.filter((p: any) => p.estado === 'Activo'));
     } catch (error) {
       console.error('Error cargando productos:', error);
     }
@@ -103,10 +105,12 @@ export function Pedidos() {
   const loadClientes = async () => {
     try {
       const data = await clientesAPI.getAll();
-      setClientesDisponibles(data.map((c: any) => ({
-        value: c.id.toString(),
-        label: c.nombre
-      })));
+      setClientesDisponibles(data
+        .filter((c: any) => c.estado === 'Activo')
+        .map((c: any) => ({
+          value: c.id.toString(),
+          label: c.nombre
+        })));
     } catch (error) {
       console.error('Error cargando clientes:', error);
     }
@@ -364,7 +368,10 @@ export function Pedidos() {
 
     try {
       setStateChangeSaving(true);
-      await pedidosAPI.update(Number(pendingStateChange.pedido.id), { estado: pendingStateChange.to });
+      await pedidosAPI.updateStatus(Number(pendingStateChange.pedido.id), { 
+        estado: pendingStateChange.to,
+        motivo: pendingStateChange.to === 'Cancelado' ? stateChangeReason : undefined
+      });
       await loadPedidos();
       setPendingStateChange(null);
       setStateChangeReason('');
@@ -459,24 +466,35 @@ export function Pedidos() {
     }
   };
 
-  const handleVerAbonos = (pedido: Pedido) => {
+  const handleVerAbonos = async (pedido: Pedido) => {
     setPedidoParaAbonos(pedido);
     setIsAbonosModalOpen(true);
+    setLoadingAbonos(true);
+    try {
+      const data = await abonosAPI.getByPedido(Number(pedido.id));
+      setAbonosDelPedido(data || []);
+    } catch (error) {
+      console.error('Error cargando abonos:', error);
+      setAbonosDelPedido([]);
+    } finally {
+      setLoadingAbonos(false);
+    }
   };
 
   const getPedidoAbonos = () => {
-    if (!pedidoParaAbonos) return [];
-    return mockAbonos.filter(a => a.pedido === pedidoParaAbonos.id);
+    return abonosDelPedido;
   };
 
-  const handleGeneratePDF = (pedido: Pedido) => {
-    const abonos = mockAbonos.filter(a => a.pedido === pedido.id);
-    const totalAbonado = abonos.reduce((sum, a) => sum + a.monto, 0);
-    const saldoPendiente = pedido.total - totalAbonado;
+  const handleGeneratePDF = async (pedido: Pedido) => {
+    setLoadingAbonos(true);
+    try {
+      const abonos = await abonosAPI.getByPedido(Number(pedido.id));
+      const totalAbonado = abonos.reduce((sum: number, a: any) => sum + a.monto, 0);
+      const saldoPendiente = pedido.total - totalAbonado;
 
     const abonosDetail = abonos.length > 0 
-      ? abonos.map((abono, index) => 
-          `${index + 1}. ${abono.id} - ${formatCurrency(abono.monto)} (${abono.metodoPago}) - ${abono.fecha}`
+      ? abonos.map((abono: any, index: number) => 
+          `${index + 1}. ${abono.numero_abono || abono.id} - ${formatCurrency(abono.monto)} (${abono.metodo_pago}) - ${abono.fecha}`
         ).join('\n')
       : 'Sin abonos registrados';
 
@@ -519,6 +537,18 @@ Fecha Impresión:    ${new Date().toLocaleString('es-CO')}
 
     setPdfContent(content);
     setIsPdfModalOpen(true);
+    } catch (error) {
+      console.error('Error generando PDF:', error);
+      showAlert({
+        title: 'Error',
+        description: 'No se pudo cargar los abonos para generar el PDF.',
+        type: 'danger',
+        confirmText: 'Entendido',
+        onConfirm: () => {}
+      });
+    } finally {
+      setLoadingAbonos(false);
+    }
   };
 
   return (

@@ -70,61 +70,62 @@ module.exports = {
     }
   },
   create: async (req, res) => {
-    if (isClienteUser(req)) {
-      return res.status(403).json({ success: false, message: 'No autorizado' });
-    }
-
-    const normalized = normalizeClientePayload(req.body);
-    if (normalized.error) {
-      return res.status(400).json({ success: false, message: normalized.error });
-    }
-
-    const data = normalized.data;
-    const normalizedNombre = String(data.nombre || '').trim();
-    const normalizedApellido = String(data.apellido || '').trim();
-    const normalizedDocumento = String(data.documento || '').trim();
-    const normalizedTelefono = String(data.telefono || '').replace(/\D/g, '');
-    const normalizedEmail = String(data.email || '').trim().toLowerCase();
-    const normalizedDireccion = String(data.direccion || '').trim();
-    const tipoDocumento = data.tipoDocumento;
-    const estado = data.estado === 'Inactivo' ? 'Inactivo' : 'Activo';
-
-    const requiredFields = [
-      { value: normalizedNombre, label: 'Nombre' },
-      { value: normalizedApellido, label: 'Apellido' },
-      { value: tipoDocumento, label: 'Tipo de Documento' },
-      { value: normalizedDocumento, label: 'Numero de Documento' },
-      { value: normalizedTelefono, label: 'Telefono' },
-      { value: normalizedEmail, label: 'Correo Electronico' },
-      { value: normalizedDireccion, label: 'Direccion' },
-    ];
-    const missing = requiredFields.find((field) => !field.value || String(field.value).trim() === '');
-    if (missing) {
-      return res.status(400).json({
-        success: false,
-        message: `El campo "${missing.label}" es obligatorio.`,
-      });
-    }
-
-    if (normalizedTelefono.length < 7 || normalizedTelefono.length > 15) {
-      return res.status(400).json({
-        success: false,
-        message: 'Telefono invalido. Debe tener entre 7 y 15 digitos numericos.',
-      });
-    }
-
-    const rawPassword = typeof data.password === 'string' ? data.password.trim() : '';
-    const useManualPassword = Boolean(rawPassword);
-    if (useManualPassword && !isStrongPassword(rawPassword)) {
-      return res.status(400).json({
-        success: false,
-        message:
-          'La contrasena debe tener minimo 8 caracteres, una mayuscula, una minuscula, un numero y un caracter especial',
-      });
-    }
-
-    const client = await pool.connect();
     try {
+      if (isClienteUser(req)) {
+        return res.status(403).json({ success: false, message: 'No autorizado' });
+      }
+
+      const normalized = normalizeClientePayload(req.body);
+      if (normalized.error) {
+        return res.status(400).json({ success: false, message: normalized.error });
+      }
+
+      const data = normalized.data;
+      const normalizedNombre = String(data.nombre || '').trim();
+      const normalizedApellido = String(data.apellido || '').trim();
+      const normalizedDocumento = String(data.documento || '').trim();
+      const normalizedTelefono = String(data.telefono || '').replace(/\D/g, '');
+      const normalizedEmail = String(data.email || '').trim().toLowerCase();
+      const normalizedDireccion = String(data.direccion || '').trim();
+      const tipoDocumento = data.tipoDocumento;
+      const estado = data.estado === 'Inactivo' ? 'Inactivo' : 'Activo';
+
+      const requiredFields = [
+        { value: normalizedNombre, label: 'Nombre' },
+        { value: normalizedApellido, label: 'Apellido' },
+        { value: tipoDocumento, label: 'Tipo de Documento' },
+        { value: normalizedDocumento, label: 'Numero de Documento' },
+        { value: normalizedTelefono, label: 'Telefono' },
+        { value: normalizedEmail, label: 'Correo Electronico' },
+        { value: normalizedDireccion, label: 'Direccion' },
+      ];
+      const missing = requiredFields.find((field) => !field.value || String(field.value).trim() === '');
+      if (missing) {
+        return res.status(400).json({
+          success: false,
+          message: `El campo "${missing.label}" es obligatorio.`,
+        });
+      }
+
+      if (normalizedTelefono.length < 7 || normalizedTelefono.length > 15) {
+        return res.status(400).json({
+          success: false,
+          message: 'Telefono invalido. Debe tener entre 7 y 15 digitos numericos.',
+        });
+      }
+
+      const rawPassword = typeof data.password === 'string' ? data.password.trim() : '';
+      const useManualPassword = Boolean(rawPassword);
+      if (useManualPassword && !isStrongPassword(rawPassword)) {
+        return res.status(400).json({
+          success: false,
+          message:
+            'La contrasena debe tener minimo 8 caracteres, una mayuscula, una minuscula, un numero y un caracter especial',
+        });
+      }
+
+      const client = await pool.connect();
+      try {
       await client.query('BEGIN');
 
       const emailInUsuarios = await client.query(
@@ -364,26 +365,33 @@ module.exports = {
     } finally {
       client.release();
     }
+    } catch (outerError) {
+      return res.status(500).json({
+        success: false,
+        message: 'Error procesando la solicitud: ' + (outerError?.message || 'Error desconocido'),
+      });
+    }
   },
   update: async (req, res) => {
-    const denied = assertOwnClienteParam(req, res, req.params.id);
-    if (denied) return denied;
-
-    const normalized = normalizeClientePayload(req.body);
-    if (normalized.error) {
-      return res.status(400).json({ success: false, message: normalized.error });
-    }
-
-    const data = { ...normalized.data };
-    if (isClienteUser(req)) {
-      delete data.estado;
-      delete data.usuario_id;
-    }
-
-    const clienteId = Number(req.params.id);
-
-    const client = await pool.connect();
     try {
+      const denied = assertOwnClienteParam(req, res, req.params.id);
+      if (denied) return denied;
+
+      const normalized = normalizeClientePayload(req.body);
+      if (normalized.error) {
+        return res.status(400).json({ success: false, message: normalized.error });
+      }
+
+      const data = { ...normalized.data };
+      if (isClienteUser(req)) {
+        delete data.estado;
+        delete data.usuario_id;
+      }
+
+      const clienteId = Number(req.params.id);
+
+      const client = await pool.connect();
+      try {
       await client.query('BEGIN');
 
       const currentClienteResult = await client.query(
@@ -565,6 +573,12 @@ module.exports = {
       });
     } finally {
       client.release();
+    }
+    } catch (outerError) {
+      return res.status(500).json({
+        success: false,
+        message: 'Error procesando la solicitud: ' + (outerError?.message || 'Error desconocido'),
+      });
     }
   },
   uploadProfilePhoto: async (req, res) => {
