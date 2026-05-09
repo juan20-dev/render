@@ -39,7 +39,7 @@ const ensureProductoImageColumn = async () => {
   try {
     await productoImageColumnReady;
   } catch (error) {
-    // Ignore if table/column is not ready yet; create/update queries will still report precise errors.
+    
   }
 };
 
