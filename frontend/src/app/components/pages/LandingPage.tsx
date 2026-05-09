@@ -101,6 +101,35 @@ export function LandingPage({ onNavigateToLogin, onNavigateToRegister, onNavigat
   const [categoriasAPI, setCategoriasAPI] = useState<any[]>([]);
   const [loadingProductos, setLoadingProductos] = useState(true);
 
+  // Verificacion de mayoria de edad
+  const [mostrarVerificacionEdad, setMostrarVerificacionEdad] = useState(false);
+  const [accesoBloqueadoPorEdad, setAccesoBloqueadoPorEdad] = useState(false);
+
+  useEffect(() => {
+    try {
+      const yaConfirmado = window.sessionStorage.getItem('grandmas_mayor_edad') === '1';
+      if (yaConfirmado) return;
+    } catch {
+      // Ignorar errores de acceso a sessionStorage (modo incognito, etc.)
+    }
+    const t = window.setTimeout(() => setMostrarVerificacionEdad(true), 2000);
+    return () => window.clearTimeout(t);
+  }, []);
+
+  const handleConfirmarMayorEdad = () => {
+    try {
+      window.sessionStorage.setItem('grandmas_mayor_edad', '1');
+    } catch {
+      // Ignorar errores de acceso a sessionStorage
+    }
+    setMostrarVerificacionEdad(false);
+    setAccesoBloqueadoPorEdad(false);
+  };
+
+  const handleRechazarMayorEdad = () => {
+    setAccesoBloqueadoPorEdad(true);
+  };
+
   // Cargar productos y categorías desde la API
   useEffect(() => {
     const cargarDatos = async () => {
@@ -1657,6 +1686,78 @@ export function LandingPage({ onNavigateToLogin, onNavigateToRegister, onNavigat
         confirmText="Aceptar"
         cancelText="Cerrar"
       />
+
+      {/* Verificacion de mayoria de edad */}
+      {mostrarVerificacionEdad && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
+          <div
+            className="relative bg-white rounded-lg shadow-2xl w-full max-w-md flex flex-col overflow-hidden"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="verificacion-edad-titulo"
+          >
+            <div className="bg-primary text-white px-6 py-5 flex flex-col items-center text-center gap-2">
+              <img src={LOGO_URL} alt="Grandma's Liquors" className="w-14 h-14 rounded-full bg-white/10 p-1" />
+              <h2 id="verificacion-edad-titulo" className="text-lg sm:text-xl font-semibold">
+                Verificacion de edad
+              </h2>
+            </div>
+
+            <div className="p-6 text-center space-y-4">
+              {!accesoBloqueadoPorEdad ? (
+                <>
+                  <p className="text-base text-foreground">
+                    Confirmo que soy mayor de edad
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    El consumo de bebidas alcoholicas es exclusivo para personas mayores de 18 anos. El exceso de alcohol es perjudicial para la salud.
+                  </p>
+                  <div className="flex flex-col sm:flex-row gap-3 pt-2">
+                    <Button
+                      variant="outline"
+                      className="flex-1"
+                      onClick={handleRechazarMayorEdad}
+                    >
+                      No
+                    </Button>
+                    <Button
+                      className="flex-1"
+                      onClick={handleConfirmarMayorEdad}
+                    >
+                      Si
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="text-base text-foreground font-medium">
+                    Acceso restringido
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    Lo sentimos, debes ser mayor de edad para ingresar a Grandma's Liquors. Si te equivocaste, puedes confirmar tu mayoria de edad para continuar.
+                  </p>
+                  <div className="flex flex-col sm:flex-row gap-3 pt-2">
+                    <Button
+                      variant="outline"
+                      className="flex-1"
+                      onClick={() => setAccesoBloqueadoPorEdad(false)}
+                    >
+                      Volver
+                    </Button>
+                    <Button
+                      className="flex-1"
+                      onClick={handleConfirmarMayorEdad}
+                    >
+                      Soy mayor de edad
+                    </Button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,80 +1,129 @@
+/*
+ * Script de migracion idempotente para Grandma's Liquors.
+ *
+ * Que hace:
+ *   1. Verifica conectividad con PostgreSQL y avisa de forma clara si la base
+ *      de datos no existe o las credenciales son erroneas (evita el "exit 1"
+ *      sin contexto que confundia a quien clona por primera vez).
+ *   2. Ejecuta el schema base `db.pgsql` (drop + create + seeds).
+ *   3. Ejecuta cualquier archivo .sql adicional en `historias-migraciones/`
+ *      en orden alfabetico, si la carpeta existe (es opcional). Asi se evita
+ *      que el script falle/avise por archivos que no estan versionados.
+ *   4. Aplica ALTERs de sincronizacion idempotentes para bases preexistentes
+ *      que pudieran venir de versiones anteriores (ON CONFLICT IF NOT EXISTS).
+ *
+ * Uso:
+ *   - Desde la carpeta `backend/`: `npm run migrate`
+ *   - Variables de entorno usadas: DB_HOST, DB_PORT, DB_USER, DB_PASSWORD,
+ *     DB_DATABASE (todas con valores por defecto del config local).
+ *   - IMPORTANTE: la base de datos debe existir antes de correr este script.
+ *     Si no existe, se imprime el comando exacto para crearla.
+ */
 const fs = require('fs');
 const path = require('path');
 const { Pool } = require('pg');
 require('dotenv').config();
 
-// Configurar conexión a PostgreSQL
-const pool = new Pool({
+const dbConfig = {
   host: process.env.DB_HOST || 'localhost',
   port: process.env.DB_PORT || 5432,
   user: process.env.DB_USER || 'postgres',
   password: process.env.DB_PASSWORD || 'password',
   database: process.env.DB_DATABASE || "grandma'sdb",
-});
+};
+
+const pool = new Pool(dbConfig);
+
+const printConnectionHelp = (error) => {
+  const code = error?.code || '';
+  console.error('');
+  console.error('No fue posible conectar a la base de datos:');
+  console.error(`  host=${dbConfig.host}  port=${dbConfig.port}  database=${dbConfig.database}  user=${dbConfig.user}`);
+  console.error(`  motivo: ${error?.message || error}`);
+  console.error('');
+
+  if (code === '3D000' || /database .* does not exist/i.test(error?.message || '')) {
+    console.error('La base de datos no existe. Crearla primero (PostgreSQL):');
+    console.error(`  createdb -U ${dbConfig.user} -h ${dbConfig.host} -p ${dbConfig.port} "${dbConfig.database}"`);
+    console.error('  o desde psql:');
+    console.error(`  CREATE DATABASE "${dbConfig.database}";`);
+  } else if (code === '28P01' || /password authentication failed/i.test(error?.message || '')) {
+    console.error('Credenciales invalidas. Revisa DB_USER y DB_PASSWORD en backend/.env');
+  } else if (code === 'ECONNREFUSED') {
+    console.error('PostgreSQL no responde en el host:puerto indicado. Asegurate de que el servicio este iniciado.');
+  } else {
+    console.error('Revisa que PostgreSQL este iniciado y que las variables DB_* en backend/.env sean correctas.');
+  }
+  console.error('');
+};
 
 async function runMigrations() {
-  const client = await pool.connect();
-  
+  let client;
   try {
-    console.log('🔄 Iniciando migraciones de base de datos...\n');
+    client = await pool.connect();
+  } catch (error) {
+    printConnectionHelp(error);
+    process.exit(1);
+  }
 
-    // Leer y ejecutar schema inicial
+  try {
+    console.log('Iniciando migraciones de base de datos...\n');
+
+    // 1) Schema inicial (drop + create + seeds).
     const schemaPath = path.join(__dirname, 'db.pgsql');
     if (fs.existsSync(schemaPath)) {
-      console.log('📋 Ejecutando schema inicial (db.pgsql)...');
+      console.log('-> Ejecutando schema inicial (db.pgsql)...');
       const schema = fs.readFileSync(schemaPath, 'utf8');
       await client.query(schema);
-      console.log('✓ Schema inicial completado\n');
+      console.log('   OK schema inicial completado\n');
+    } else {
+      throw new Error('No se encontro backend/db.pgsql. Verifica que clonaste el repositorio completo.');
     }
 
-    // Ejecutar migraciones en orden
+    // 2) Migraciones extra opcionales en historias-migraciones/.
+    //    Se cargan en orden alfabetico solo si la carpeta existe y contiene .sql.
     const migrationsDir = path.join(__dirname, 'historias-migraciones');
-    const migrationFiles = [
-      '015_add_pedido_tiempo_insumos_to_produccion.sql',
-      '016_add_positive_constraints_to_produccion.sql',
-      '018_cliente_role_permisos_tienda.sql'
-    ];
+    if (fs.existsSync(migrationsDir) && fs.statSync(migrationsDir).isDirectory()) {
+      const sqlFiles = fs
+        .readdirSync(migrationsDir)
+        .filter((file) => file.toLowerCase().endsWith('.sql'))
+        .sort();
 
-    for (const file of migrationFiles) {
-      const filePath = path.join(migrationsDir, file);
-      if (fs.existsSync(filePath)) {
-        console.log(`📋 Ejecutando migración: ${file}...`);
-        const migration = fs.readFileSync(filePath, 'utf8');
-        await client.query(migration);
-        console.log(`✓ ${file} completada\n`);
-      } else {
-        console.warn(`⚠️  Archivo de migración no encontrado: ${file}\n`);
+      if (sqlFiles.length > 0) {
+        console.log(`-> Aplicando ${sqlFiles.length} migracion(es) adicional(es) desde historias-migraciones/`);
+        for (const file of sqlFiles) {
+          const filePath = path.join(migrationsDir, file);
+          console.log(`   * ${file}`);
+          const migration = fs.readFileSync(filePath, 'utf8');
+          await client.query(migration);
+        }
+        console.log('   OK migraciones adicionales completadas\n');
       }
     }
 
-    // Ejecutar ALTERs de sincronización para DB existentes
-    console.log('🔧 Aplicando alteraciones de sincronización (si aplican)...');
+    // 3) ALTERs idempotentes de sincronizacion para bases preexistentes que
+    //    pudieran venir de versiones anteriores. En una BD recien creada con
+    //    db.pgsql todos estos cambios ya estan aplicados, asi que no hacen
+    //    nada (IF NOT EXISTS / IF EXISTS).
+    console.log('-> Aplicando alteraciones de sincronizacion (idempotentes)...');
     try {
-      await client.query(`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS monto_abonado DECIMAL(18,2) DEFAULT 0`);
-      // Asegurar tipos numéricos amplios en tablas críticas (silencioso si no aplica)
+      await client.query(
+        `ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS monto_abonado DECIMAL(18,2) DEFAULT 0`
+      );
       try {
         await client.query(`ALTER TABLE ventas ALTER COLUMN total TYPE NUMERIC(18,2)`);
-      } catch (_) {
-        // ignore
-      }
+      } catch (_) { /* ya estaba */ }
       try {
         await client.query(`ALTER TABLE detalle_ventas ALTER COLUMN precio_unitario TYPE NUMERIC(18,2)`);
         await client.query(`ALTER TABLE detalle_ventas ALTER COLUMN subtotal TYPE NUMERIC(18,2)`);
-      } catch (_) {
-        // ignore
-      }
+      } catch (_) { /* ya estaba */ }
       try {
         await client.query(`ALTER TABLE detalle_pedidos ALTER COLUMN precio_unitario TYPE NUMERIC(18,2)`);
         await client.query(`ALTER TABLE detalle_pedidos ALTER COLUMN subtotal TYPE NUMERIC(18,2)`);
-      } catch (_) {
-        // ignore
-      }
-      // Asegurar que roles.nombre respete límite 3-50 caracteres en bases existentes.
+      } catch (_) { /* ya estaba */ }
       try {
         await client.query(`ALTER TABLE roles ALTER COLUMN nombre TYPE VARCHAR(50)`);
-      } catch (_) {
-        // ignore (puede que ya sea VARCHAR(50) o que existan datos > 50 caracteres)
-      }
+      } catch (_) { /* ya estaba o hay datos > 50 caracteres */ }
       try {
         await client.query(`ALTER TABLE roles DROP CONSTRAINT IF EXISTS roles_nombre_length_check`);
         await client.query(`
@@ -83,57 +132,41 @@ async function runMigrations() {
           CHECK (char_length(trim(nombre)) BETWEEN 3 AND 50)
         `);
       } catch (err) {
-        console.warn('⚠️  No se pudo aplicar constraint de longitud de nombre de rol:', err.message);
+        console.warn('   (aviso) no se pudo aplicar constraint roles_nombre_length_check:', err.message);
       }
 
-      // Garantizar tablas de auditoría de productos / categorías / clientes en BDs existentes.
-      try {
+      // Tablas de auditoria: por seguridad las creamos si no existen (en BDs
+      // muy antiguas que no las tenian).
+      const auditTables = [
+        ['productos_auditoria', 'producto_id'],
+        ['categorias_auditoria', 'categoria_id'],
+        ['clientes_auditoria', 'cliente_id'],
+      ];
+      for (const [table, fkColumn] of auditTables) {
         await client.query(`
-          CREATE TABLE IF NOT EXISTS productos_auditoria (
+          CREATE TABLE IF NOT EXISTS ${table} (
             id SERIAL PRIMARY KEY,
-            producto_id INTEGER,
+            ${fkColumn} INTEGER,
             accion VARCHAR(20) NOT NULL,
             usuario_id INTEGER,
             cambios JSONB NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
           )
         `);
-        await client.query(`
-          CREATE TABLE IF NOT EXISTS categorias_auditoria (
-            id SERIAL PRIMARY KEY,
-            categoria_id INTEGER,
-            accion VARCHAR(20) NOT NULL,
-            usuario_id INTEGER,
-            cambios JSONB NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-          )
-        `);
-        await client.query(`
-          CREATE TABLE IF NOT EXISTS clientes_auditoria (
-            id SERIAL PRIMARY KEY,
-            cliente_id INTEGER,
-            accion VARCHAR(20) NOT NULL,
-            usuario_id INTEGER,
-            cambios JSONB NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-          )
-        `);
-      } catch (err) {
-        console.warn('⚠️  No se pudieron crear tablas de auditoría:', err.message);
       }
-      console.log('✓ Alteraciones aplicadas (si fueron necesarias)\n');
+      console.log('   OK alteraciones aplicadas\n');
     } catch (err) {
-      console.warn('⚠️  Error al aplicar alteraciones de sincronización:', err.message);
+      console.warn('   (aviso) error al aplicar alteraciones de sincronizacion:', err.message);
     }
 
-    console.log('✅ ¡Todas las migraciones completadas exitosamente!');
+    console.log('Todas las migraciones completadas exitosamente.');
     process.exit(0);
   } catch (error) {
-    console.error('❌ Error durante las migraciones:', error.message);
-    console.error(error);
+    console.error('Error durante las migraciones:', error.message);
+    if (error.stack) console.error(error.stack);
     process.exit(1);
   } finally {
-    client.release();
+    if (client) client.release();
     await pool.end();
   }
 }

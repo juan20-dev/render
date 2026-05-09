@@ -190,7 +190,9 @@ const Categorias = {
       SELECT c.*,
              COALESCE(c.cantidad_productos, 0) AS productos
       FROM categorias c
-      ORDER BY c.nombre
+      ORDER BY
+        CASE WHEN LOWER(TRIM(COALESCE(c.estado, ''))) = 'activo' THEN 0 ELSE 1 END,
+        c.id DESC
     `);
     return result.rows;
   },
@@ -441,7 +443,9 @@ const Productos = {
       SELECT p.*, c.nombre as categoria 
       FROM productos p 
       JOIN categorias c ON p.categoria_id = c.id 
-      ORDER BY p.nombre
+      ORDER BY
+        CASE WHEN LOWER(TRIM(COALESCE(p.estado, ''))) = 'activo' THEN 0 ELSE 1 END,
+        p.id DESC
     `);
     return result.rows;
   },
@@ -767,7 +771,9 @@ const Clientes = {
              AND TRIM(LOWER(COALESCE(v.estado, ''))) <> 'cancelada'
          ) AS ultima_compra
        FROM clientes c
-       ORDER BY c.nombre`
+       ORDER BY
+         CASE WHEN LOWER(TRIM(COALESCE(c.estado, ''))) = 'activo' THEN 0 ELSE 1 END,
+         c.id DESC`
     );
     return result.rows;
   },
@@ -1185,9 +1191,8 @@ const Proveedores = {
       SELECT *
       FROM proveedores
       ORDER BY
-        CASE WHEN estado = 'Activo' THEN 0 ELSE 1 END,
-        LOWER(COALESCE(NULLIF(TRIM(nombre_empresa), ''), NULLIF(TRIM(CONCAT(COALESCE(nombre, ''), ' ', COALESCE(apellido, ''))), ''))),
-        id ASC
+        CASE WHEN LOWER(TRIM(COALESCE(estado, ''))) = 'activo' THEN 0 ELSE 1 END,
+        id DESC
     `);
     return result.rows;
   },
@@ -2982,7 +2987,13 @@ const Compras = {
 // ------- INSUMOS -------
 const Insumos = {
   getAll: async () => {
-    const result = await pool.query('SELECT * FROM insumos ORDER BY nombre');
+    const result = await pool.query(`
+      SELECT *
+      FROM insumos
+      ORDER BY
+        CASE WHEN LOWER(TRIM(COALESCE(estado, ''))) = 'activo' THEN 0 ELSE 1 END,
+        id DESC
+    `);
     return result.rows;
   },
   getById: async (id) => {
@@ -4650,7 +4661,9 @@ const Roles = {
         FROM usuarios
         GROUP BY rol_id
       ) u ON u.rol_id = r.id
-      ORDER BY r.nombre
+      ORDER BY
+        CASE WHEN LOWER(TRIM(COALESCE(r.estado, ''))) = 'activo' THEN 0 ELSE 1 END,
+        r.id DESC
     `);
     return result.rows;
   },
@@ -4916,7 +4929,9 @@ const Usuarios = {
       FROM usuarios u
       LEFT JOIN roles r ON u.rol_id = r.id
       ${whereClause}
-      ORDER BY u.id ASC
+      ORDER BY
+        CASE WHEN LOWER(TRIM(COALESCE(u.estado, ''))) = 'activo' THEN 0 ELSE 1 END,
+        u.id DESC
       ${querySuffix}
     `, values);
     return result.rows;

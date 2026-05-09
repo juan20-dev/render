@@ -3,7 +3,7 @@ import { DataTable, Column, commonActions, openPrintablePdf } from '../../DataTa
 import { Modal } from '../../Modal';
 import { Form, FormField, FormActions } from '../../Form';
 import { Button } from '../../Button';
-import { Plus, Eye, Trash2, Package } from 'lucide-react';
+import { Plus, Eye, Trash2, Package, Search, ShoppingCart } from 'lucide-react';
 import { api } from '../../../services/api';
 import type { Compra, Producto, Proveedor, CompraProducto } from '../../../services/types';
 import { toast } from '../../AlertDialog';
@@ -39,6 +39,8 @@ export function Compras() {
   const [filtroEstado, setFiltroEstado] = useState<string>('Todos');
   const [busquedaProveedor, setBusquedaProveedor] = useState('');
   const [mostrarListaProveedores, setMostrarListaProveedores] = useState(false);
+  const [busquedaProducto, setBusquedaProducto] = useState('');
+  const [mostrarListaProductos, setMostrarListaProductos] = useState(false);
 
   useEffect(() => {
     cargarDatos();
@@ -50,12 +52,29 @@ export function Compras() {
       const target = event.target as HTMLElement;
       if (!target.closest('.relative')) {
         setMostrarListaProveedores(false);
+        setMostrarListaProductos(false);
       }
     };
 
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  const productosFiltrados = (() => {
+    const term = busquedaProducto.trim().toLowerCase();
+    if (term === '') return productos;
+    return productos.filter((p) => {
+      const nombre = String(p.nombre || '').toLowerCase();
+      const id = String(p.id);
+      return nombre.includes(term) || id.includes(term);
+    });
+  })();
+
+  const seleccionarProductoCompra = (producto: Producto) => {
+    setProductoActual({ ...productoActual, productoId: producto.id });
+    setBusquedaProducto(`${producto.nombre} (ID: ${producto.id})`);
+    setMostrarListaProductos(false);
+  };
 
   const cargarDatos = async () => {
     try {
@@ -269,6 +288,8 @@ export function Compras() {
     });
     setBusquedaProveedor('');
     setMostrarListaProveedores(false);
+    setBusquedaProducto('');
+    setMostrarListaProductos(false);
     setIsModalOpen(true);
   };
 
@@ -355,6 +376,11 @@ export function Compras() {
       return;
     }
 
+    if (productoActual.ganancia > 100) {
+      toast.error('Error', { description: 'La ganancia debe estar entre 0% y 100%' });
+      return;
+    }
+
     // Verificar si el producto ya está en la lista
     const yaExiste = formData.productos.find(p => p.productoId === productoActual.productoId);
     if (yaExiste) {
@@ -382,6 +408,8 @@ export function Compras() {
       precioCompra: 0,
       ganancia: 0
     });
+    setBusquedaProducto('');
+    setMostrarListaProductos(false);
 
     toast.success('Producto agregado');
   };
@@ -596,28 +624,73 @@ export function Compras() {
           </div>
 
           {/* Agregar Productos */}
-          <div className="border border-border rounded-lg p-4 bg-accent/30">
-            <h3 className="text-sm font-medium mb-4 flex items-center gap-2">
+          <div className="border border-border rounded-lg p-4 bg-accent/30 space-y-4">
+            <h3 className="text-sm font-medium flex items-center gap-2">
               <Package className="w-4 h-4" />
               Agregar Productos
             </h3>
 
-            <div className="grid grid-cols-2 gap-4 mb-4">
-              <FormField
-                label="Producto *"
-                name="productoId"
-                type="select"
-                value={productoActual.productoId.toString()}
-                onChange={(value) => setProductoActual({ ...productoActual, productoId: parseInt(value as string) })}
-                options={[
-                  { value: '0', label: 'Seleccione un producto' },
-                  ...productos.map(p => ({
-                    value: p.id.toString(),
-                    label: `${p.nombre} - Stock: ${p.stock}`
-                  }))
-                ]}
-              />
+            {/* Buscador de productos (mismo diseno que "Agregar Productos" en Nueva Venta) */}
+            <div className="relative">
+              <label className="block text-sm font-medium mb-2 flex items-center gap-2">
+                <ShoppingCart className="w-4 h-4" />
+                Producto *
+              </label>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <input
+                  type="text"
+                  value={busquedaProducto}
+                  onChange={(e) => {
+                    setBusquedaProducto(e.target.value);
+                    setMostrarListaProductos(true);
+                    if (productoActual.productoId !== 0) {
+                      setProductoActual({ ...productoActual, productoId: 0 });
+                    }
+                  }}
+                  onFocus={() => setMostrarListaProductos(true)}
+                  placeholder="Busca por nombre o ID, o haz clic para ver todos los productos..."
+                  className="w-full pl-10 pr-4 py-3 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-base bg-white"
+                />
+              </div>
+              {mostrarListaProductos && (
+                <div className="absolute z-10 w-full mt-1 bg-white border border-border rounded-lg shadow-lg max-h-64 overflow-y-auto">
+                  {productosFiltrados.length > 0 ? (
+                    <>
+                      <div className="sticky top-0 bg-primary/10 px-4 py-2 border-b border-border font-medium text-sm">
+                        {busquedaProducto.trim() === ''
+                          ? `Todos los productos (${productosFiltrados.length})`
+                          : `${productosFiltrados.length} producto(s) encontrado(s)`}
+                      </div>
+                      {productosFiltrados.map((p) => (
+                        <div
+                          key={p.id}
+                          onClick={() => seleccionarProductoCompra(p)}
+                          className="px-4 py-3 border-b border-border last:border-b-0 hover:bg-accent cursor-pointer"
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2">
+                                <Package className="w-4 h-4 text-primary" />
+                                <span className="font-medium">{p.nombre}</span>
+                              </div>
+                              <div className="text-sm text-muted-foreground mt-1">
+                                ID: {p.id} | Stock actual: {p.stock}
+                              </div>
+                            </div>
+                            <Plus className="w-5 h-5 text-primary" />
+                          </div>
+                        </div>
+                      ))}
+                    </>
+                  ) : (
+                    <div className="px-4 py-3 text-muted-foreground text-sm text-center">No se encontraron productos</div>
+                  )}
+                </div>
+              )}
+            </div>
 
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <FormField
                 label="Cantidad *"
                 name="cantidad"
@@ -661,9 +734,14 @@ export function Compras() {
                     toast.warning('No se permiten números negativos');
                     return;
                   }
+                  if (num > 100) {
+                    toast.warning('La ganancia no puede ser mayor al 100%');
+                    return;
+                  }
                   setProductoActual({ ...productoActual, ganancia: num });
                 }}
                 min={0}
+                max={100}
               />
             </div>
 

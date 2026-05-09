@@ -479,21 +479,62 @@ CREATE TABLE usuarios_login_intentos (
 -- ============================================================
 
 -- Insertar roles
+-- Nota:
+--  * "Administrador" tiene bypass total en el frontend (ver routePermissions.ts),
+--    asi que mantener permisos = '{}' es valido y no rompe nada.
+--  * Los permisos sembrados para los demas roles son los conjuntos minimos
+--    para que cada perfil pueda iniciar sesion y trabajar sin requerir
+--    configuracion manual posterior por parte del Admin.
+--  * Los permisos del rol "Cliente" son OBLIGATORIOS: sin ellos un cliente
+--    recien registrado no veria la tienda ni sus pedidos. La lista debe
+--    coincidir con CLIENT_ALLOWED_PERMISSIONS en src/models/entities.models.js.
 INSERT INTO roles (nombre, descripcion, permisos, estado) VALUES
 ('Administrador', 'Acceso total a todas las funcionalidades', '{}', 'Activo'),
-('Asesor', 'Puede crear compras y ver reportes', '{}', 'Activo'),
-('Productor', 'Acceso a módulo de producción', '{}', 'Activo'),
-('Repartidor', 'Puede gestionar domicilios y entregas', '{}', 'Activo'),
-('Cliente', 'Acceso a tienda y pedidos personales', '{}', 'Activo');
+('Asesor', 'Puede gestionar clientes, ventas, pedidos, abonos, domicilios y consultar inventario', ARRAY[
+  'Ver Dashboard',
+  'Ver Clientes', 'Crear Clientes',
+  'Ver Ventas', 'Registrar Ventas',
+  'Ver Pedidos',
+  'Ver Abonos',
+  'Ver Domicilios', 'Gestionar Domicilios',
+  'Ver Productos',
+  'Ver Categorías',
+  'Ver Proveedores', 'Crear Proveedores',
+  'Ver Compras', 'Registrar Compras'
+], 'Activo'),
+('Productor', 'Acceso al modulo de produccion e insumos', ARRAY[
+  'Ver Dashboard',
+  'Ver Insumos',
+  'Entregar Insumos',
+  'Ver Producción',
+  'Registrar Producción'
+], 'Activo'),
+('Repartidor', 'Puede gestionar domicilios y entregas', ARRAY[
+  'Ver Dashboard',
+  'Ver Domicilios',
+  'Gestionar Domicilios'
+], 'Activo'),
+('Cliente', 'Acceso a tienda y pedidos personales', ARRAY[
+  'Ver Dashboard',
+  'Ver Tienda',
+  'Ver Mis Pedidos',
+  'Ver Mis Lista de Compras',
+  'Ver Mis Compras',
+  'Ver Mis Domicilios'
+], 'Activo');
 
 -- Insertar usuarios de ejemplo
--- Credenciales de prueba para cada rol
+-- Credenciales de prueba para cada rol.
+-- Todos los usuarios sembrados usan la MISMA contraseña: password_123
+-- (cada hash bcrypt es distinto porque usa un salt aleatorio).
+-- Si cambias la contraseña aqui, regenerala con:
+--   node -e "console.log(require('bcryptjs').hashSync('TU_NUEVA_PASSWORD', 10))"
 INSERT INTO usuarios (nombre, apellido, tipo_documento, documento, email, telefono, direccion, password_hash, rol_id, estado) VALUES
-('Admin', 'Sistema', 'CC', '100012345678', 'admin@grandmas.com', '3001234567', 'Oficina Central', '$2b$10$wll/iFG/TlbICeKe9AA6vegRb5SAE1sa9iQ7UpaCXKjHoYaxKxj6m', 1, 'Activo'),
-('Asesor', 'Principal', 'CC', '100012345679', 'asesor@grandmas.com', '3001234568', 'Calle Principal 123', '$2b$10$s3bdN9VvLpe0rH1cePoFve2keWeP8flJTdQz00DYdknzEbJ7nVla6', 2, 'Activo'),
-('Productor', 'Jefe', 'CC', '100012345680', 'productor@grandmas.com', '3001234569', 'Zona Producción', '$2b$10$u1iQnnuwr016HyIS3rNLS.sCd.kOOUjySWSQmTHrhd..rS/7Oor.a', 3, 'Activo'),
-('Repartidor', 'Uno', 'CC', '100012345681', 'repartidor@grandmas.com', '3001234570', 'Zona Reparto', '$2b$10$mYIecNeT/FR43MtI0RLw4OPWNX2glNvp6f5qHFze/onh1l5dEcFSi', 4, 'Activo'),
-('Cliente', 'Ejemplo', 'CC', '100012345682', 'cliente@grandmas.com', '3001234571', 'Calle Secundaria 456', '$2b$10$Xc4JiqZv5fsbWpVlXMjd4.sakub/owiYqXIB0jk5F5r9NLp4eczU6', 5, 'Activo');
+('Admin', 'Sistema', 'CC', '100012345678', 'admin@grandmas.com', '3001234567', 'Oficina Central', '$2b$10$npauCy3OmoZRWSMfDCfLGO1AfbaCFv54unyLryPZ6SsX0gFPhVuqC', 1, 'Activo'),
+('Asesor', 'Principal', 'CC', '100012345679', 'asesor@grandmas.com', '3001234568', 'Calle Principal 123', '$2b$10$8fx3CRh2IIpl9vNwIv8boOYbGqz/icOA9gSAgIhrLPc.RsnfURA82', 2, 'Activo'),
+('Productor', 'Jefe', 'CC', '100012345680', 'productor@grandmas.com', '3001234569', 'Zona Producción', '$2b$10$rWgS3I.pvEufCPfROeD2Z.zIu6fHhLXkEdXeJRaIKbQTLJoWtD8kS', 3, 'Activo'),
+('Repartidor', 'Uno', 'CC', '100012345681', 'repartidor@grandmas.com', '3001234570', 'Zona Reparto', '$2b$10$YknQN7.nCpARsA9iFEO4SuGfdfy6Dpd1waPkY0hJSaTLNDN0.Gso6', 4, 'Activo'),
+('Cliente', 'Ejemplo', 'CC', '100012345682', 'cliente@grandmas.com', '3001234571', 'Calle Secundaria 456', '$2b$10$y6M/McjUalqdNBvZ3y.gOeVEAXXgGrlml3ZdUdquX6BlB0f12EXmi', 5, 'Activo');
 
 -- Insertar categorías de productos
 INSERT INTO categorias (nombre, descripcion, estado) VALUES
@@ -560,13 +601,20 @@ EXECUTE FUNCTION sync_cliente_from_usuario();
 -- ============================================================
 -- FIN DEL SCRIPT
 -- ============================================================
--- Base de datos inicializada exitosamente
--- Usuarios de prueba disponibles:
---   - Email: admin@grandmas.local (Administrador)
---   - Email: asesor@grandmas.local (Asesor)
---   - Email: productor@grandmas.local (Productor)
---   - Email: repartidor1@grandmas.local (Repartidor)
---   - Email: cliente@gmail.com (Cliente)
--- 
--- Contraseña: password_123 (para todos)
+-- Base de datos inicializada exitosamente.
+--
+-- CREDENCIALES DE PRUEBA (todas comparten la misma contrasena):
+--   Contrasena: password_123
+--
+--   Rol           | Email                       | Documento
+--   --------------+-----------------------------+--------------
+--   Administrador | admin@grandmas.com          | 100012345678
+--   Asesor        | asesor@grandmas.com         | 100012345679
+--   Productor     | productor@grandmas.com      | 100012345680
+--   Repartidor    | repartidor@grandmas.com     | 100012345681
+--   Cliente       | cliente@grandmas.com        | 100012345682
+--
+-- Para regenerar las contrasenas con un valor distinto, edita la seccion
+-- "Insertar usuarios de ejemplo" arriba y ejecuta:
+--   node -e "console.log(require('bcryptjs').hashSync('TU_NUEVA_PASSWORD', 10))"
 -- ============================================================

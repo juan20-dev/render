@@ -3,7 +3,7 @@ import { DataTable, Column, commonActions, openPrintablePdf } from '../../DataTa
 import { Modal } from '../../Modal';
 import { Button } from '../../Button';
 import { Form, FormField, FormActions } from '../../Form';
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, Minus, Trash2, Search, Package, ShoppingCart } from 'lucide-react';
 import { api } from '../../../services/api';
 import { toast } from '../../AlertDialog';
 import type { Pedido, Cliente, Producto, PedidoProducto } from '../../../services/types';
@@ -41,6 +41,8 @@ export function Pedidos() {
   const [productosEnPedido, setProductosEnPedido] = useState<ProductoEnForm[]>([]);
   const [busquedaCliente, setBusquedaCliente] = useState('');
   const [mostrarListaClientes, setMostrarListaClientes] = useState(false);
+  const [busquedaProducto, setBusquedaProducto] = useState('');
+  const [mostrarListaProductos, setMostrarListaProductos] = useState(false);
   const [formData, setFormData] = useState({
     clienteId: 0,
     metodoPago: 'efectivo' as 'efectivo' | 'transferencia',
@@ -61,6 +63,7 @@ export function Pedidos() {
       const target = event.target as HTMLElement;
       if (!target.closest('.relative')) {
         setMostrarListaClientes(false);
+        setMostrarListaProductos(false);
       }
     };
 
@@ -410,46 +413,57 @@ export function Pedidos() {
     buildPedidoPdf(completo);
   };
 
-  const handleAgregarProducto = () => {
-    setProductosEnPedido([
-      ...productosEnPedido,
-      {
-        productoId: 0,
-        nombre: '',
-        cantidad: 1,
-        precio: 0,
-        subtotal: 0
-      }
-    ]);
+  const productosFiltrados = (() => {
+    const term = busquedaProducto.trim().toLowerCase();
+    if (term === '') return productos;
+    return productos.filter((p) => {
+      const nombre = String(p.nombre || '').toLowerCase();
+      const id = String(p.id);
+      return nombre.includes(term) || id.includes(term);
+    });
+  })();
+
+  const agregarProductoDesdeBusqueda = (producto: Producto) => {
+    const yaExiste = productosEnPedido.find((p) => Number(p.productoId) === Number(producto.id));
+    if (yaExiste) {
+      const actualizados = productosEnPedido.map((p) =>
+        Number(p.productoId) === Number(producto.id)
+          ? {
+              ...p,
+              cantidad: p.cantidad + 1,
+              subtotal: p.precio * (p.cantidad + 1),
+            }
+          : p
+      );
+      setProductosEnPedido(actualizados);
+    } else {
+      setProductosEnPedido([
+        ...productosEnPedido,
+        {
+          productoId: producto.id,
+          nombre: producto.nombre,
+          cantidad: 1,
+          precio: producto.precioVenta,
+          subtotal: producto.precioVenta,
+        },
+      ]);
+    }
+    setBusquedaProducto('');
+    setMostrarListaProductos(false);
   };
 
   const handleEliminarProducto = (index: number) => {
     setProductosEnPedido(productosEnPedido.filter((_, i) => i !== index));
   };
 
-  const handleUpdateProducto = (index: number, field: keyof ProductoEnForm, value: any) => {
+  const handleUpdateCantidad = (index: number, nuevaCantidad: number) => {
+    const cantidad = Math.max(1, Number(nuevaCantidad) || 1);
     const newProductos = [...productosEnPedido];
-
-    if (field === 'productoId') {
-      const producto = productos.find(p => p.id === Number(value));
-      if (producto) {
-        newProductos[index] = {
-          ...newProductos[index],
-          productoId: producto.id,
-          nombre: producto.nombre,
-          precio: producto.precioVenta,
-          subtotal: producto.precioVenta * newProductos[index].cantidad
-        };
-      }
-    } else if (field === 'cantidad') {
-      const cantidad = parseInt(value) || 1;
-      newProductos[index] = {
-        ...newProductos[index],
-        cantidad,
-        subtotal: newProductos[index].precio * cantidad
-      };
-    }
-
+    newProductos[index] = {
+      ...newProductos[index],
+      cantidad,
+      subtotal: newProductos[index].precio * cantidad,
+    };
     setProductosEnPedido(newProductos);
   };
 
@@ -835,90 +849,153 @@ export function Pedidos() {
             </div>
           </div>
 
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <label>Productos del Pedido *</label>
-              <Button
-                type="button"
-                size="sm"
-                icon={<Plus className="w-4 h-4" />}
-                onClick={handleAgregarProducto}
-              >
-                Agregar Producto
-              </Button>
+          <div className="space-y-4">
+            {/* Buscador de productos (mismo diseno que "Agregar Productos" en Nueva Venta) */}
+            <div className="relative">
+              <label className="block text-sm font-medium mb-2 flex items-center gap-2">
+                <ShoppingCart className="w-4 h-4" />
+                Agregar Productos *
+              </label>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <input
+                  type="text"
+                  value={busquedaProducto}
+                  onChange={(e) => {
+                    setBusquedaProducto(e.target.value);
+                    setMostrarListaProductos(true);
+                  }}
+                  onFocus={() => setMostrarListaProductos(true)}
+                  placeholder="Busca por nombre o ID, o haz clic para ver todos los productos..."
+                  className="w-full pl-10 pr-4 py-3 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-base"
+                />
+              </div>
+              {mostrarListaProductos && (
+                <div className="absolute z-10 w-full mt-1 bg-white border border-border rounded-lg shadow-lg max-h-64 overflow-y-auto">
+                  {productosFiltrados.length > 0 ? (
+                    <>
+                      <div className="sticky top-0 bg-primary/10 px-4 py-2 border-b border-border font-medium text-sm">
+                        {busquedaProducto.trim() === ''
+                          ? `Todos los productos (${productosFiltrados.length})`
+                          : `${productosFiltrados.length} producto(s) encontrado(s)`}
+                      </div>
+                      {productosFiltrados.map((p) => {
+                        const enPedido = productosEnPedido.find((pp) => Number(pp.productoId) === Number(p.id));
+                        const cantidadEnPedido = enPedido ? enPedido.cantidad : 0;
+                        return (
+                          <div
+                            key={p.id}
+                            onClick={() => agregarProductoDesdeBusqueda(p)}
+                            className="px-4 py-3 border-b border-border last:border-b-0 hover:bg-accent cursor-pointer"
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2">
+                                  <Package className="w-4 h-4 text-primary" />
+                                  <span className="font-medium">{p.nombre}</span>
+                                </div>
+                                <div className="text-sm text-muted-foreground mt-1">
+                                  ID: {p.id} | Precio: {formatCurrency(p.precioVenta)}
+                                  {cantidadEnPedido > 0 && (
+                                    <span className="ml-2 text-blue-600">({cantidadEnPedido} en este pedido)</span>
+                                  )}
+                                </div>
+                              </div>
+                              <Plus className="w-5 h-5 text-primary" />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </>
+                  ) : (
+                    <div className="px-4 py-3 text-muted-foreground text-sm text-center">No se encontraron productos</div>
+                  )}
+                </div>
+              )}
             </div>
 
+            {/* Lista de productos agregados al pedido */}
             {productosEnPedido.length > 0 ? (
-              <div className="border rounded-lg overflow-hidden">
-                <table className="w-full">
-                  <thead className="bg-muted">
-                    <tr>
-                      <th className="px-4 py-2 text-left">Producto</th>
-                      <th className="px-4 py-2 text-left w-24">Cantidad</th>
-                      <th className="px-4 py-2 text-left w-32">Precio</th>
-                      <th className="px-4 py-2 text-left w-32">Subtotal</th>
-                      <th className="px-4 py-2 text-center w-20">Acción</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {productosEnPedido.map((producto, index) => (
-                      <tr key={index} className="border-t">
-                        <td className="px-4 py-2">
-                          <select
-                            className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-                            value={producto.productoId}
-                            onChange={(e) => handleUpdateProducto(index, 'productoId', e.target.value)}
-                            required
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-muted-foreground">
+                  Productos agregados ({productosEnPedido.length})
+                </label>
+                {productosEnPedido.map((producto, index) => (
+                  <div key={index} className="bg-accent/30 border border-border rounded-lg p-4">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-2">
+                          <Package className="w-4 h-4 text-primary" />
+                          <h4 className="font-medium">{producto.nombre}</h4>
+                        </div>
+                        <div className="text-sm text-muted-foreground">
+                          Precio unitario: {formatCurrency(producto.precio)}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-2 bg-white border border-border rounded-lg">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (producto.cantidad > 1) {
+                                handleUpdateCantidad(index, producto.cantidad - 1);
+                              }
+                            }}
+                            className="p-2 hover:bg-accent rounded-l-lg disabled:opacity-50"
+                            disabled={producto.cantidad <= 1}
                           >
-                            <option value={0}>Seleccionar producto...</option>
-                            {productos.map(p => (
-                              <option key={p.id} value={p.id}>{p.nombre} - {formatCurrency(p.precioVenta)}</option>
-                            ))}
-                          </select>
-                        </td>
-                        <td className="px-4 py-2">
+                            <Minus className="w-4 h-4" />
+                          </button>
                           <input
                             type="number"
                             min="1"
-                            className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                            className="w-16 text-center border-0 focus:outline-none"
                             value={producto.cantidad}
-                            onChange={(e) => handleUpdateProducto(index, 'cantidad', e.target.value)}
-                            required
+                            onChange={(e) => {
+                              const valor = parseInt(e.target.value) || 1;
+                              handleUpdateCantidad(index, Math.max(1, valor));
+                            }}
                           />
-                        </td>
-                        <td className="px-4 py-2">
-                          {formatCurrency(producto.precio)}
-                        </td>
-                        <td className="px-4 py-2">
-                          {formatCurrency(producto.subtotal)}
-                        </td>
-                        <td className="px-4 py-2 text-center">
                           <button
                             type="button"
-                            onClick={() => handleEliminarProducto(index)}
-                            className="p-1 text-red-600 hover:bg-red-50 rounded"
+                            onClick={() => handleUpdateCantidad(index, producto.cantidad + 1)}
+                            className="p-2 hover:bg-accent rounded-r-lg"
                           >
-                            <Trash2 className="w-4 h-4" />
+                            <Plus className="w-4 h-4" />
                           </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot className="bg-muted">
-                    <tr>
-                      <td colSpan={3} className="px-4 py-2 text-right">
-                        <strong>Total:</strong>
-                      </td>
-                      <td colSpan={2} className="px-4 py-2">
-                        <strong>{formatCurrency(calcularTotal())}</strong>
-                      </td>
-                    </tr>
-                  </tfoot>
-                </table>
+                        </div>
+
+                        <div className="text-right min-w-[100px]">
+                          <div className="text-xs text-muted-foreground">Subtotal</div>
+                          <div className="font-semibold text-lg">{formatCurrency(producto.subtotal)}</div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => handleEliminarProducto(index)}
+                          className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                          title="Eliminar producto"
+                        >
+                          <Trash2 className="w-5 h-5" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+
+                <div className="flex justify-end pt-2 border-t mt-2">
+                  <div className="text-right">
+                    <div className="text-sm text-muted-foreground">Total</div>
+                    <div className="text-2xl font-bold text-primary">{formatCurrency(calcularTotal())}</div>
+                  </div>
+                </div>
               </div>
             ) : (
               <div className="p-8 text-center border-2 border-dashed rounded-lg text-muted-foreground">
-                No hay productos agregados. Haz clic en "Agregar Producto".
+                <ShoppingCart className="w-10 h-10 mx-auto mb-2 opacity-40" />
+                <p>No hay productos agregados.</p>
+                <p className="text-sm mt-1">Busca y selecciona productos arriba para agregarlos al pedido.</p>
               </div>
             )}
           </div>

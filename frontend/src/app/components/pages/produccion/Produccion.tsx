@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { DataTable, Column, commonActions } from '../../DataTable';
 import { Modal } from '../../Modal';
 import { Form, FormField, FormActions, FieldError, FieldSuccess } from '../../Form';
 import { Button } from '../../Button';
-import { Plus, FileText, Calendar } from 'lucide-react';
+import { Plus, FileText, Calendar, Search, Package, ShoppingCart } from 'lucide-react';
 import { api } from '../../../services/api';
 import { toast } from '../../AlertDialog';
 import type { OrdenProduccion, Producto, Usuario, ProductoInsumoRecetaLine } from '../../../services/types';
@@ -578,36 +578,59 @@ Fecha Impresión:    ${new Date().toLocaleString('es-CO')}
               </p>
             </div>
 
-            {/* Campo de búsqueda de Producto */}
+            {/* Campo de busqueda de Producto (mismo diseno que "Agregar Productos" en Nueva Venta) */}
             <div className="relative">
-              <label className="block text-sm font-medium mb-2">Producto *</label>
-              <input
-                type="text"
-                value={busquedaProducto}
-                onChange={(e) => {
-                  setBusquedaProducto(e.target.value);
-                  setMostrarListaProductos(true);
-                }}
-                onFocus={() => setMostrarListaProductos(true)}
-                placeholder="Escribe ID o nombre del producto..."
-                className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-                required
-              />
-              {mostrarListaProductos && busquedaProducto && (
-                <div className="absolute z-10 w-full mt-1 bg-white border border-border rounded-lg shadow-lg max-h-60 overflow-y-auto">
+              <label className="block text-sm font-medium mb-2 flex items-center gap-2">
+                <ShoppingCart className="w-4 h-4" />
+                Producto *
+              </label>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <input
+                  type="text"
+                  value={busquedaProducto}
+                  onChange={(e) => {
+                    setBusquedaProducto(e.target.value);
+                    setMostrarListaProductos(true);
+                  }}
+                  onFocus={() => setMostrarListaProductos(true)}
+                  placeholder="Busca por nombre o ID, o haz clic para ver todos los productos..."
+                  className="w-full pl-10 pr-4 py-3 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-base"
+                  required
+                />
+              </div>
+              {mostrarListaProductos && (
+                <div className="absolute z-10 w-full mt-1 bg-white border border-border rounded-lg shadow-lg max-h-64 overflow-y-auto">
                   {productosFiltrados.length > 0 ? (
-                    productosFiltrados.map(p => (
-                      <div
-                        key={p.id}
-                        onClick={() => seleccionarProducto(p)}
-                        className="px-3 py-2 hover:bg-accent cursor-pointer border-b border-border last:border-b-0"
-                      >
-                        <div className="font-medium">{p.nombre}</div>
-                        <div className="text-sm text-muted-foreground">ID: {p.id}</div>
+                    <>
+                      <div className="sticky top-0 bg-primary/10 px-4 py-2 border-b border-border font-medium text-sm">
+                        {busquedaProducto.trim() === ''
+                          ? `Todos los productos (${productosFiltrados.length})`
+                          : `${productosFiltrados.length} producto(s) encontrado(s)`}
                       </div>
-                    ))
+                      {productosFiltrados.map((p) => (
+                        <div
+                          key={p.id}
+                          onClick={() => seleccionarProducto(p)}
+                          className="px-4 py-3 border-b border-border last:border-b-0 hover:bg-accent cursor-pointer"
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2">
+                                <Package className="w-4 h-4 text-primary" />
+                                <span className="font-medium">{p.nombre}</span>
+                              </div>
+                              <div className="text-sm text-muted-foreground mt-1">
+                                ID: {p.id}
+                              </div>
+                            </div>
+                            <Plus className="w-5 h-5 text-primary" />
+                          </div>
+                        </div>
+                      ))}
+                    </>
                   ) : (
-                    <div className="px-3 py-2 text-muted-foreground text-sm">No se encontraron productos</div>
+                    <div className="px-4 py-3 text-muted-foreground text-sm text-center">No se encontraron productos</div>
                   )}
                 </div>
               )}
