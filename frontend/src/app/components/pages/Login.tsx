@@ -63,6 +63,25 @@ export function Login({ onLogin, initialTab = 'login', onBackToLanding }: LoginP
         setAlertState(prev => ({ ...prev, isOpen: false }));
       }, 2000);
     } catch (error: any) {
+      // Bloqueo por demasiados intentos: el backend devuelve status 429 con mensaje claro.
+      const status = Number(error?.status || 0);
+      const details = (error && typeof error === 'object' ? (error as any).details : null) || {};
+      const isBlocked = status === 429 || details?.blocked === true;
+
+      if (isBlocked) {
+        const minutos = Number(details?.remainingMinutes || details?.blockMinutes || 5);
+        setAlertState({
+          isOpen: true,
+          title: 'Acceso bloqueado temporalmente',
+          description:
+            error.message ||
+            `Has superado el número permitido de intentos de inicio de sesión. Tu acceso está bloqueado por seguridad. Inténtalo nuevamente dentro de ${minutos} minutos.`,
+          type: 'warning',
+          onConfirm: () => {},
+        });
+        return;
+      }
+
       setAlertState({
         isOpen: true,
         title: 'Error de autenticación',

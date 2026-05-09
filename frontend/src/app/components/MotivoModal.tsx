@@ -42,21 +42,18 @@ export function MotivoModal({
         {description && <div className="p-4 bg-accent rounded-lg text-sm">{description}</div>}
         {children}
         {requireMotivo && (
-          <>
-            <FormField
-              label="Motivo"
-              name="motivo"
-              type="textarea"
-              value={motivo}
-              onChange={(v) => onMotivoChange(String(v))}
-              placeholder={`Motivo (${minLength}-${maxLength} caracteres)`}
-              rows={3}
-            />
-            <p className="text-xs text-muted-foreground">
-              {motivo.length}/{maxLength} caracteres
-              {requireMotivo ? ` (mínimo ${minLength})` : ''}
-            </p>
-          </>
+          <FormField
+            label="Motivo"
+            name="motivo"
+            type="textarea"
+            value={motivo}
+            onChange={(v) => onMotivoChange(String(v))}
+            placeholder={`Motivo (${minLength}-${maxLength} caracteres)`}
+            rows={3}
+            required
+            minLength={minLength}
+            maxLength={maxLength}
+          />
         )}
         <FormActions>
           <Button

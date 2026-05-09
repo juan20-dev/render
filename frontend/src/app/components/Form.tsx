@@ -67,6 +67,10 @@ interface FormFieldProps {
   accept?: string;
   min?: number | string;
   max?: number | string;
+  /** Longitud mínima de caracteres (text/textarea). Si se define, valida en vivo y muestra contador. */
+  minLength?: number;
+  /** Longitud máxima de caracteres (text/textarea). Aplica `maxLength` nativo y se muestra en el contador. */
+  maxLength?: number;
   pattern?: string;
   /** Para type=date/datetime-local. Si se omite, por defecto NO se permiten fechas pasadas (mínimo = hoy). Pase `allowPastDates` para deshabilitar esta restricción (p. ej. filtros). */
   allowPastDates?: boolean;
@@ -108,6 +112,8 @@ export function FormField({
   accept,
   min,
   max,
+  minLength,
+  maxLength,
   pattern,
   allowPastDates = false,
   error: externalError,
@@ -229,6 +235,18 @@ export function FormField({
       }
     }
 
+    if ((type === 'text' || type === 'textarea' || type === 'email') && (minLength || maxLength)) {
+      const len = String(val ?? '').trim().length;
+      if (minLength && len > 0 && len < minLength) {
+        setError(`Debe tener al menos ${minLength} caracteres (lleva ${len}).`);
+        return;
+      }
+      if (maxLength && len > maxLength) {
+        setError(`Excede el máximo de ${maxLength} caracteres (lleva ${len}).`);
+        return;
+      }
+    }
+
     // Validación de fechas pasadas en formularios de creación.
     if ((type === 'date' || type === 'datetime-local') && val && !allowPastDates) {
       const minDate = effectiveMin ? String(effectiveMin) : '';
@@ -286,6 +304,8 @@ export function FormField({
           required={required}
           rows={rows}
           disabled={disabled}
+          maxLength={maxLength}
+          minLength={minLength}
           className={baseInputClasses}
         />
       ) : type === 'select' ? (
@@ -343,8 +363,9 @@ export function FormField({
               ? 10
               : inputDigitRule === 'documento12' || inputDigitRule === 'documento6to12'
                 ? 12
-                : undefined
+                : maxLength
           }
+          minLength={minLength}
           className={baseInputClasses}
         />
       )}
@@ -359,6 +380,16 @@ export function FormField({
         <FieldHelper>Exactamente 12 dígitos (solo números).</FieldHelper>
       ) : inputDigitRule === 'documento6to12' ? (
         <FieldHelper>Entre 6 y 12 dígitos (solo números).</FieldHelper>
+      ) : (minLength || maxLength) && (type === 'text' || type === 'textarea') ? (
+        <FieldHelper>
+          {(() => {
+            const len = String(value ?? '').length;
+            if (minLength && maxLength) return `Entre ${minLength} y ${maxLength} caracteres (${len}/${maxLength}).`;
+            if (maxLength) return `Máximo ${maxLength} caracteres (${len}/${maxLength}).`;
+            if (minLength) return `Mínimo ${minLength} caracteres (lleva ${len}).`;
+            return null;
+          })()}
+        </FieldHelper>
       ) : null}
     </div>
   );

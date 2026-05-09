@@ -545,8 +545,11 @@ export function Roles() {
             type="textarea"
             value={formData.descripcion}
             onChange={(value) => setFormData({ ...formData, descripcion: value as string })}
+            placeholder="Describa el rol (10-50 caracteres)"
             rows={3}
             required
+            minLength={10}
+            maxLength={50}
           />
 
           {/* Permisos Asignables */}
@@ -692,8 +695,11 @@ export function Roles() {
             type="textarea"
             value={formData.descripcion}
             onChange={(value) => setFormData({ ...formData, descripcion: value as string })}
+            placeholder="Describa el rol (10-50 caracteres)"
             rows={3}
             required
+            minLength={10}
+            maxLength={50}
           />
 
           <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">

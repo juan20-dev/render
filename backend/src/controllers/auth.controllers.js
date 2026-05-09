@@ -87,25 +87,44 @@ module.exports = {
       }
 
       const identifier = getLoginIdentifier(email);
+      const MAX_INTENTOS = models.Usuarios.MAX_LOGIN_ATTEMPTS || 6;
+      const BLOQUEO_MIN = Math.round((models.Usuarios.LOGIN_BLOCK_DURATION_MS || 5 * 60 * 1000) / 60000);
+
       const blockInfo = await models.Usuarios.getLoginBlockInfo(identifier);
       if (blockInfo?.blocked) {
         const minutosRestantes = Math.max(1, Math.ceil(blockInfo.remainingMs / 60000));
         return res.status(429).json({
           success: false,
-          message: `Cuenta bloqueada temporalmente por intentos fallidos. Vuelve a intentarlo en ${minutosRestantes} minuto${minutosRestantes === 1 ? '' : 's'}.`,
+          code: 'LOGIN_BLOCKED',
+          message: `Demasiados intentos de inicio de sesión. Tu acceso está bloqueado temporalmente; vuelve a intentarlo en ${minutosRestantes} minuto${minutosRestantes === 1 ? '' : 's'}.`,
+          details: {
+            blocked: true,
+            remainingMs: blockInfo.remainingMs,
+            remainingMinutes: minutosRestantes,
+            maxAttempts: MAX_INTENTOS,
+            blockMinutes: BLOQUEO_MIN,
+          },
         });
       }
 
       const usuario = await models.Usuarios.getByEmailLogin(identifier);
       if (!usuario) {
         const failure = await models.Usuarios.registerLoginFailure(identifier);
-        const intentosRestantes = Math.max(0, 5 - Number(failure?.attempts || 0));
+        const intentosUsados = Number(failure?.attempts || 0);
+        const intentosRestantes = Math.max(0, MAX_INTENTOS - intentosUsados);
+        if (intentosRestantes === 0) {
+          return res.status(429).json({
+            success: false,
+            code: 'LOGIN_BLOCKED',
+            message: `Demasiados intentos de inicio de sesión. Tu acceso ha sido bloqueado temporalmente; vuelve a intentarlo en ${BLOQUEO_MIN} minutos.`,
+            details: { blocked: true, remainingMinutes: BLOQUEO_MIN, maxAttempts: MAX_INTENTOS, blockMinutes: BLOQUEO_MIN },
+          });
+        }
         return res.status(401).json({
           success: false,
-          message:
-            intentosRestantes > 0
-              ? `Credenciales incorrectas. Te quedan ${intentosRestantes} intento${intentosRestantes === 1 ? '' : 's'} antes de un bloqueo temporal.`
-              : 'Credenciales incorrectas. La cuenta ha sido bloqueada temporalmente.',
+          code: 'INVALID_CREDENTIALS',
+          message: `Credenciales incorrectas. Te quedan ${intentosRestantes} intento${intentosRestantes === 1 ? '' : 's'} antes de bloquear el acceso por ${BLOQUEO_MIN} minutos.`,
+          details: { attemptsUsed: intentosUsados, attemptsRemaining: intentosRestantes, maxAttempts: MAX_INTENTOS },
         });
       }
 
@@ -116,13 +135,21 @@ module.exports = {
       const isValid = await bcrypt.compare(password, usuario.password_hash || '');
       if (!isValid) {
         const failure = await models.Usuarios.registerLoginFailure(identifier);
-        const intentosRestantes = Math.max(0, 5 - Number(failure?.attempts || 0));
+        const intentosUsados = Number(failure?.attempts || 0);
+        const intentosRestantes = Math.max(0, MAX_INTENTOS - intentosUsados);
+        if (intentosRestantes === 0) {
+          return res.status(429).json({
+            success: false,
+            code: 'LOGIN_BLOCKED',
+            message: `Demasiados intentos de inicio de sesión. Tu acceso ha sido bloqueado temporalmente; vuelve a intentarlo en ${BLOQUEO_MIN} minutos.`,
+            details: { blocked: true, remainingMinutes: BLOQUEO_MIN, maxAttempts: MAX_INTENTOS, blockMinutes: BLOQUEO_MIN },
+          });
+        }
         return res.status(401).json({
           success: false,
-          message:
-            intentosRestantes > 0
-              ? `Credenciales incorrectas. Te quedan ${intentosRestantes} intento${intentosRestantes === 1 ? '' : 's'} antes de un bloqueo temporal.`
-              : 'Credenciales incorrectas. La cuenta ha sido bloqueada temporalmente por 15 minutos.',
+          code: 'INVALID_CREDENTIALS',
+          message: `Credenciales incorrectas. Te quedan ${intentosRestantes} intento${intentosRestantes === 1 ? '' : 's'} antes de bloquear el acceso por ${BLOQUEO_MIN} minutos.`,
+          details: { attemptsUsed: intentosUsados, attemptsRemaining: intentosRestantes, maxAttempts: MAX_INTENTOS },
         });
       }
 

@@ -147,23 +147,43 @@ export function Sidebar({ currentPath, onNavigate }: SidebarProps) {
     );
   };
 
-  // Filtrar los items del menú según los permisos del usuario y rol
-  const filteredMenuItems = menuItems.filter(item => {
-    // Si el item especifica roles, verificar que el usuario tenga uno de ellos
-    if (item.roles && user && !item.roles.includes(user.rol)) {
-      return false;
-    }
-    
-    if (item.module && !hasPermission(item.module)) {
-      return false;
-    }
-    if (item.subItems) {
-      // Filtrar sub-items según permisos
-      item.subItems = item.subItems.filter(subItem => hasPermission(subItem.module));
-      return item.subItems.length > 0;
-    }
-    return true;
-  });
+  // Filtrar los items del menu segun los permisos del usuario.
+  //
+  // IMPORTANTE: La lista `roles` de cada item solo se usa para SEPARAR
+  // estrictamente el menu del Cliente del menu del personal interno. Para los
+  // roles personalizados creados desde "Gestion de Roles" (p. ej. "Cajero"),
+  // la unica fuente de verdad sobre que ven es `hasPermission(item.module)`,
+  // que consulta los permisos asignados al rol en BD. Si filtraramos por
+  // `item.roles.includes(user.rol)` excluiriamos a TODOS los roles nuevos
+  // (porque nunca estan en los arrays hardcodeados aqui) y veriamos un menu
+  // vacio aunque el rol tuviera permisos validos.
+  const isClienteOnlyItem = (item: MenuItem) =>
+    Array.isArray(item.roles) && item.roles.length === 1 && item.roles[0] === 'Cliente';
+
+  const filteredMenuItems = menuItems
+    .map((item) => ({ ...item, subItems: item.subItems ? [...item.subItems] : undefined }))
+    .filter((item) => {
+      const userIsCliente = user?.rol === 'Cliente';
+
+      // Items exclusivos del Cliente: solo visibles para usuarios con rol "Cliente".
+      if (isClienteOnlyItem(item)) {
+        if (!userIsCliente) return false;
+      } else {
+        // Items del personal interno: nunca para Cliente.
+        if (userIsCliente) return false;
+      }
+
+      // Filtro real por permisos (respeta roles personalizados creados en BD).
+      if (item.module && !hasPermission(item.module)) {
+        return false;
+      }
+
+      if (item.subItems) {
+        item.subItems = item.subItems.filter((subItem) => hasPermission(subItem.module));
+        return item.subItems.length > 0;
+      }
+      return true;
+    });
 
   return (
     <div

@@ -120,10 +120,10 @@ module.exports = {
   delete: async (req, res) => {
     try {
       const motivo = typeof req.body?.motivo === 'string' ? req.body.motivo.trim() : '';
-      if (!motivo || motivo.length < 10) {
+      if (!motivo || motivo.length < 10 || motivo.length > 50) {
         return res.status(400).json({
           success: false,
-          message: 'El motivo de eliminacion es obligatorio y debe tener al menos 10 caracteres',
+          message: 'El motivo de eliminacion es obligatorio y debe tener entre 10 y 50 caracteres',
         });
       }
 

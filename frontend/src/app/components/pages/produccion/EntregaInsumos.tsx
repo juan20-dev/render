@@ -413,13 +413,9 @@ export function EntregaInsumos() {
             onChange={(value) => setMotivo(value as string)}
             placeholder="Ingrese el motivo de eliminación (10-50 caracteres)"
             required
+            minLength={10}
+            maxLength={50}
           />
-
-          {motivo && (
-            <p className="text-xs text-muted-foreground">
-              {motivo.length} / 50 caracteres
-            </p>
-          )}
 
           <FormActions>
             <Button variant="outline" onClick={() => setIsDeleteModalOpen(false)}>

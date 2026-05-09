@@ -1511,8 +1511,8 @@ const Proveedores = {
     }
 
     const reason = typeof options.reason === 'string' ? options.reason.trim() : '';
-    if (!reason || reason.length < 10 || reason.length > 200) {
-      const error = new Error('El motivo de eliminacion es obligatorio y debe tener entre 10 y 200 caracteres');
+    if (!reason || reason.length < 10 || reason.length > 50) {
+      const error = new Error('El motivo de eliminacion es obligatorio y debe tener entre 10 y 50 caracteres');
       error.statusCode = 400;
       error.details = { reasonLength: reason.length };
       throw error;
@@ -4256,11 +4256,18 @@ const getLoginAttemptRecord = async (email) => {
   return result.rows[0] || null;
 };
 
+// Politica de intentos de inicio de sesion: 6 intentos fallidos => bloqueo de 5 minutos.
+const MAX_LOGIN_ATTEMPTS = 6;
+const LOGIN_BLOCK_DURATION_MS = 5 * 60 * 1000;
+
 const registerLoginFailure = async (email) => {
   await ensureUserLoginAttemptsTable();
   const current = await getLoginAttemptRecord(email);
   const attempts = Number(current?.attempts || 0) + 1;
-  const blockedUntil = attempts >= 5 ? new Date(Date.now() + 15 * 60 * 1000) : current?.blocked_until || null;
+  const blockedUntil =
+    attempts >= MAX_LOGIN_ATTEMPTS
+      ? new Date(Date.now() + LOGIN_BLOCK_DURATION_MS)
+      : current?.blocked_until || null;
 
   await pool.query(
     `INSERT INTO usuarios_login_intentos (email, attempts, blocked_until, last_attempt_at, updated_at)
@@ -4867,8 +4874,8 @@ const Roles = {
     const currentRole = await Roles.getById(id);
 
     const reason = typeof options.reason === 'string' ? options.reason.trim() : '';
-    if (!reason || reason.length < 10 || reason.length > 200) {
-      const error = new Error('El motivo de eliminación es obligatorio y debe tener entre 10 y 200 caracteres');
+    if (!reason || reason.length < 10 || reason.length > 50) {
+      const error = new Error('El motivo de eliminación es obligatorio y debe tener entre 10 y 50 caracteres');
       error.statusCode = 400;
       error.details = { reasonLength: reason.length };
       throw error;
@@ -5093,6 +5100,8 @@ const Usuarios = {
   clearLoginAttempts: clearLoginAttempts,
   isLoginBlocked: isLoginBlocked,
   getLoginBlockInfo: getLoginBlockInfo,
+  MAX_LOGIN_ATTEMPTS: MAX_LOGIN_ATTEMPTS,
+  LOGIN_BLOCK_DURATION_MS: LOGIN_BLOCK_DURATION_MS,
   registerSession: async ({ usuarioId, jti, expiresAt, ipAddress = null, userAgent = null }) => {
     await registerUserSession({ usuarioId, jti, expiresAt, ipAddress, userAgent });
     return true;
@@ -5254,8 +5263,8 @@ const Usuarios = {
     }
 
     const reason = typeof options.reason === 'string' ? options.reason.trim() : '';
-    if (!reason || reason.length < 10 || reason.length > 200) {
-      const error = new Error('El motivo de eliminacion es obligatorio y debe tener entre 10 y 200 caracteres');
+    if (!reason || reason.length < 10 || reason.length > 50) {
+      const error = new Error('El motivo de eliminacion es obligatorio y debe tener entre 10 y 50 caracteres');
       error.statusCode = 400;
       error.details = { reasonLength: reason.length };
       throw error;

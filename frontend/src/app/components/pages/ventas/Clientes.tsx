@@ -626,13 +626,9 @@ export function Clientes() {
             onChange={(value) => setMotivoEliminacion(value as string)}
             placeholder="Ingrese el motivo de eliminación (10-50 caracteres)"
             required
+            minLength={10}
+            maxLength={50}
           />
-
-          {motivoEliminacion && (
-            <p className="text-xs text-muted-foreground">
-              {motivoEliminacion.length} / 50 caracteres
-            </p>
-          )}
 
           <FormActions>
             <Button variant="outline" onClick={() => setIsDeleteModalOpen(false)}>

@@ -58,8 +58,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(userData as User);
       return true;
     } catch (error) {
+      // Re-lanzamos el error para que la pantalla de Login pueda diferenciar
+      // entre credenciales incorrectas, cuenta inactiva o bloqueo por intentos.
       console.error('Error en login:', error);
-      return false;
+      throw error;
     }
   };
 

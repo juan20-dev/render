@@ -968,11 +968,9 @@ export function Usuarios() {
             onChange={(value) => setMotivoEstado(value as string)}
             placeholder="Ingrese el motivo del cambio de estado (10-50 caracteres)"
             required
+            minLength={10}
+            maxLength={50}
           />
-
-          <p className="text-xs text-muted-foreground">
-            {motivoEstado.length}/50 caracteres (mínimo 10)
-          </p>
 
           <FormActions>
             <Button
@@ -1030,11 +1028,9 @@ export function Usuarios() {
             onChange={(value) => setMotivoEliminacion(value as string)}
             placeholder="Ingrese el motivo de la eliminación (10-50 caracteres)"
             required
+            minLength={10}
+            maxLength={50}
           />
-
-          <p className="text-xs text-muted-foreground">
-            {motivoEliminacion.length}/50 caracteres (mínimo 10)
-          </p>
 
           <FormActions>
             <Button

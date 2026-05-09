@@ -257,7 +257,9 @@ export function Insumos() {
             type="textarea"
             value={formNuevo.descripcion}
             onChange={(v) => setFormNuevo({ ...formNuevo, descripcion: v as string })}
-            placeholder="Opcional"
+            placeholder="Opcional (10-50 caracteres si se completa)"
+            minLength={10}
+            maxLength={50}
           />
           <FormField
             label="Unidad"

@@ -932,17 +932,16 @@ export function Compras() {
           </p>
 
           <FormField
-            label="Motivo de cancelación * (10-50 caracteres)"
+            label="Motivo de cancelación"
             name="motivo"
             type="textarea"
             value={motivoCancelacion}
             onChange={(value) => setMotivoCancelacion(value as string)}
-            placeholder="Ingrese el motivo de la cancelación"
+            placeholder="Ingrese el motivo de la cancelación (10-50 caracteres)"
             required
+            minLength={10}
+            maxLength={50}
           />
-          <p className="text-xs text-muted-foreground">
-            {motivoCancelacion.length}/50 caracteres (mínimo 10)
-          </p>
 
           <FormActions>
             <Button

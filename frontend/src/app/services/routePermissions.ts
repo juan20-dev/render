@@ -8,7 +8,13 @@ const ANY = (perms: string[]) => perms;
 export const ROUTE_VIEW_PERMISSIONS: Record<string, string[] | ((permisos: string[]) => boolean)> = {
   dashboard: ['Ver Dashboard'],
   medicion: ['Ver Dashboard'],
+  // Nodo padre del sidebar "Configuracion": basta con tener al menos un permiso
+  // para ver el menu desplegable.
+  configuracion: ANY(['Ver Roles', 'Asignar Permisos']),
   'configuracion/roles': ['Ver Roles', 'Asignar Permisos'],
+  // Nodo padre del sidebar "Usuarios": basta con tener al menos un permiso
+  // sobre roles o usuarios para ver el menu desplegable.
+  usuarios: ANY(['Ver Usuarios', 'Crear Usuarios', 'Editar Usuarios', 'Eliminar Usuarios', 'Ver Roles', 'Asignar Permisos']),
   'usuarios/roles': ['Ver Roles'],
   'usuarios/usuarios': ['Ver Usuarios'],
   'usuarios/accesos': ['Ver Usuarios'],

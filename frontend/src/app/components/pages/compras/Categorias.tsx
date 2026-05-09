@@ -429,8 +429,10 @@ export function Categorias() {
             type="textarea"
             value={formData.descripcion}
             onChange={(value) => setFormData({ ...formData, descripcion: value as string })}
-            placeholder="Descripción de la categoría"
+            placeholder="Descripción de la categoría (10-50 caracteres)"
             required
+            minLength={10}
+            maxLength={50}
           />
 
           <FormField
@@ -555,13 +557,11 @@ export function Categorias() {
             type="textarea"
             value={motivoEstado}
             onChange={(value) => setMotivoEstado(value as string)}
-            placeholder="Ingrese el motivo del cambio de estado"
+            placeholder="Ingrese el motivo del cambio de estado (10-50 caracteres)"
             required
+            minLength={10}
+            maxLength={50}
           />
-
-          <p className="text-xs text-muted-foreground">
-            {motivoEstado.length}/50 caracteres (mínimo 10)
-          </p>
 
           <FormActions>
             <Button
@@ -638,13 +638,11 @@ export function Categorias() {
             type="textarea"
             value={motivoEliminacion}
             onChange={(value) => setMotivoEliminacion(value as string)}
-            placeholder="Ingrese el motivo de la eliminación"
+            placeholder="Ingrese el motivo de la eliminación (10-50 caracteres)"
             required
+            minLength={10}
+            maxLength={50}
           />
-
-          <p className="text-xs text-muted-foreground">
-            {motivoEliminacion.length}/50 caracteres (mínimo 10)
-          </p>
 
           <FormActions>
             <Button

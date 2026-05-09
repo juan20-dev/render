@@ -121,24 +121,23 @@ function AppContent() {
   };
 
   const handleLogin = async (email: string, password: string) => {
-    const success = await login(email, password);
-    if (success) {
-      try {
-        const me = await api.auth.me();
-        setShowAuth('landing');
-        if (me.rol === 'Cliente') {
-          setStayOnLanding(true);
-          setCurrentPath('');
-        } else {
-          setStayOnLanding(false);
-          setCurrentPath(firstPermittedStaffPath(me.permisos || [], me.rol));
-        }
-      } catch {
+    // Si login() falla, dejamos que el error se propague hacia <Login /> para
+    // mostrar mensajes específicos (credenciales incorrectas, cuenta inactiva,
+    // o bloqueo temporal por demasiados intentos).
+    await login(email, password);
+    try {
+      const me = await api.auth.me();
+      setShowAuth('landing');
+      if (me.rol === 'Cliente') {
+        setStayOnLanding(true);
+        setCurrentPath('');
+      } else {
         setStayOnLanding(false);
-        setCurrentPath('/dashboard');
+        setCurrentPath(firstPermittedStaffPath(me.permisos || [], me.rol));
       }
-    } else {
-      alert('Credenciales incorrectas');
+    } catch {
+      setStayOnLanding(false);
+      setCurrentPath('/dashboard');
     }
   };
 
