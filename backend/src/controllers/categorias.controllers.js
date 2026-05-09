@@ -20,7 +20,7 @@ module.exports = {
   },
   create: async (req, res) => {
     try {
-      const id = await models.Categorias.create(req.body);
+      const id = await models.Categorias.create({ ...req.body, actor_id: req.user?.id || null });
       res.status(201).json({ success: true, id, message: 'Categoria creada exitosamente' });
     } catch (error) {
       res.status(error.statusCode || 500).json({ success: false, message: error.message });
@@ -28,7 +28,7 @@ module.exports = {
   },
   update: async (req, res) => {
     try {
-      await models.Categorias.update(req.params.id, req.body);
+      await models.Categorias.update(req.params.id, { ...req.body, actor_id: req.user?.id || null });
       res.json({ success: true, message: 'Categoria actualizada exitosamente' });
     } catch (error) {
       res.status(error.statusCode || 500).json({ success: false, message: error.message });
@@ -50,7 +50,11 @@ module.exports = {
         });
       }
 
-      const categoria = await models.Categorias.updateStatus(req.params.id, { estado, motivo });
+      const categoria = await models.Categorias.updateStatus(req.params.id, {
+        estado,
+        motivo,
+        actor_id: req.user?.id || null,
+      });
       res.json({ success: true, data: categoria, message: 'Estado de la categoria actualizado exitosamente' });
     } catch (error) {
       res.status(error.statusCode || 500).json({ success: false, message: error.message });
@@ -65,6 +69,7 @@ module.exports = {
           : parseInt(String(raw), 10);
       await models.Categorias.delete(req.params.id, {
         reubicarEnCategoriaId: Number.isFinite(reubicarEnCategoriaId) ? reubicarEnCategoriaId : null,
+        actor_id: req.user?.id || null,
       });
       res.json({ success: true, message: 'Categoria eliminada exitosamente' });
     } catch (error) {

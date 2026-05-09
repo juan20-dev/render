@@ -1,11 +1,11 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { DataTable, Column, commonActions } from '../../DataTable';
 import { Modal } from '../../Modal';
 import { Form, FormField, FormActions } from '../../Form';
 import { Button } from '../../Button';
 import { Plus, Calendar } from 'lucide-react';
 import { api } from '../../../services/api';
-import { toast } from 'sonner';
+import { toast } from '../../AlertDialog';
 import type { EntregaInsumo, Usuario } from '../../../services/types';
 
 function esRolProductor(u: Usuario) {

@@ -69,6 +69,58 @@ async function runMigrations() {
       } catch (_) {
         // ignore
       }
+      // Asegurar que roles.nombre respete límite 3-50 caracteres en bases existentes.
+      try {
+        await client.query(`ALTER TABLE roles ALTER COLUMN nombre TYPE VARCHAR(50)`);
+      } catch (_) {
+        // ignore (puede que ya sea VARCHAR(50) o que existan datos > 50 caracteres)
+      }
+      try {
+        await client.query(`ALTER TABLE roles DROP CONSTRAINT IF EXISTS roles_nombre_length_check`);
+        await client.query(`
+          ALTER TABLE roles
+          ADD CONSTRAINT roles_nombre_length_check
+          CHECK (char_length(trim(nombre)) BETWEEN 3 AND 50)
+        `);
+      } catch (err) {
+        console.warn('⚠️  No se pudo aplicar constraint de longitud de nombre de rol:', err.message);
+      }
+
+      // Garantizar tablas de auditoría de productos / categorías / clientes en BDs existentes.
+      try {
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS productos_auditoria (
+            id SERIAL PRIMARY KEY,
+            producto_id INTEGER,
+            accion VARCHAR(20) NOT NULL,
+            usuario_id INTEGER,
+            cambios JSONB NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          )
+        `);
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS categorias_auditoria (
+            id SERIAL PRIMARY KEY,
+            categoria_id INTEGER,
+            accion VARCHAR(20) NOT NULL,
+            usuario_id INTEGER,
+            cambios JSONB NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          )
+        `);
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS clientes_auditoria (
+            id SERIAL PRIMARY KEY,
+            cliente_id INTEGER,
+            accion VARCHAR(20) NOT NULL,
+            usuario_id INTEGER,
+            cambios JSONB NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          )
+        `);
+      } catch (err) {
+        console.warn('⚠️  No se pudieron crear tablas de auditoría:', err.message);
+      }
       console.log('✓ Alteraciones aplicadas (si fueron necesarias)\n');
     } catch (err) {
       console.warn('⚠️  Error al aplicar alteraciones de sincronización:', err.message);

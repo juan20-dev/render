@@ -1,12 +1,12 @@
 ﻿import React, { useState, useEffect } from 'react';
-import { DataTable, Column } from '../../DataTable';
+import { DataTable, Column, commonActions, openPrintablePdf } from '../../DataTable';
 import { Modal } from '../../Modal';
 import { Form, FormField, FormActions } from '../../Form';
 import { Button } from '../../Button';
 import { Plus, Eye, Trash2, Package } from 'lucide-react';
 import { api } from '../../../services/api';
 import type { Compra, Producto, Proveedor, CompraProducto } from '../../../services/types';
-import { toast } from 'sonner';
+import { toast } from '../../AlertDialog';
 import { AlertDialog } from '../../AlertDialog';
 
 export function Compras() {
@@ -277,6 +277,62 @@ export function Compras() {
     setIsDetailModalOpen(true);
   };
 
+  /**
+   * Abre una vista imprimible (PDF) con todos los datos de la compra y un boton
+   * "Descargar PDF" que invoca el dialogo de impresion del navegador.
+   */
+  const handleVerPdf = (compra: Compra) => {
+    const proveedor = proveedores.find((p) => p.id === compra.proveedorId);
+    const opened = openPrintablePdf({
+      title: `Compra #${compra.id}`,
+      subtitle: `Generado el ${new Date().toLocaleString('es-CO')}`,
+      sections: [
+        {
+          title: 'Datos generales',
+          rows: [
+            { label: 'ID compra', value: `#${compra.id}` },
+            { label: 'Proveedor', value: proveedor?.nombreRazonSocial || `ID ${compra.proveedorId}` },
+            ...(proveedor?.nit ? [{ label: 'NIT/Documento proveedor', value: proveedor.nit }] : []),
+            { label: 'Fecha de compra', value: new Date(compra.fecha).toLocaleString('es-CO') },
+            {
+              label: 'Estado',
+              value: compra.estado.charAt(0).toUpperCase() + compra.estado.slice(1),
+            },
+          ],
+        },
+        {
+          title: 'Productos',
+          table: {
+            headers: ['Producto', 'Cantidad', 'Precio unit.', 'Subtotal'],
+            rows: compra.productos.map((prod) => {
+              const producto = productos.find((p) => p.id === prod.productoId);
+              return [
+                producto?.nombre || `Producto ${prod.productoId}`,
+                prod.cantidad,
+                formatCurrency(prod.precioCompra),
+                formatCurrency(prod.subtotal),
+              ];
+            }),
+          },
+        },
+        {
+          title: 'Totales',
+          rows: [
+            { label: 'Subtotal', value: formatCurrency(compra.subtotal) },
+            { label: 'IVA (19%)', value: formatCurrency(compra.iva) },
+            { label: 'Total', value: formatCurrency(compra.total) },
+          ],
+        },
+      ],
+      footer: 'Comprobante generado por Grandma\u2019s Liquors. Use "Descargar PDF" para guardar o imprimir.',
+    });
+    if (!opened) {
+      toast.error('No se pudo abrir la vista PDF', {
+        description: 'Permita las ventanas emergentes para este sitio.',
+      });
+    }
+  };
+
   const agregarProducto = () => {
     // Validaciones
     if (productoActual.productoId === 0) {
@@ -397,7 +453,8 @@ export function Compras() {
     }
   };
 
-  if (loading) {
+  // Spinner solo en la carga inicial: en recargas la UI permanece para no perder foco al buscar.
+  if (loading && compras.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
@@ -467,7 +524,8 @@ export function Compras() {
             icon: <Eye className="w-4 h-4" />,
             onClick: handleView,
             variant: 'default'
-          }
+          },
+          commonActions.pdf(handleVerPdf),
         ]}
       />
 
@@ -762,7 +820,10 @@ export function Compras() {
               </div>
             </div>
 
-            <div className="flex justify-end pt-4 border-t">
+            <div className="flex justify-end gap-2 pt-4 border-t">
+              <Button variant="outline" onClick={() => handleVerPdf(selectedCompra)}>
+                Descargar PDF
+              </Button>
               <Button
                 variant="outline"
                 onClick={() => {

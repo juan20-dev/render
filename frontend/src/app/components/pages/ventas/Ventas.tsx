@@ -1,11 +1,11 @@
 ﻿import React, { useState, useEffect } from 'react';
-import { DataTable, Column, commonActions } from '../../DataTable';
+import { DataTable, Column, commonActions, openPrintablePdf } from '../../DataTable';
 import { Modal } from '../../Modal';
-import { Form, FormField, FormActions } from '../../Form';
+import { Form, FormField, FormActions, FieldError } from '../../Form';
 import { Button } from '../../Button';
 import { Plus, Trash2, Minus, Search, ShoppingCart, Package } from 'lucide-react';
 import { api } from '../../../services/api';
-import { toast } from 'sonner';
+import { toast } from '../../AlertDialog';
 import type { Venta, Cliente, Producto, Pedido, PedidoProducto } from '../../../services/types';
 import { AlertDialog } from '../../AlertDialog';
 
@@ -96,8 +96,19 @@ export function Ventas() {
 
       setClientes(clientesData.filter(c => c.estado === 'activo'));
       setProductos(productosData.filter(p => p.estado === 'activo'));
-      // Solo exponer pedidos completados para selección en ventas por pedido
-      setPedidos(pedidosData.filter(p => p.estado === 'completado'));
+      // Solo exponer pedidos completados que ademas no tengan ya una venta no-cancelada.
+      // Asi, una vez el pedido se asigna a una "venta por pedido", deja de aparecer
+      // en el listado del campo "Pedido *" del formulario de nueva venta.
+      const pedidosConVenta = new Set(
+        ventasData
+          .filter((v) => v.pedidoId != null && v.estado !== 'cancelada')
+          .map((v) => Number(v.pedidoId))
+      );
+      setPedidos(
+        pedidosData.filter(
+          (p) => p.estado === 'completado' && !pedidosConVenta.has(Number(p.id))
+        )
+      );
 
       const ventasConInfo = ventasData.map(venta => {
         const cliente = clientesData.find(c => c.id === venta.clienteId);
@@ -143,6 +154,64 @@ export function Ventas() {
       return;
     }
     setVentaEstadoPendiente({ venta: row, to });
+  };
+
+  /**
+   * Abre vista PDF imprimible con el detalle completo de una venta. Incluye boton
+   * "Descargar PDF" en la propia ventana (window.print del navegador).
+   */
+  const handleVerPdfVenta = (venta: VentaView) => {
+    const cliente = clientes.find((c) => c.id === venta.clienteId);
+    const opened = openPrintablePdf({
+      title: `Venta #${String(venta.id).padStart(4, '0')}`,
+      subtitle: `Generado el ${new Date().toLocaleString('es-CO')}`,
+      sections: [
+        {
+          title: 'Datos generales',
+          rows: [
+            { label: 'Tipo', value: venta.tipo === 'directa' ? 'Directa' : 'Por pedido' },
+            {
+              label: 'Cliente',
+              value: cliente ? `${cliente.nombre} ${cliente.apellido}` : `ID ${venta.clienteId}`,
+            },
+            ...(venta.pedidoNumero
+              ? [{ label: 'Pedido asociado', value: venta.pedidoNumero }]
+              : []),
+            { label: 'Fecha', value: venta.fecha },
+            { label: 'Método de pago', value: venta.metodoPago },
+            {
+              label: 'Estado',
+              value: venta.estado.charAt(0).toUpperCase() + venta.estado.slice(1),
+            },
+          ],
+        },
+        {
+          title: 'Productos',
+          table: {
+            headers: ['Producto', 'Cantidad', 'Precio unit.', 'Subtotal'],
+            rows: venta.productos.map((p) => {
+              const prod = productos.find((x) => x.id === p.productoId);
+              return [
+                prod?.nombre || `Producto ${p.productoId}`,
+                p.cantidad,
+                formatCurrency(p.precio),
+                formatCurrency(p.subtotal),
+              ];
+            }),
+          },
+        },
+        {
+          title: 'Totales',
+          rows: [{ label: 'Total', value: formatCurrency(venta.total) }],
+        },
+      ],
+      footer: 'Comprobante generado por Grandma\u2019s Liquors. Use "Descargar PDF" para guardar o imprimir.',
+    });
+    if (!opened) {
+      toast.error('No se pudo abrir la vista PDF', {
+        description: 'Permita las ventanas emergentes para este sitio.',
+      });
+    }
   };
 
   const confirmarCambioEstadoVenta = async () => {
@@ -393,7 +462,9 @@ export function Ventas() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!formData.clienteId) {
+    // En venta directa el cliente es obligatorio. En venta por pedido el cliente
+    // se hereda automaticamente del pedido seleccionado (no se pide en el form).
+    if (formData.tipo === 'directa' && !formData.clienteId) {
       toast.error('Seleccione un cliente');
       return;
     }
@@ -405,6 +476,11 @@ export function Ventas() {
 
     if (formData.tipo === 'por pedido' && !formData.pedidoId) {
       toast.error('Seleccione un pedido');
+      return;
+    }
+
+    if (formData.tipo === 'por pedido' && !formData.clienteId) {
+      toast.error('El pedido seleccionado no tiene un cliente válido. Elija otro pedido.');
       return;
     }
 
@@ -561,7 +637,8 @@ export function Ventas() {
           commonActions.view((venta) => {
             setSelectedVenta(venta);
             setIsDetailModalOpen(true);
-          })
+          }),
+          commonActions.pdf((venta) => handleVerPdfVenta(venta as VentaView)),
         ]}
       />
 
@@ -607,8 +684,20 @@ export function Ventas() {
               type="select"
               value={formData.tipo}
               onChange={(value) => {
-                setFormData({ ...formData, tipo: value as 'directa' | 'por pedido', pedidoId: undefined });
+                const nuevoTipo = value as 'directa' | 'por pedido';
+                setFormData({
+                  ...formData,
+                  tipo: nuevoTipo,
+                  pedidoId: undefined,
+                  // Al cambiar de tipo el cliente se recalcula: en directa se vuelve a elegir,
+                  // en por pedido se infiere automaticamente al elegir el pedido.
+                  clienteId: 0,
+                });
                 setProductosEnVenta([]);
+                setBusquedaCliente('');
+                setBusquedaPedido('');
+                setMostrarListaClientes(false);
+                setMostrarListaPedidos(false);
               }}
               options={[
                 { value: 'directa', label: 'Venta Directa' },
@@ -617,41 +706,43 @@ export function Ventas() {
               required
             />
 
-            {/* Campo de búsqueda de Cliente */}
-            <div className="relative">
-              <label className="block text-sm font-medium mb-2">Cliente *</label>
-              <input
-                type="text"
-                value={busquedaCliente}
-                onChange={(e) => {
-                  setBusquedaCliente(e.target.value);
-                  setMostrarListaClientes(true);
-                }}
-                onFocus={() => setMostrarListaClientes(true)}
-                placeholder="Escribe nombre, ID o documento del cliente..."
-                className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-                disabled={formData.tipo === 'por pedido' && !!formData.pedidoId}
-                required
-              />
-              {mostrarListaClientes && busquedaCliente && (
-                <div className="absolute z-10 w-full mt-1 bg-white border border-border rounded-lg shadow-lg max-h-60 overflow-y-auto">
-                  {clientesFiltrados.length > 0 ? (
-                    clientesFiltrados.map(c => (
-                      <div
-                        key={c.id}
-                        onClick={() => seleccionarCliente(c)}
-                        className="px-3 py-2 hover:bg-accent cursor-pointer border-b border-border last:border-b-0"
-                      >
-                        <div className="font-medium">{c.nombre} {c.apellido}</div>
-                        <div className="text-sm text-muted-foreground">ID: {c.id} | {c.tipoDocumento}: {c.numeroDocumento}</div>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="px-3 py-2 text-muted-foreground text-sm">No se encontraron clientes</div>
-                  )}
-                </div>
-              )}
-            </div>
+            {/* Campo Cliente: solo visible para venta directa.
+                En venta por pedido el cliente se infiere del pedido seleccionado. */}
+            {formData.tipo === 'directa' && (
+              <div className="relative">
+                <label className="block text-sm font-medium mb-2">Cliente *</label>
+                <input
+                  type="text"
+                  value={busquedaCliente}
+                  onChange={(e) => {
+                    setBusquedaCliente(e.target.value);
+                    setMostrarListaClientes(true);
+                  }}
+                  onFocus={() => setMostrarListaClientes(true)}
+                  placeholder="Escribe nombre, ID o documento del cliente..."
+                  className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                  required
+                />
+                {mostrarListaClientes && busquedaCliente && (
+                  <div className="absolute z-10 w-full mt-1 bg-white border border-border rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                    {clientesFiltrados.length > 0 ? (
+                      clientesFiltrados.map(c => (
+                        <div
+                          key={c.id}
+                          onClick={() => seleccionarCliente(c)}
+                          className="px-3 py-2 hover:bg-accent cursor-pointer border-b border-border last:border-b-0"
+                        >
+                          <div className="font-medium">{c.nombre} {c.apellido}</div>
+                          <div className="text-sm text-muted-foreground">ID: {c.id} | {c.tipoDocumento}: {c.numeroDocumento}</div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="px-3 py-2 text-muted-foreground text-sm">No se encontraron clientes</div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
 
             {formData.tipo === 'por pedido' && (
               <div className="col-span-2 relative">
@@ -691,6 +782,14 @@ export function Ventas() {
                     )}
                   </div>
                 )}
+                {formData.pedidoId && formData.clienteId > 0 && (() => {
+                  const cli = clientes.find((c) => c.id === formData.clienteId);
+                  return cli ? (
+                    <p className="text-xs text-muted-foreground mt-2">
+                      Cliente del pedido: <strong>{cli.nombre} {cli.apellido}</strong> (se asigna automáticamente).
+                    </p>
+                  ) : null;
+                })()}
               </div>
             )}
 
@@ -825,10 +924,10 @@ export function Ventas() {
 
                             {/* Validación visual de stock */}
                             {!validacionStock.valido && (
-                              <div className="mt-2 p-2 bg-red-50 rounded border border-red-200">
-                                <p className="text-xs text-red-700">
-                                  ⚠️ La cantidad excede el stock disponible ({maxCantidad} unidades)
-                                </p>
+                              <div className="mt-2">
+                                <FieldError>
+                                  La cantidad excede el stock disponible ({maxCantidad} unidades).
+                                </FieldError>
                               </div>
                             )}
                             {validacionStock.valido && validacionStock.stockRestante === 0 && (

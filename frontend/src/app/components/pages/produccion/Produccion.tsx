@@ -1,11 +1,11 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { DataTable, Column, commonActions } from '../../DataTable';
 import { Modal } from '../../Modal';
-import { Form, FormField, FormActions } from '../../Form';
+import { Form, FormField, FormActions, FieldError, FieldSuccess } from '../../Form';
 import { Button } from '../../Button';
 import { Plus, FileText, Calendar } from 'lucide-react';
 import { api } from '../../../services/api';
-import { toast } from 'sonner';
+import { toast } from '../../AlertDialog';
 import type { OrdenProduccion, Producto, Usuario, ProductoInsumoRecetaLine } from '../../../services/types';
 import { MotivoModal } from '../../MotivoModal';
 import { AlertDialog } from '../../AlertDialog';
@@ -664,24 +664,32 @@ Fecha Impresión:    ${new Date().toLocaleString('es-CO')}
               <input
                 type="date"
                 value={formData.fechaInicio}
+                min={new Date().toISOString().split('T')[0]}
                 onChange={(e) => {
                   const value = e.target.value;
-                  setFormData({ ...formData, fechaInicio: value });
                   const fechaHoy = new Date().toISOString().split('T')[0];
+                  if (value && value < fechaHoy) {
+                    setFechaValida(false);
+                    return;
+                  }
+                  setFormData({ ...formData, fechaInicio: value });
                   setFechaValida(value >= fechaHoy);
                 }}
-                className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 ${
+                className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 transition-all ${
                   fechaValida === null ? 'border-border focus:ring-primary' :
-                  fechaValida ? 'border-green-500 focus:ring-green-500' : 'border-red-500 focus:ring-red-500'
+                  fechaValida ? 'border-green-500 ring-1 ring-green-500/20 focus:ring-green-500'
+                              : 'border-destructive ring-1 ring-destructive/20 focus:ring-destructive'
                 }`}
                 required
               />
-              {fechaValida === false && (
-                <p className="text-xs text-red-600 mt-1">No se puede seleccionar una fecha pasada</p>
-              )}
-              {fechaValida === true && formData.fechaInicio !== new Date().toISOString().split('T')[0] && (
-                <p className="text-xs text-green-600 mt-1">✓ Fecha válida</p>
-              )}
+              <div className="mt-1.5">
+                {fechaValida === false && (
+                  <FieldError>No se puede seleccionar una fecha pasada. Elija hoy o una fecha futura.</FieldError>
+                )}
+                {fechaValida === true && formData.fechaInicio !== new Date().toISOString().split('T')[0] && (
+                  <FieldSuccess>Fecha válida.</FieldSuccess>
+                )}
+              </div>
             </div>
 
             {/* Tiempo de Preparación con validación visual */}
@@ -697,14 +705,17 @@ Fecha Impresión:    ${new Date().toLocaleString('es-CO')}
                 }}
                 placeholder="Ej: 60"
                 min="15"
-                className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 ${
+                className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 transition-all ${
                   tiempoValido === null ? 'border-border focus:ring-primary' :
-                  tiempoValido ? 'border-green-500 focus:ring-green-500' : 'border-red-500 focus:ring-red-500'
+                  tiempoValido ? 'border-green-500 ring-1 ring-green-500/20 focus:ring-green-500'
+                               : 'border-destructive ring-1 ring-destructive/20 focus:ring-destructive'
                 }`}
                 required
               />
               {tiempoValido === false && formData.tiempoPreparacion < 15 && (
-                <p className="text-xs text-red-600 mt-1">El tiempo mínimo es 15 minutos</p>
+                <div className="mt-1.5">
+                  <FieldError>El tiempo mínimo es 15 minutos.</FieldError>
+                </div>
               )}
               {formData.tiempoPreparacion > 480 && (
                 <div className="mt-2 p-2 bg-yellow-50 rounded border border-yellow-200">

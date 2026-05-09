@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect, useMemo } from 'react';
 import { DataTable, Column } from '../../DataTable';
 import { Modal } from '../../Modal';
 import { Form, FormField, FormActions } from '../../Form';
@@ -6,7 +6,7 @@ import { Button } from '../../Button';
 import { Plus, Building2, User, Eye, Edit, Trash2, Star } from 'lucide-react';
 import { api } from '../../../services/api';
 import type { Proveedor } from '../../../services/types';
-import { toast } from 'sonner';
+import { toast } from '../../AlertDialog';
 
 export function Proveedores() {
   const [proveedores, setProveedores] = useState<Proveedor[]>([]);
@@ -65,7 +65,7 @@ export function Proveedores() {
   const proveedoresFiltrados = proveedores.filter(p => {
     const matchBusqueda = searchQuery.length < 2 ||
       p.nombreRazonSocial.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.nit.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      String(p.nit || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
       p.email.toLowerCase().includes(searchQuery.toLowerCase());
 
     const matchTipo = filtroTipo === 'Todos' || p.tipo === filtroTipo;
@@ -78,6 +78,45 @@ export function Proveedores() {
 
     return matchBusqueda && matchTipo && matchEstado && matchPreferente;
   });
+
+  const nitDigits = String(formData.nit || '').replace(/\D/g, '');
+  const nitDuplicadoEnLista = useMemo(() => {
+    if (selectedProveedor) return '';
+    if (nitDigits.length < 6 || nitDigits.length > 12) return '';
+    const dup = proveedores.some((p) => String(p.nit || '').replace(/\D/g, '') === nitDigits);
+    return dup
+      ? 'Este NIT o documento ya está en la lista de proveedores. Use otro número o edite el existente.'
+      : '';
+  }, [proveedores, nitDigits, selectedProveedor]);
+
+  // Validacion en vivo: telefono y correo no pueden duplicarse entre proveedores activos.
+  const telDigitsProv = String(formData.telefono || '').replace(/\D/g, '');
+  const telefonoDuplicadoProv = useMemo(() => {
+    if (telDigitsProv.length !== 10) return '';
+    const dup = proveedores.some(
+      (p) =>
+        (!selectedProveedor || p.id !== selectedProveedor.id) &&
+        String(p.telefono || '').replace(/\D/g, '') === telDigitsProv
+    );
+    return dup
+      ? 'Este teléfono ya está registrado para otro proveedor. Use uno distinto.'
+      : '';
+  }, [proveedores, telDigitsProv, selectedProveedor]);
+
+  const emailNormProv = String(formData.email || '').trim().toLowerCase();
+  const emailDuplicadoProv = useMemo(() => {
+    if (!emailNormProv) return '';
+    const valid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailNormProv);
+    if (!valid) return '';
+    const dup = proveedores.some(
+      (p) =>
+        (!selectedProveedor || p.id !== selectedProveedor.id) &&
+        String(p.email || '').trim().toLowerCase() === emailNormProv
+    );
+    return dup
+      ? 'Este correo ya está registrado para otro proveedor. Use uno distinto.'
+      : '';
+  }, [proveedores, emailNormProv, selectedProveedor]);
 
   const columns: Column[] = [
     {
@@ -294,18 +333,31 @@ export function Proveedores() {
       return;
     }
 
-    const telefonoRegex = /^[0-9\s]+$/;
-    if (!telefonoRegex.test(formData.telefono)) {
-      toast.error('Teléfono inválido', {
-        description: 'El teléfono solo puede contener números y espacios'
+    const telDigits = String(formData.telefono || '').replace(/\D/g, '');
+    if (telDigits.length !== 10) {
+      toast.error('Teléfono incompleto', {
+        description: 'Ingrese exactamente 10 dígitos del teléfono.',
       });
       return;
     }
 
-    if (formData.nit.length < 5) {
-      toast.error('NIT/Documento inválido', {
-        description: 'El NIT/Documento debe tener al menos 5 caracteres'
+    if (nitDigits.length < 6 || nitDigits.length > 12) {
+      toast.error('NIT o documento inválido', {
+        description: 'El NIT/Documento debe tener entre 6 y 12 dígitos.',
       });
+      return;
+    }
+
+    if (nitDuplicadoEnLista) {
+      toast.error('Identificador duplicado', { description: nitDuplicadoEnLista });
+      return;
+    }
+    if (telefonoDuplicadoProv) {
+      toast.error('Teléfono duplicado', { description: telefonoDuplicadoProv });
+      return;
+    }
+    if (emailDuplicadoProv) {
+      toast.error('Correo duplicado', { description: emailDuplicadoProv });
       return;
     }
 
@@ -327,13 +379,29 @@ export function Proveedores() {
       setIsModalOpen(false);
       cargarProveedores();
     } catch (error: any) {
-      toast.error(selectedProveedor ? 'Error al actualizar proveedor' : 'Error al crear proveedor', {
-        description: error.message
-      });
+      const msg = String(error?.message || '');
+      if (/telefono|teléfono/i.test(msg)) {
+        toast.error('Teléfono no disponible', {
+          description: 'Ese número ya está asignado a otro proveedor. Indique un teléfono distinto.',
+        });
+      } else if (/correo|email/i.test(msg)) {
+        toast.error('Correo no disponible', { description: msg });
+      } else if (/RUC|NIT|documento|ya existe|inactivo/i.test(msg)) {
+        toast.error('Identificador duplicado', {
+          description: msg.includes('inactivo')
+            ? 'Ese NIT o documento corresponde a un proveedor inactivo. Reactive ese registro o use otro número.'
+            : 'Ese NIT o documento ya pertenece a otro proveedor. Verifique el número o consulte el proveedor existente.',
+        });
+      } else {
+        toast.error(selectedProveedor ? 'No se pudo actualizar el proveedor' : 'No se pudo crear el proveedor', {
+          description: msg || 'Intente de nuevo o contacte al administrador.',
+        });
+      }
     }
   };
 
-  if (loading) {
+  // Spinner solo en la carga inicial: en recargas la UI permanece para no perder foco al buscar.
+  if (loading && proveedores.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
@@ -501,17 +569,14 @@ export function Proveedores() {
             name="nit"
             value={formData.nit}
             onChange={(value) => {
-              if (selectedProveedor) {
-                toast.warning('Advertencia', {
-                  description: 'No se puede modificar el NIT/Documento de un proveedor existente por políticas de auditoría'
-                });
-                return;
-              }
+              if (selectedProveedor) return;
               setFormData({ ...formData, nit: value as string });
             }}
-            placeholder="Ej: 900123456-7"
+            placeholder="Entre 6 y 12 dígitos"
             required
             disabled={!!selectedProveedor}
+            inputDigitRule="documento6to12"
+            error={nitDuplicadoEnLista || undefined}
           />
 
           {selectedProveedor && (
@@ -526,8 +591,10 @@ export function Proveedores() {
               name="telefono"
               value={formData.telefono}
               onChange={(value) => setFormData({ ...formData, telefono: value as string })}
-              placeholder="300 123 4567"
+              placeholder="6015551000"
               required
+              inputDigitRule="telefono10"
+              error={telefonoDuplicadoProv || undefined}
             />
 
             <FormField
@@ -538,6 +605,7 @@ export function Proveedores() {
               onChange={(value) => setFormData({ ...formData, email: value as string })}
               placeholder="ejemplo@email.com"
               required
+              error={emailDuplicadoProv || undefined}
             />
           </div>
 

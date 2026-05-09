@@ -1,12 +1,12 @@
 ﻿import React, { useState, useEffect } from 'react';
 import { DataTable, Column } from '../../DataTable';
 import { Modal } from '../../Modal';
-import { Form, FormField, FormActions } from '../../Form';
+import { Form, FormField, FormActions, FieldError, FieldHelper } from '../../Form';
 import { Button } from '../../Button';
 import { Plus, Eye, Edit, Trash2 } from 'lucide-react';
 import { api } from '../../../services/api';
 import type { Categoria } from '../../../services/types';
-import { toast } from 'sonner';
+import { toast } from '../../AlertDialog';
 
 export function Categorias() {
   const [categorias, setCategorias] = useState<Categoria[]>([]);
@@ -115,9 +115,16 @@ export function Categorias() {
   const confirmarCambioEstado = async () => {
     if (!categoriaEstadoPendiente) return;
 
-    if (motivoEstado.length < 10 || motivoEstado.length > 50) {
-      toast.error('Error de validación', {
-        description: 'El motivo debe tener entre 10 y 50 caracteres'
+    const motivoTrim = motivoEstado.trim();
+    if (motivoTrim.length < 10) {
+      toast.warning('Motivo demasiado corto', {
+        description: `Escribe al menos 10 caracteres explicando el motivo del cambio (actual: ${motivoTrim.length}).`,
+      });
+      return;
+    }
+    if (motivoTrim.length > 50) {
+      toast.warning('Motivo demasiado largo', {
+        description: `El motivo no puede superar los 50 caracteres (actual: ${motivoTrim.length}).`,
       });
       return;
     }
@@ -156,6 +163,12 @@ export function Categorias() {
   };
 
   const handleEdit = (categoria: Categoria) => {
+    if (categoria.estado === 'inactivo') {
+      toast.warning('Categoria inactiva', {
+        description: 'No se puede editar una categoria inactiva. Reactivela primero.',
+      });
+      return;
+    }
     setSelectedCategoria(categoria);
     setFormData({
       nombre: categoria.nombre,
@@ -231,24 +244,29 @@ export function Categorias() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Validaciones
-    if (!validarNombreUnico(formData.nombre, selectedCategoria?.id)) {
-      toast.error('Error de validación', {
-        description: 'Ya existe una categoría con ese nombre'
+    const nombreTrim = formData.nombre.trim();
+    if (nombreTrim.length < 3) {
+      toast.warning('Nombre demasiado corto', {
+        description: `Escribe al menos 3 caracteres (actual: ${nombreTrim.length}).`,
       });
       return;
     }
-
-    if (formData.nombre.trim().length < 3) {
-      toast.error('Error de validación', {
-        description: 'El nombre debe tener al menos 3 caracteres'
+    if (nombreTrim.length > 50) {
+      toast.warning('Nombre demasiado largo', {
+        description: `El nombre no puede superar los 50 caracteres (actual: ${nombreTrim.length}).`,
+      });
+      return;
+    }
+    if (!validarNombreUnico(nombreTrim, selectedCategoria?.id)) {
+      toast.warning('Nombre duplicado', {
+        description: `Ya existe una categoría con el nombre "${nombreTrim}". Elija un nombre diferente.`,
       });
       return;
     }
 
     if (formData.descripcion.trim().length < 10) {
-      toast.error('Error de validación', {
-        description: 'La descripción debe tener al menos 10 caracteres'
+      toast.warning('Descripción demasiado corta', {
+        description: 'La descripción debe tener al menos 10 caracteres.',
       });
       return;
     }
@@ -277,7 +295,9 @@ export function Categorias() {
     }
   };
 
-  if (loading) {
+  // Solo bloqueamos la pantalla con spinner en la carga inicial.
+  // En recargas posteriores la UI permanece montada para no perder foco al escribir/buscar.
+  if (loading && categorias.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
@@ -351,7 +371,9 @@ export function Categorias() {
             label: 'Editar',
             icon: <Edit className="w-4 h-4" />,
             onClick: handleEdit,
-            variant: 'default'
+            variant: 'default',
+            disabled: (row: Categoria) => row.estado === 'inactivo',
+            disabledTitle: 'No se puede editar una categoria inactiva. Reactivela primero.',
           },
           {
             label: 'Eliminar',
@@ -369,22 +391,37 @@ export function Categorias() {
         title={selectedCategoria ? 'Editar Categoría' : 'Nueva Categoría'}
       >
         <Form onSubmit={handleSubmit}>
-          <FormField
-            label="Nombre de la Categoría"
-            name="nombre"
-            value={formData.nombre}
-            onChange={(value) => {
-              setFormData({ ...formData, nombre: value as string });
-              if (value && !validarNombreUnico(value as string, selectedCategoria?.id)) {
-                toast.warning('Advertencia', {
-                  description: 'Ya existe una categoría con ese nombre',
-                  duration: 2000
-                });
-              }
-            }}
-            placeholder="Ej: Licores Artesanales"
-            required
-          />
+          <div>
+            <label className="block text-sm font-medium mb-2">
+              Nombre de la Categoría <span className="text-destructive">*</span>
+            </label>
+            <input
+              type="text"
+              value={formData.nombre}
+              onChange={(e) => setFormData({ ...formData, nombre: e.target.value })}
+              placeholder="Ej: Licores Artesanales (3 a 50 caracteres)"
+              maxLength={50}
+              minLength={3}
+              className={`w-full px-4 py-2 bg-input-background border rounded-lg focus:outline-none focus:ring-2 transition-all ${
+                formData.nombre && !validarNombreUnico(formData.nombre, selectedCategoria?.id)
+                  ? 'border-destructive ring-1 ring-destructive/20 focus:ring-destructive'
+                  : 'border-border focus:ring-ring'
+              }`}
+              required
+            />
+            <div className="mt-1.5 flex items-start justify-between gap-2">
+              <div className="flex-1 min-w-0">
+                {formData.nombre && !validarNombreUnico(formData.nombre, selectedCategoria?.id) ? (
+                  <FieldError>
+                    Ya existe una categoría con el nombre "{formData.nombre.trim()}". Elija un nombre diferente.
+                  </FieldError>
+                ) : (
+                  <FieldHelper>El nombre debe ser único y tener entre 3 y 50 caracteres.</FieldHelper>
+                )}
+              </div>
+              <span className="text-xs text-muted-foreground whitespace-nowrap pt-1">{formData.nombre.length}/50</span>
+            </div>
+          </div>
 
           <FormField
             label="Descripción"

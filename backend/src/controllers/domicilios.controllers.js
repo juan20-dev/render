@@ -21,40 +21,90 @@ const ensureVentaForDeliveredDomicilio = async (domicilioId) => {
 
     const ventaExistente = await models.Ventas.getByPedido(domicilio.pedido_id);
 
-    // Actualizar pedido: forzar esquema_abono a 100%
+    /*
+     * Liquidacion del abono al entregar: no se crea un segundo abono por el mismo pedido.
+     * Se actualiza el abono mas antiguo del pedido (el creado al registrar el pedido con 50%)
+     * al monto total y 100%, y se eliminan filas duplicadas del mismo pedido.
+     */
     try {
-      await models.Pedidos.update(pedido.id, { esquema_abono: '100%' });
-    } catch (e) {
-      // ignore
-    }
-
-    // Gestionar abonos: si la suma de abonos registrados es menor al total, crear abono final y marcar todos como completados
-    try {
-      const abonos = await models.Abonos.getByPedido(pedido.id);
+      const abonosRaw = await models.Abonos.getByPedido(pedido.id);
       const totalPedido = Number(pedido.total || 0);
-      const sumPagado = (Array.isArray(abonos) ? abonos : []).reduce((s, a) => s + Number(a.monto || 0), 0);
-      if (totalPedido > sumPagado) {
-        const faltante = Math.round(totalPedido - sumPagado);
+      const lista = [...(Array.isArray(abonosRaw) ? abonosRaw : [])].sort((a, b) => Number(a.id) - Number(b.id));
+      const isCancelado = (s) => String(s || '').trim().toLowerCase().includes('cancel');
+      const activos = lista.filter((a) => !isCancelado(a.estado));
+      const principal = activos[0] || lista[0] || null;
+
+      if (principal && totalPedido > 0) {
+        const montoPrevio = Number(principal.monto || 0);
+        const faltante = Math.max(0, Math.round(totalPedido - montoPrevio));
+        const fechaHoy = new Date().toISOString().split('T')[0];
+        const fechaPrev = principal.fecha ? String(principal.fecha).split('T')[0] : 'sin fecha';
+        const metodoPrev = principal.metodo_pago || 'no especificado';
+
+        const partes = [];
+        partes.push(
+          `Abono inicial: $${montoPrevio.toLocaleString('es-CO')} (${
+            totalPedido > 0 ? Math.round((montoPrevio * 100) / totalPedido) : 0
+          }%) - ${fechaPrev} - ${metodoPrev}`
+        );
+        if (faltante > 0) {
+          partes.push(
+            `Liquidacion contraentrega: $${faltante.toLocaleString('es-CO')} (${
+              totalPedido > 0 ? Math.round((faltante * 100) / totalPedido) : 0
+            }%) - ${fechaHoy} - Contraentrega`
+          );
+        } else {
+          partes.push(`Liquidacion contraentrega: $0 - pedido ya saldado al ${fechaHoy}`);
+        }
+        partes.push(
+          `Total liquidado: $${Math.round(totalPedido).toLocaleString('es-CO')} (100%) - cierre el ${fechaHoy}`
+        );
+        const detalleCombinado = partes.join(' | ');
+
+        try {
+          await models.Abonos.updateLiquidacion(principal.id, {
+            monto: Math.round(totalPedido),
+            detalle: detalleCombinado,
+            estado: 'Finalizado',
+            porcentaje_abonado: 100,
+          });
+        } catch (e) {
+          // continuar sin bloquear
+        }
+
+        for (const a of lista) {
+          if (Number(a.id) === Number(principal.id)) continue;
+          try {
+            await models.Abonos.delete(a.id);
+          } catch (e) {
+            // continuar
+          }
+        }
+      } else if (totalPedido > 0 && lista.length === 0) {
+        const fechaHoy = new Date().toISOString().split('T')[0];
         const numero_abono = `ABO-${Date.now()}`;
         await models.Abonos.create({
           numero_abono,
           pedido_id: pedido.id,
           cliente_id: pedido.cliente_id,
-          monto: faltante,
-          fecha: new Date().toISOString().split('T')[0],
+          monto: Math.round(totalPedido),
+          fecha: fechaHoy,
           metodo_pago: 'Contraentrega',
-          estado: 'Registrado',
+          estado: 'Finalizado',
+          porcentaje_abonado: 100,
+          detalle: `Liquidacion total a contraentrega: $${Math.round(totalPedido).toLocaleString(
+            'es-CO'
+          )} (100%) - ${fechaHoy} - Contraentrega`,
         });
       }
 
-      // Marcar todos los abonos como completados en la gestión (modelo actual acepta cualquier string)
-      const allAbonos = await models.Abonos.getByPedido(pedido.id);
-      for (const a of Array.isArray(allAbonos) ? allAbonos : []) {
-        try {
-          await models.Abonos.updateEstado(a.id, 'Completado');
-        } catch (e) {
-          // continuar
-        }
+      try {
+        await models.Pedidos.update(pedido.id, {
+          esquema_abono: '100%',
+          monto_abonado: Math.round(totalPedido),
+        });
+      } catch (e) {
+        // ignore
       }
     } catch (e) {
       // no bloquear flujo

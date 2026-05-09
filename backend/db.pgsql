@@ -62,7 +62,8 @@ DROP TABLE IF EXISTS roles CASCADE;
 -- TABLA: roles
 CREATE TABLE roles (
     id SERIAL PRIMARY KEY,
-    nombre VARCHAR(50) UNIQUE NOT NULL,
+    nombre VARCHAR(50) UNIQUE NOT NULL
+        CHECK (char_length(trim(nombre)) BETWEEN 3 AND 50),
     descripcion TEXT,
     permisos TEXT[],
     estado VARCHAR(20) DEFAULT 'Activo',
@@ -228,7 +229,14 @@ CREATE TABLE abonos (
     monto DECIMAL(10,2) NOT NULL,
     fecha DATE NOT NULL,
     metodo_pago VARCHAR(50) NOT NULL,
+    -- Estados validos: Registrado, Verificado, Aplicado, Cancelado, Finalizado.
+    -- 'Finalizado' es un estado terminal que se asigna automaticamente cuando el
+    -- domicilio del pedido se marca como entregado: en ese momento el abono
+    -- inicial se actualiza al 100% del total y se consolida la informacion
+    -- de las dos partes del pago en la columna `detalle`.
     estado VARCHAR(20) DEFAULT 'Registrado',
+    detalle TEXT,
+    porcentaje_abonado INTEGER,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -481,11 +489,11 @@ INSERT INTO roles (nombre, descripcion, permisos, estado) VALUES
 -- Insertar usuarios de ejemplo
 -- Credenciales de prueba para cada rol
 INSERT INTO usuarios (nombre, apellido, tipo_documento, documento, email, telefono, direccion, password_hash, rol_id, estado) VALUES
-('Admin', 'Sistema', 'CC', '1234567890', 'admin@grandmas.com', '3001234567', 'Oficina Central', '$2b$10$Wt7O/RLg2WBmi1N0Iw9XpudA3esZTjh.TwLudZyKxVONkV1b/L.Ni', 1, 'Activo'),
-('Asesor', 'Principal', 'CC', '1234567891', 'asesor@grandmas.com', '3001234568', 'Calle Principal 123', '$2b$10$s3bdN9VvLpe0rH1cePoFve2keWeP8flJTdQz00DYdknzEbJ7nVla6', 2, 'Activo'),
-('Productor', 'Jefe', 'CC', '1234567892', 'productor@grandmas.com', '3001234569', 'Zona Producción', '$2b$10$u1iQnnuwr016HyIS3rNLS.sCd.kOOUjySWSQmTHrhd..rS/7Oor.a', 3, 'Activo'),
-('Repartidor', 'Uno', 'CC', '1234567893', 'repartidor@grandmas.com', '3001234570', 'Zona Reparto', '$2b$10$mYIecNeT/FR43MtI0RLw4OPWNX2glNvp6f5qHFze/onh1l5dEcFSi', 4, 'Activo'),
-('Cliente', 'Ejemplo', 'CC', '1234567894', 'cliente@grandmas.com', '3001234571', 'Calle Secundaria 456', '$2b$10$Xc4JiqZv5fsbWpVlXMjd4.sakub/owiYqXIB0jk5F5r9NLp4eczU6', 5, 'Activo');
+('Admin', 'Sistema', 'CC', '100012345678', 'admin@grandmas.com', '3001234567', 'Oficina Central', '$2b$10$wll/iFG/TlbICeKe9AA6vegRb5SAE1sa9iQ7UpaCXKjHoYaxKxj6m', 1, 'Activo'),
+('Asesor', 'Principal', 'CC', '100012345679', 'asesor@grandmas.com', '3001234568', 'Calle Principal 123', '$2b$10$s3bdN9VvLpe0rH1cePoFve2keWeP8flJTdQz00DYdknzEbJ7nVla6', 2, 'Activo'),
+('Productor', 'Jefe', 'CC', '100012345680', 'productor@grandmas.com', '3001234569', 'Zona Producción', '$2b$10$u1iQnnuwr016HyIS3rNLS.sCd.kOOUjySWSQmTHrhd..rS/7Oor.a', 3, 'Activo'),
+('Repartidor', 'Uno', 'CC', '100012345681', 'repartidor@grandmas.com', '3001234570', 'Zona Reparto', '$2b$10$mYIecNeT/FR43MtI0RLw4OPWNX2glNvp6f5qHFze/onh1l5dEcFSi', 4, 'Activo'),
+('Cliente', 'Ejemplo', 'CC', '100012345682', 'cliente@grandmas.com', '3001234571', 'Calle Secundaria 456', '$2b$10$Xc4JiqZv5fsbWpVlXMjd4.sakub/owiYqXIB0jk5F5r9NLp4eczU6', 5, 'Activo');
 
 -- Insertar categorías de productos
 INSERT INTO categorias (nombre, descripcion, estado) VALUES
@@ -506,14 +514,14 @@ INSERT INTO productos (nombre, categoria_id, descripcion, precio, stock, stock_m
 ('Tequila Patrón 750ml', 5, 'Tequila 100% agave', 52000.00, 15, 5, 'Activo', 'terminado');
 
 -- Insertar proveedores de ejemplo
-INSERT INTO proveedores (tipo_persona, nombre_empresa, nit, nombre, apellido, email, telefono, direccion, estado) VALUES
-('Juridica', 'Distribuidora Licores S.A.', '800123456-1', 'Juan', 'López', 'contacto@distribuidora.com', '6015551000', 'Cra. 5 #10-50, Bogotá', 'Activo'),
-('Natural', NULL, NULL, 'Carlos', 'Martínez', 'carlos@licores.com', '3105551234', 'Calle 20 #5-30, Medellín', 'Activo'),
-('Juridica', 'Importadores Premium Ltd', '900654321-2', 'María', 'Rodríguez', 'info@importadores.com', '6015556789', 'Av. Carrera 7 #100-50, Bogotá', 'Activo');
+INSERT INTO proveedores (tipo_persona, nombre_empresa, nit, nombre, apellido, tipo_documento, numero_documento, email, telefono, direccion, estado) VALUES
+('Juridica', 'Distribuidora Licores S.A.', '900800123456', 'Juan', 'López', NULL, NULL, 'contacto@distribuidora.com', '6015551000', 'Cra. 5 #10-50, Bogotá', 'Activo'),
+('Natural', NULL, NULL, 'Carlos', 'Martínez', 'CC', '100012345998', 'carlos@licores.com', '3105551234', 'Calle 20 #5-30, Medellín', 'Activo'),
+('Juridica', 'Importadores Premium Ltd', '901900654321', 'María', 'Rodríguez', NULL, NULL, 'info@importadores.com', '6015556789', 'Av. Carrera 7 #100-50, Bogotá', 'Activo');
 
 -- Insertar cliente de ejemplo
 INSERT INTO clientes (usuario_id, nombre, apellido, tipo_documento, documento, email, telefono, direccion, estado) VALUES
-(5, 'Cliente', 'Ejemplo', 'CC', '1234567894', 'cliente@grandmas.com', '3001234571', 'Calle Secundaria 456', 'Activo');
+(5, 'Cliente', 'Ejemplo', 'CC', '100012345682', 'cliente@grandmas.com', '3001234571', 'Calle Secundaria 456', 'Activo');
 
 -- Insertar insumos de ejemplo (para producción)
 INSERT INTO insumos (nombre, descripcion, cantidad, unidad, stock_minimo, estado) VALUES

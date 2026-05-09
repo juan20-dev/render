@@ -6,7 +6,7 @@ const jwt = require('jsonwebtoken');
 const config = require('../../config');
 const { normalizeAuthRegisterPayload } = require('./normalizador-http');
 const { generateTempPassword, isStrongPassword } = require('../utils/credentials');
-const { sendTemporaryPasswordEmail } = require('../services/email.service');
+const { sendTemporaryPasswordEmail, sendWelcomeEmail } = require('../services/email.service');
 
 const passwordTokenExpiryMs = 15 * 60 * 1000;
 
@@ -87,15 +87,26 @@ module.exports = {
       }
 
       const identifier = getLoginIdentifier(email);
-      const blocked = await models.Usuarios.isLoginBlocked(identifier);
-      if (blocked) {
-        return res.status(429).json({ success: false, message: 'Cuenta bloqueada temporalmente por 15 minutos tras 5 intentos fallidos' });
+      const blockInfo = await models.Usuarios.getLoginBlockInfo(identifier);
+      if (blockInfo?.blocked) {
+        const minutosRestantes = Math.max(1, Math.ceil(blockInfo.remainingMs / 60000));
+        return res.status(429).json({
+          success: false,
+          message: `Cuenta bloqueada temporalmente por intentos fallidos. Vuelve a intentarlo en ${minutosRestantes} minuto${minutosRestantes === 1 ? '' : 's'}.`,
+        });
       }
 
       const usuario = await models.Usuarios.getByEmailLogin(identifier);
       if (!usuario) {
-        await models.Usuarios.registerLoginFailure(identifier);
-        return res.status(401).json({ success: false, message: 'Credenciales incorrectas' });
+        const failure = await models.Usuarios.registerLoginFailure(identifier);
+        const intentosRestantes = Math.max(0, 5 - Number(failure?.attempts || 0));
+        return res.status(401).json({
+          success: false,
+          message:
+            intentosRestantes > 0
+              ? `Credenciales incorrectas. Te quedan ${intentosRestantes} intento${intentosRestantes === 1 ? '' : 's'} antes de un bloqueo temporal.`
+              : 'Credenciales incorrectas. La cuenta ha sido bloqueada temporalmente.',
+        });
       }
 
       if (usuario.estado !== 'Activo') {
@@ -104,8 +115,15 @@ module.exports = {
 
       const isValid = await bcrypt.compare(password, usuario.password_hash || '');
       if (!isValid) {
-        await models.Usuarios.registerLoginFailure(identifier);
-        return res.status(401).json({ success: false, message: 'Credenciales incorrectas' });
+        const failure = await models.Usuarios.registerLoginFailure(identifier);
+        const intentosRestantes = Math.max(0, 5 - Number(failure?.attempts || 0));
+        return res.status(401).json({
+          success: false,
+          message:
+            intentosRestantes > 0
+              ? `Credenciales incorrectas. Te quedan ${intentosRestantes} intento${intentosRestantes === 1 ? '' : 's'} antes de un bloqueo temporal.`
+              : 'Credenciales incorrectas. La cuenta ha sido bloqueada temporalmente por 15 minutos.',
+        });
       }
 
       await models.Usuarios.clearLoginAttempts(identifier);
@@ -200,6 +218,30 @@ module.exports = {
     }
   },
 
+  verifyCurrentPassword: async (req, res) => {
+    try {
+      const userId = req.user?.id;
+      if (!userId) {
+        return res.status(401).json({ success: false, message: 'No autenticado' });
+      }
+
+      const currentPassword = String(req.body?.currentPassword ?? '');
+      if (!currentPassword.trim()) {
+        return res.json({ success: true, data: { valid: false } });
+      }
+
+      const usuario = await models.Usuarios.getById(userId);
+      if (!usuario) {
+        return res.status(404).json({ success: false, message: 'Usuario no encontrado' });
+      }
+
+      const valid = await bcrypt.compare(currentPassword, usuario.password_hash || '');
+      return res.json({ success: true, data: { valid } });
+    } catch (error) {
+      return res.status(500).json({ success: false, message: error.message });
+    }
+  },
+
   changePassword: async (req, res) => {
     try {
       const userId = req.user?.id;
@@ -220,7 +262,11 @@ module.exports = {
       }
 
       if (!isStrongPassword(newPassword)) {
-        return res.status(400).json({ success: false, message: 'La nueva contraseña debe tener minimo 8 caracteres, una mayuscula y un numero' });
+        return res.status(400).json({
+          success: false,
+          message:
+            'La nueva contraseña debe tener mínimo 8 caracteres, al menos una mayúscula, una minúscula y un número',
+        });
       }
 
       const usuario = await models.Usuarios.getById(userId);
@@ -295,7 +341,11 @@ module.exports = {
       }
 
       if (!isStrongPassword(newPassword)) {
-        return res.status(400).json({ success: false, message: 'La nueva contraseña debe tener minimo 8 caracteres, una mayuscula y un numero' });
+        return res.status(400).json({
+          success: false,
+          message:
+            'La nueva contraseña debe tener mínimo 8 caracteres, al menos una mayúscula, una minúscula y un número',
+        });
       }
 
       const resetRow = await models.Usuarios.consumePasswordResetToken({
@@ -562,6 +612,17 @@ module.exports = {
       }
 
       await client.query('COMMIT');
+
+      // Auto-registro del cliente: enviar SOLO correo de bienvenida con la
+      // informacion del registro (sin credenciales, ya que el cliente eligio
+      // su propia contrasena en el formulario de registro).
+      void sendWelcomeEmail({
+        to: normalizedEmail,
+        name: `${normalizedNombre} ${normalizedApellido}`.trim(),
+        email: normalizedEmail,
+      }).catch((error) => {
+        console.error('Error enviando correo de bienvenida (auto-registro):', error);
+      });
 
       res.status(201).json({
         success: true,

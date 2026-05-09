@@ -7,14 +7,22 @@ const {
   sendTemporaryPasswordEmail,
   sendEmailChangeNotification,
   sendUserStatusChangeNotification,
+  sendWelcomeEmail,
 } = require('../services/email.service');
 const { isClienteUser } = require('../utils/selfServiceAccess');
 
 module.exports = {
   getAll: async (req, res) => {
     try {
+      // excludeClientes default true: la lista de "Usuarios" SOLO muestra usuarios
+      // operativos del sistema (no clientes). Para incluir clientes pasar exclude_clientes=false.
+      const excludeClientesFlag = req.query?.exclude_clientes;
+      const excludeClientes =
+        excludeClientesFlag === undefined || String(excludeClientesFlag).toLowerCase() === 'true';
+
       const filters = {
         includeDeleted: String(req.query?.include_deleted ?? 'false') === 'true',
+        excludeClientes,
         globalQuery: typeof req.query?.q === 'string' ? req.query.q : '',
         rolId: req.query?.rol_id ? Number(req.query.rol_id) : null,
         estados: typeof req.query?.estados === 'string'
@@ -159,22 +167,23 @@ module.exports = {
       const password_hash = await bcrypt.hash(passwordToHash, 10);
       const id = await models.Usuarios.create({ ...payload, password_hash, actor_id: req.user?.id || null });
 
-      if (!useManualPassword && tempPassword) {
-        void sendTemporaryPasswordEmail({
-          to: payload.email,
-          name: `${payload.nombre} ${payload.apellido}`.trim(),
-          tempPassword,
-        }).catch((error) => {
-          console.error('Error enviando contraseña temporal:', error);
-        });
-      }
+      // Correo de bienvenida con credenciales (siempre que el alta sea correcta).
+      // - Para alta hecha por admin se envian Email + Contrasena para iniciar sesion.
+      void sendWelcomeEmail({
+        to: payload.email,
+        name: `${payload.nombre} ${payload.apellido}`.trim(),
+        email: payload.email,
+        password: passwordToHash,
+      }).catch((error) => {
+        console.error('Error enviando correo de bienvenida (usuario):', error);
+      });
 
       res.status(201).json({
         success: true,
         id,
         message: useManualPassword
-          ? 'Usuario creado exitosamente con contrasena personalizada.'
-          : 'Usuario creado exitosamente. Se envio una contrasena temporal al correo registrado.',
+          ? 'Usuario creado exitosamente. Se envio un correo de bienvenida con las credenciales al correo registrado.'
+          : 'Usuario creado exitosamente. Se envio un correo de bienvenida con la contrasena temporal al correo registrado.',
       });
     } catch (error) {
       res.status(500).json({ success: false, message: error.message });
@@ -272,26 +281,34 @@ module.exports = {
     try {
       const estado = typeof req.body?.estado === 'string' ? req.body.estado.trim() : '';
       if (!['Activo', 'Inactivo'].includes(estado)) {
-        return res.status(400).json({ success: false, message: 'Estado invalido. Valores permitidos: Activo, Inactivo' });
+        return res.status(400).json({
+          success: false,
+          message: 'El estado seleccionado no es válido. Valores permitidos: Activo o Inactivo.',
+        });
+      }
+
+      const motivo = typeof req.body?.motivo === 'string' ? req.body.motivo.trim() : '';
+      if (!motivo || motivo.length < 10 || motivo.length > 50) {
+        return res.status(400).json({
+          success: false,
+          message: 'El motivo del cambio de estado es obligatorio y debe tener entre 10 y 50 caracteres.',
+        });
       }
 
       const usuario = await models.Usuarios.getById(req.params.id);
       if (!usuario) {
-        return res.status(404).json({ success: false, message: 'Usuario no encontrado' });
+        return res.status(404).json({ success: false, message: 'No se encontró el usuario que intenta modificar.' });
       }
 
-      const notificar = req.body?.notificar === true || req.body?.notificar === 'true';
-      if (!notificar) {
-        return res.status(400).json({
-          success: false,
-          message: 'La notificacion al usuario es obligatoria para cambiar estado',
-        });
-      }
+      const notificar =
+        req.body?.notificar === undefined ||
+        req.body?.notificar === true ||
+        req.body?.notificar === 'true';
 
-      if (!usuario.email) {
+      if (notificar && !usuario.email) {
         return res.status(400).json({
           success: false,
-          message: 'El usuario no tiene correo configurado para recibir notificacion',
+          message: 'El usuario no tiene un correo electrónico configurado para recibir la notificación.',
         });
       }
 
@@ -302,23 +319,29 @@ module.exports = {
         actor_id: req.user?.id || null,
       });
 
-      await sendUserStatusChangeNotification({
-        to: updatedUser.email,
-        name: `${updatedUser.nombre || ''} ${updatedUser.apellido || ''}`.trim(),
-        estado,
-        motivo,
-        changedBy: req.user?.email || null,
-      });
+      if (notificar && updatedUser?.email) {
+        try {
+          await sendUserStatusChangeNotification({
+            to: updatedUser.email,
+            name: `${updatedUser.nombre || ''} ${updatedUser.apellido || ''}`.trim(),
+            estado,
+            motivo,
+            changedBy: req.user?.email || null,
+          });
+        } catch (notifyError) {
+          console.error('No se pudo enviar la notificación de cambio de estado:', notifyError.message);
+        }
+      }
 
       return res.json({
         success: true,
-        message: 'Estado del usuario actualizado exitosamente',
+        message: `Estado del usuario actualizado exitosamente a "${estado}".`,
         data: updatedUser,
       });
     } catch (error) {
       return res.status(error.statusCode || 500).json({
         success: false,
-        message: error.message,
+        message: error.message || 'No fue posible actualizar el estado del usuario.',
         details: error.details,
       });
     }

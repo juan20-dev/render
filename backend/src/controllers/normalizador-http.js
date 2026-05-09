@@ -1,7 +1,6 @@
 const TIPO_DOCUMENTO_MAP = {
   cc: 'CC',
   ce: 'CE',
-  ti: 'TI',
   pp: 'Pasaporte',
   pasaporte: 'Pasaporte',
 };
@@ -174,10 +173,35 @@ const normalizeClientePayload = (payload = {}) => {
     const tipoDocumento = normalizeTipoDocumento(rawTipoDocumento);
     if (!tipoDocumento) {
       return {
-        error: 'Tipo de documento invalido. Valores permitidos: CC, CE, TI, Pasaporte.',
+        error: 'Tipo de documento invalido. Valores permitidos: CC, CE, Pasaporte.',
       };
     }
     data.tipoDocumento = tipoDocumento;
+  }
+
+  if (
+    payload.documento !== undefined ||
+    payload.numeroDocumento !== undefined ||
+    payload.numero_documento !== undefined
+  ) {
+    const rawDoc = data.documento ?? payload.numeroDocumento ?? payload.numero_documento ?? '';
+    const docDigits = String(rawDoc).replace(/\D/g, '');
+    if (docDigits.length < 6 || docDigits.length > 12) {
+      return {
+        error: 'Numero de documento invalido. Debe tener entre 6 y 12 digitos.',
+      };
+    }
+    data.documento = docDigits;
+  }
+
+  if (payload.telefono !== undefined) {
+    const telefono = String(payload.telefono).replace(/\D/g, '');
+    if (telefono.length !== 10) {
+      return {
+        error: 'Telefono invalido. Debe tener exactamente 10 digitos.',
+      };
+    }
+    data.telefono = telefono;
   }
 
   return { data };
@@ -189,12 +213,20 @@ const normalizeAuthRegisterPayload = (payload = {}) => {
 
   if (!tipoDocumento) {
     return {
-      error: 'Tipo de documento invalido. Valores permitidos: CC, CE, TI, Pasaporte.',
+      error: 'Tipo de documento invalido. Valores permitidos: CC, CE, Pasaporte.',
     };
   }
 
   data.tipoDocumento = tipoDocumento;
   data.documento = payload.documento ?? payload.numeroDocumento;
+
+  const docDigitsReg = String(data.documento ?? '').replace(/\D/g, '');
+  if (docDigitsReg.length < 6 || docDigitsReg.length > 12) {
+    return {
+      error: 'Numero de documento invalido. Debe tener entre 6 y 12 digitos.',
+    };
+  }
+  data.documento = docDigitsReg;
 
   if (payload.estado !== undefined) {
     const estado = canonicalizeWithMap(payload.estado, BASE_ESTADO_MAP);
@@ -210,9 +242,9 @@ const normalizeAuthRegisterPayload = (payload = {}) => {
 
   if (payload.telefono !== undefined) {
     const telefono = String(payload.telefono).replace(/\D/g, '');
-    if (telefono.length < 7 || telefono.length > 15) {
+    if (telefono.length !== 10) {
       return {
-        error: 'Telefono invalido. Debe tener entre 7 y 15 digitos numericos.',
+        error: 'Telefono invalido. Debe tener exactamente 10 digitos.',
       };
     }
     data.telefono = telefono;
@@ -229,7 +261,7 @@ const normalizeUsuarioPayload = (payload = {}) => {
     const tipoDocumento = normalizeTipoDocumento(rawTipoDocumento);
     if (!tipoDocumento) {
       return {
-        error: 'Tipo de documento invalido. Valores permitidos: CC, CE, TI, Pasaporte.',
+        error: 'Tipo de documento invalido. Valores permitidos: CC, CE, Pasaporte.',
       };
     }
     data.tipo_documento = tipoDocumento;
@@ -247,12 +279,22 @@ const normalizeUsuarioPayload = (payload = {}) => {
 
   if (payload.telefono !== undefined) {
     const telefono = String(payload.telefono).replace(/\D/g, '');
-    if (telefono.length < 7 || telefono.length > 15) {
+    if (telefono.length !== 10) {
       return {
-        error: 'Telefono invalido. Debe tener entre 7 y 15 digitos numericos.',
+        error: 'Telefono invalido. Debe tener exactamente 10 digitos.',
       };
     }
     data.telefono = telefono;
+  }
+
+  if (payload.documento !== undefined && payload.documento !== null && String(payload.documento).trim() !== '') {
+    const doc = String(payload.documento).replace(/\D/g, '');
+    if (doc.length < 6 || doc.length > 12) {
+      return {
+        error: 'Documento invalido. Debe tener entre 6 y 12 digitos.',
+      };
+    }
+    data.documento = doc;
   }
 
   return { data };
@@ -266,7 +308,7 @@ const normalizeProveedorPayload = (payload = {}) => {
     const tipoDocumento = normalizeTipoDocumento(rawTipoDocumento);
     if (!tipoDocumento) {
       return {
-        error: 'Tipo de documento invalido. Valores permitidos: CC, CE, TI, Pasaporte.',
+        error: 'Tipo de documento invalido. Valores permitidos: CC, CE, Pasaporte.',
       };
     }
     data.tipoDocumento = tipoDocumento;
@@ -296,9 +338,9 @@ const normalizeProveedorPayload = (payload = {}) => {
 
   if (payload.telefono !== undefined) {
     const telefono = String(payload.telefono).replace(/\D/g, '');
-    if (telefono.length < 7 || telefono.length > 15) {
+    if (telefono.length !== 10) {
       return {
-        error: 'Telefono invalido. Debe tener entre 7 y 15 digitos numericos.',
+        error: 'Telefono invalido. Debe tener exactamente 10 digitos.',
       };
     }
     data.telefono = telefono;
@@ -353,10 +395,16 @@ const normalizeProveedorPayload = (payload = {}) => {
         ? String(payload.nit).trim()
         : '';
     if (docRaw) {
+      const docDigits = docRaw.replace(/\D/g, '');
+      if (docDigits.length < 6 || docDigits.length > 12) {
+        return {
+          error: 'El NIT/Documento debe tener entre 6 y 12 digitos.',
+        };
+      }
       if (data.tipoPersona === 'Juridica') {
-        data.nit = docRaw;
+        data.nit = docDigits;
       } else {
-        data.numeroDocumento = docRaw;
+        data.numeroDocumento = docDigits;
         data.nit = null;
       }
     }

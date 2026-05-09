@@ -5,7 +5,7 @@ import { Form, FormField, FormActions } from '../../Form';
 import { Button } from '../../Button';
 import { Plus } from 'lucide-react';
 import { api } from '../../../services/api';
-import { toast } from 'sonner';
+import { toast } from '../../AlertDialog';
 import type { Domicilio, Pedido, Cliente, Usuario } from '../../../services/types';
 import { MotivoModal } from '../../MotivoModal';
 import { AlertDialog } from '../../AlertDialog';
@@ -37,18 +37,24 @@ export function Domicilios() {
     repartidorId: 0
   });
   const [submittingDomicilio, setSubmittingDomicilio] = useState(false);
+  // Cuando es edicion, guardamos el domicilio que se esta modificando.
+  const [editingDomicilio, setEditingDomicilio] = useState<DomicilioView | null>(null);
 
   useEffect(() => {
     cargarDatos();
   }, []);
 
+  // Catálogo de productos (para resolver nombres si el backend no los entrega).
+  const [productosCatalogo, setProductosCatalogo] = useState<{ id: number; nombre: string }[]>([]);
+
   const cargarDatos = async () => {
     try {
-      const [domiciliosData, pedidosData, clientesData, usuariosData] = await Promise.all([
+      const [domiciliosData, pedidosData, clientesData, usuariosData, productosData] = await Promise.all([
         api.domicilios.getAll(),
         api.pedidos.getAll(),
         api.clientes.getAll(),
-        api.usuarios.getAll()
+        api.usuarios.getAll(),
+        api.productos.getAll()
       ]);
 
       const repartidoresData = usuariosData.filter(
@@ -60,6 +66,7 @@ export function Domicilios() {
       setRepartidores(repartidoresData);
       setPedidos(pedidosData.filter(p => p.estado === 'pendiente' || p.estado === 'en proceso' || p.estado === 'completado'));
       setClientes(clientesData);
+      setProductosCatalogo(productosData.map((p) => ({ id: p.id, nombre: p.nombre })));
 
       const domiciliosConInfo = domiciliosData.map(domicilio => {
         const cliente = clientesData.find(c => c.id === domicilio.clienteId);
@@ -247,20 +254,73 @@ export function Domicilios() {
   ];
 
   const pedidosParaNuevoDomicilio = useMemo(() => {
-    const conEntregaActiva = new Set(
-      domicilios
-        .filter((d) => d.estado === 'pendiente' || d.estado === 'en ruta')
-        .map((d) => d.pedidoId)
+    // Una vez el pedido tenga un domicilio asignado (pendiente, en ruta o completado)
+    // ya no debe volver a aparecer en la lista de "Nuevos domicilios". Solo
+    // si el unico domicilio asociado fue cancelado, el pedido vuelve a estar disponible.
+    const conDomicilio = new Set(
+      domicilios.filter((d) => d.estado !== 'cancelado').map((d) => d.pedidoId)
     );
-    return pedidos.filter((p) => !conEntregaActiva.has(p.id));
+    return pedidos.filter((p) => !conDomicilio.has(p.id));
   }, [domicilios, pedidos]);
 
   const handleAdd = () => {
+    setEditingDomicilio(null);
     setFormData({
       pedidoId: 0,
       repartidorId: 0
     });
     setIsModalOpen(true);
+  };
+
+  const handleEdit = (domicilio: DomicilioView) => {
+    if (domicilio.estado === 'completado' || domicilio.estado === 'cancelado') {
+      toast.error('No se puede editar un domicilio en estado final');
+      return;
+    }
+    setEditingDomicilio(domicilio);
+    setFormData({
+      pedidoId: domicilio.pedidoId,
+      repartidorId: domicilio.repartidorId,
+    });
+    setIsModalOpen(true);
+  };
+
+  const editarDomicilioDesdeFormulario = async () => {
+    if (submittingDomicilio || !editingDomicilio) return;
+
+    const repartidorId = Number(formData.repartidorId);
+    if (!Number.isFinite(repartidorId) || repartidorId <= 0) {
+      toast.error('Seleccione un repartidor');
+      return;
+    }
+
+    if (
+      Number(editingDomicilio.repartidorId) === repartidorId
+    ) {
+      toast.error('Seleccione un repartidor distinto al actual para guardar el cambio');
+      return;
+    }
+
+    const repartidor = repartidores.find((u) => u.id === repartidorId);
+    const repartidorNombre = repartidor ? `${repartidor.nombre} ${repartidor.apellido}`.trim() : '';
+
+    setSubmittingDomicilio(true);
+    try {
+      await api.domicilios.update(editingDomicilio.id, {
+        repartidorId,
+        repartidorNombre,
+      });
+      toast.success('Domicilio actualizado exitosamente');
+      setIsModalOpen(false);
+      setEditingDomicilio(null);
+      setFormData({ pedidoId: 0, repartidorId: 0 });
+      await cargarDatos();
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Error al actualizar domicilio';
+      toast.error(msg);
+    } finally {
+      setSubmittingDomicilio(false);
+    }
   };
 
   const crearDomicilioDesdeFormulario = async () => {
@@ -323,7 +383,11 @@ export function Domicilios() {
 
   const handleSubmitForm = (e: React.FormEvent) => {
     e.preventDefault();
-    void crearDomicilioDesdeFormulario();
+    if (editingDomicilio) {
+      void editarDomicilioDesdeFormulario();
+    } else {
+      void crearDomicilioDesdeFormulario();
+    }
   };
 
   const domiciliosFiltrados = domicilios.filter(domicilio => {
@@ -415,10 +479,23 @@ export function Domicilios() {
         data={domiciliosFiltrados}
         getRowKey={(row) => row.id}
         actions={[
-          commonActions.view((domicilio) => {
-            setSelectedDomicilio(domicilio);
+          commonActions.view(async (domicilio) => {
+            try {
+              const detalle = await api.domicilios.getById((domicilio as DomicilioView).id);
+              const base = domicilio as DomicilioView;
+              setSelectedDomicilio({
+                ...base,
+                ...detalle,
+                clienteNombre: base.clienteNombre,
+                repartidorNombre: base.repartidorNombre,
+                pedidoNumero: base.pedidoNumero,
+              });
+            } catch {
+              setSelectedDomicilio(domicilio as DomicilioView);
+            }
             setIsDetailModalOpen(true);
-          })
+          }),
+          commonActions.edit(handleEdit),
         ]}
       />
 
@@ -463,40 +540,58 @@ export function Domicilios() {
       {/* Modal de formulario */}
       <Modal
         isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        title="Nuevo Domicilio"
+        onClose={() => {
+          setIsModalOpen(false);
+          setEditingDomicilio(null);
+        }}
+        title={editingDomicilio ? 'Editar Domicilio' : 'Nuevo Domicilio'}
         size="md"
       >
         <Form onSubmit={handleSubmitForm} noValidate>
           <div className="space-y-4">
-            {pedidosParaNuevoDomicilio.length === 0 ? (
+            {!editingDomicilio && pedidosParaNuevoDomicilio.length === 0 ? (
               <p className="text-sm text-muted-foreground">
                 No hay pedidos disponibles sin domicilio activo (pedidos pendientes o en proceso que aún no tengan entrega asignada).
               </p>
             ) : null}
-            <FormField
-              label="Pedido"
-              name="pedidoId"
-              type="select"
-              selectPlaceholder={false}
-              value={formData.pedidoId <= 0 ? '' : String(formData.pedidoId)}
-              onChange={(value) =>
-                setFormData((prev) => ({
-                  ...prev,
-                  pedidoId: value === '' ? 0 : Number(value) || 0
-                }))
-              }
-              options={[
-                { value: '', label: 'Seleccione un pedido' },
-                ...pedidosParaNuevoDomicilio.map(p => {
-                  const cliente = clientes.find(c => c.id === p.clienteId);
-                  return {
-                    value: String(p.id),
-                    label: `Pedido #${String(p.id).padStart(4, '0')} - ${cliente ? `${cliente.nombre} ${cliente.apellido}` : 'Desconocido'} - Entrega: ${p.fechaEntrega}`
-                  };
-                })
-              ]}
-            />
+
+            {editingDomicilio ? (
+              <div className="p-3 rounded-lg bg-accent text-sm">
+                <p>
+                  <strong>Domicilio:</strong> #{String(editingDomicilio.id).padStart(4, '0')}
+                </p>
+                <p>
+                  <strong>Pedido asignado:</strong> {editingDomicilio.pedidoNumero}
+                </p>
+                <p className="text-muted-foreground">
+                  Solo se puede actualizar el repartidor asignado a este domicilio.
+                </p>
+              </div>
+            ) : (
+              <FormField
+                label="Pedido"
+                name="pedidoId"
+                type="select"
+                selectPlaceholder={false}
+                value={formData.pedidoId <= 0 ? '' : String(formData.pedidoId)}
+                onChange={(value) =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    pedidoId: value === '' ? 0 : Number(value) || 0
+                  }))
+                }
+                options={[
+                  { value: '', label: 'Seleccione un pedido' },
+                  ...pedidosParaNuevoDomicilio.map(p => {
+                    const cliente = clientes.find(c => c.id === p.clienteId);
+                    return {
+                      value: String(p.id),
+                      label: `Pedido #${String(p.id).padStart(4, '0')} - ${cliente ? `${cliente.nombre} ${cliente.apellido}` : 'Desconocido'} - Entrega: ${p.fechaEntrega}`
+                    };
+                  })
+                ]}
+              />
+            )}
 
             <FormField
               label="Repartidor"
@@ -519,7 +614,7 @@ export function Domicilios() {
               ]}
             />
 
-            {formData.pedidoId > 0 && (
+            {!editingDomicilio && formData.pedidoId > 0 && (
               <div className="p-4 bg-accent rounded-lg">
                 <p className="text-sm">
                   <strong>Información del Pedido:</strong>
@@ -542,23 +637,40 @@ export function Domicilios() {
           </div>
 
           <FormActions>
-            <Button variant="outline" type="button" onClick={() => setIsModalOpen(false)}>
+            <Button
+              variant="outline"
+              type="button"
+              onClick={() => {
+                setIsModalOpen(false);
+                setEditingDomicilio(null);
+              }}
+            >
               Cancelar
             </Button>
             <Button
               type="button"
               disabled={
                 submittingDomicilio ||
-                pedidosParaNuevoDomicilio.length === 0 ||
+                (!editingDomicilio && pedidosParaNuevoDomicilio.length === 0) ||
                 repartidores.length === 0
               }
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                void crearDomicilioDesdeFormulario();
+                if (editingDomicilio) {
+                  void editarDomicilioDesdeFormulario();
+                } else {
+                  void crearDomicilioDesdeFormulario();
+                }
               }}
             >
-              {submittingDomicilio ? 'Creando…' : 'Crear Domicilio'}
+              {submittingDomicilio
+                ? editingDomicilio
+                  ? 'Guardando…'
+                  : 'Creando…'
+                : editingDomicilio
+                  ? 'Guardar Cambios'
+                  : 'Crear Domicilio'}
             </Button>
           </FormActions>
         </Form>
@@ -608,6 +720,14 @@ export function Domicilios() {
                 <p className="mt-1 font-semibold text-lg">{formatCurrency(selectedDomicilio.total)}</p>
               </div>
               <div>
+                <label className="text-sm text-muted-foreground">Dirección de Entrega</label>
+                <p className="mt-1">{selectedDomicilio.direccion || 'No especificada'}</p>
+              </div>
+              <div>
+                <label className="text-sm text-muted-foreground">Teléfono de Contacto</label>
+                <p className="mt-1">{selectedDomicilio.telefono || 'No especificado'}</p>
+              </div>
+              <div>
                 <label className="text-sm text-muted-foreground">Fecha Pedido</label>
                 <p className="mt-1">{selectedDomicilio.fechaPedido}</p>
               </div>
@@ -626,13 +746,30 @@ export function Domicilios() {
 
             <div className="p-4 bg-accent/50 rounded-lg">
               <label className="text-sm text-muted-foreground block mb-3 font-medium">Productos</label>
-              <div className="space-y-2">
-                {selectedDomicilio.productos.map((producto, index) => (
-                  <div key={index} className="flex justify-between p-2 bg-background rounded border text-sm">
-                    <span>Producto ID {producto.productoId} x{producto.cantidad}</span>
-                    <span className="font-medium">{formatCurrency(producto.subtotal)}</span>
-                  </div>
-                ))}
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-accent/50">
+                    <tr>
+                      <th className="text-left p-2">Producto</th>
+                      <th className="text-right p-2">Cantidad</th>
+                      <th className="text-right p-2">Precio Unit.</th>
+                      <th className="text-right p-2">Subtotal</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {selectedDomicilio.productos.map((producto, index) => {
+                      const prod = productosCatalogo.find((p) => p.id === producto.productoId);
+                      return (
+                        <tr key={index} className="border-t">
+                          <td className="p-2">{producto.nombre || prod?.nombre || `Producto ${producto.productoId}`}</td>
+                          <td className="text-right p-2">{producto.cantidad}</td>
+                          <td className="text-right p-2">{formatCurrency(producto.precio)}</td>
+                          <td className="text-right p-2">{formatCurrency(producto.subtotal)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
             </div>
           </div>

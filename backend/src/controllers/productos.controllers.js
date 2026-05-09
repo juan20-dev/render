@@ -32,7 +32,7 @@ module.exports = {
       if (isClienteUser(req)) {
         return res.status(403).json({ success: false, message: 'No autorizado' });
       }
-      const id = await models.Productos.create(req.body);
+      const id = await models.Productos.create({ ...req.body, actor_id: req.user?.id || null });
       res.status(201).json({ success: true, id, message: 'Producto creado exitosamente' });
     } catch (error) {
       res.status(500).json({ success: false, message: error.message });
@@ -43,7 +43,7 @@ module.exports = {
       if (isClienteUser(req)) {
         return res.status(403).json({ success: false, message: 'No autorizado' });
       }
-      await models.Productos.update(req.params.id, req.body);
+      await models.Productos.update(req.params.id, { ...req.body, actor_id: req.user?.id || null });
       res.json({ success: true, message: 'Producto actualizado exitosamente' });
     } catch (error) {
       res.status(error.statusCode || 500).json({ success: false, message: error.message });
@@ -68,7 +68,11 @@ module.exports = {
         });
       }
 
-      const producto = await models.Productos.updateStatus(req.params.id, { estado, motivo });
+      const producto = await models.Productos.updateStatus(req.params.id, {
+        estado,
+        motivo,
+        actor_id: req.user?.id || null,
+      });
       res.json({ success: true, data: producto, message: 'Estado del producto actualizado exitosamente' });
     } catch (error) {
       res.status(error.statusCode || 500).json({ success: false, message: error.message });
@@ -79,7 +83,7 @@ module.exports = {
       if (isClienteUser(req)) {
         return res.status(403).json({ success: false, message: 'No autorizado' });
       }
-      await models.Productos.delete(req.params.id);
+      await models.Productos.delete(req.params.id, { actor_id: req.user?.id || null });
       res.json({ success: true, message: 'Producto eliminado exitosamente' });
     } catch (error) {
       res.status(500).json({ success: false, message: error.message });

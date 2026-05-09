@@ -3,11 +3,11 @@ import { DataTable, Column, commonActions } from '../../DataTable';
 import { Modal } from '../../Modal';
 import { Card } from '../../Card';
 import { Button } from '../../Button';
-import { Form, FormField, FormActions } from '../../Form';
+import { Form, FormField, FormActions, FieldError, FieldHelper } from '../../Form';
 import { Plus, Shield, Check, X } from 'lucide-react';
 import { useAlertDialog } from '../../AlertDialog';
 import { api } from '../../../services/api';
-import { toast } from 'sonner';
+import { toast } from '../../AlertDialog';
 
 interface Role {
   id: number;
@@ -96,7 +96,26 @@ export function Roles() {
     estado: 'Activo' as 'Activo' | 'Inactivo',
     permisos: [] as string[]
   });
+  // Estado de validación inline para el campo "Nombre del Rol".
+  const [nombreError, setNombreError] = useState<string>('');
   const { showAlert, AlertComponent } = useAlertDialog();
+
+  // Valida el nombre del rol localmente con mensajes claros para el usuario.
+  // Devuelve string vacío si es válido, o el mensaje a mostrar.
+  const validarNombreRol = (nombreRaw: string, idActual?: number): string => {
+    const nombre = nombreRaw.trim();
+    if (!nombre) return 'El nombre del rol es obligatorio.';
+    if (nombre.length < 3) return `Faltan ${3 - nombre.length} carácter(es). Mínimo 3.`;
+    if (nombre.length > 50) return 'El nombre no puede superar los 50 caracteres.';
+    if (!/^[A-Za-zÁÉÍÓÚÑáéíóúñ0-9\s_\-]+$/.test(nombre)) {
+      return 'Solo se permiten letras, números, espacios, guiones (-) o guion bajo (_).';
+    }
+    const repetido = roles.some(
+      (r) => r.nombre.toLowerCase() === nombre.toLowerCase() && r.id !== idActual
+    );
+    if (repetido) return `Ya existe un rol con el nombre "${nombre}". Elija un nombre diferente.`;
+    return '';
+  };
 
   const cargarRoles = async () => {
     try {
@@ -181,42 +200,85 @@ export function Roles() {
 
   const handleCreateRole = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    const errorNombre = validarNombreRol(formData.nombre);
+    if (errorNombre) {
+      setNombreError(errorNombre);
+      toast.warning('Revise el nombre del rol', { description: errorNombre });
+      return;
+    }
+    if (formData.descripcion.trim().length < 10) {
+      toast.warning('Descripción demasiado corta', {
+        description: 'La descripción del rol debe tener al menos 10 caracteres.',
+      });
+      return;
+    }
+    if (formData.permisos.length === 0) {
+      toast.warning('Asigne al menos un permiso', {
+        description: 'Cada rol debe tener al menos un permiso seleccionado.',
+      });
+      return;
+    }
+
     try {
       const created = await api.roles.create({
-        nombre: formData.nombre,
-        descripcion: formData.descripcion,
+        nombre: formData.nombre.trim(),
+        descripcion: formData.descripcion.trim(),
         estado: formData.estado,
         permisos: formData.permisos,
       });
       if (created?.id && formData.permisos.length > 0) {
         await api.roles.updatePermisos(Number(created.id), formData.permisos, 'Asignación inicial de permisos');
       }
-      toast.success('Rol creado exitosamente');
+      toast.success('Rol creado exitosamente', {
+        description: `El rol "${formData.nombre.trim()}" se registró correctamente.`,
+      });
       setIsCreateModalOpen(false);
+      setNombreError('');
       setFormData({ nombre: '', descripcion: '', estado: 'Activo', permisos: [] });
       await cargarRoles();
     } catch (error: any) {
-      toast.error('No se pudo crear el rol', { description: error.message });
+      toast.error('No se pudo crear el rol', {
+        description: error?.message || 'Ocurrió un error inesperado al guardar el rol.',
+      });
     }
   };
 
   const handleUpdateRole = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (selectedRole) {
-      try {
-        await api.roles.update(selectedRole.id, {
-          nombre: formData.nombre,
-          descripcion: formData.descripcion,
-          estado: formData.estado,
-        });
-        toast.success('Rol actualizado');
-        setIsEditModalOpen(false);
-        setSelectedRole(null);
-        setFormData({ nombre: '', descripcion: '', estado: 'Activo', permisos: [] });
-        await cargarRoles();
-      } catch (error: any) {
-        toast.error('No se pudo actualizar el rol', { description: error.message });
-      }
+    if (!selectedRole) return;
+
+    const errorNombre = validarNombreRol(formData.nombre, selectedRole.id);
+    if (errorNombre) {
+      setNombreError(errorNombre);
+      toast.warning('Revise el nombre del rol', { description: errorNombre });
+      return;
+    }
+    if (formData.descripcion.trim().length < 10) {
+      toast.warning('Descripción demasiado corta', {
+        description: 'La descripción del rol debe tener al menos 10 caracteres.',
+      });
+      return;
+    }
+
+    try {
+      await api.roles.update(selectedRole.id, {
+        nombre: formData.nombre.trim(),
+        descripcion: formData.descripcion.trim(),
+        estado: formData.estado,
+      });
+      toast.success('Cambios guardados', {
+        description: `Los datos del rol "${formData.nombre.trim()}" se actualizaron correctamente.`,
+      });
+      setIsEditModalOpen(false);
+      setSelectedRole(null);
+      setNombreError('');
+      setFormData({ nombre: '', descripcion: '', estado: 'Activo', permisos: [] });
+      await cargarRoles();
+    } catch (error: any) {
+      toast.error('No se pudo actualizar el rol', {
+        description: error?.message || 'Ocurrió un error inesperado al guardar los cambios.',
+      });
     }
   };
 
@@ -325,7 +387,10 @@ export function Roles() {
     [permisosDisponibles]
   );
 
-  if (loading) {
+  // Solo mostramos el spinner a pantalla completa en la carga inicial.
+  // Si ya hay datos en pantalla, mantenemos la UI montada para que la
+  // barra de búsqueda no pierda el foco mientras el usuario escribe.
+  if (loading && roles.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
@@ -420,20 +485,46 @@ export function Roles() {
         isOpen={isCreateModalOpen}
         onClose={() => {
           setIsCreateModalOpen(false);
+          setNombreError('');
           setFormData({ nombre: '', descripcion: '', estado: 'Activo', permisos: [] });
         }}
         title="Crear Nuevo Rol"
         size="lg"
       >
         <Form onSubmit={handleCreateRole}>
-          <FormField
-            label="Nombre del Rol"
-            name="nombre"
-            value={formData.nombre}
-            onChange={(value) => setFormData({ ...formData, nombre: value as string })}
-            placeholder="Ej: Supervisor, Contador, etc."
-            required
-          />
+          <div>
+            <label className="block text-sm font-medium mb-2">
+              Nombre del Rol <span className="text-destructive">*</span>
+            </label>
+            <input
+              type="text"
+              value={formData.nombre}
+              onChange={(e) => {
+                const value = e.target.value;
+                setFormData({ ...formData, nombre: value });
+                setNombreError(validarNombreRol(value));
+              }}
+              placeholder="Ej: Supervisor, Contador, etc. (3 a 50 caracteres)"
+              maxLength={50}
+              minLength={3}
+              className={`w-full px-4 py-2 bg-input-background border rounded-lg focus:outline-none focus:ring-2 transition-all ${
+                nombreError
+                  ? 'border-destructive ring-1 ring-destructive/20 focus:ring-destructive'
+                  : 'border-border focus:ring-ring'
+              }`}
+              required
+            />
+            <div className="mt-1.5 flex items-start justify-between gap-2">
+              <div className="flex-1 min-w-0">
+                {nombreError ? (
+                  <FieldError>{nombreError}</FieldError>
+                ) : (
+                  <FieldHelper>Debe tener entre 3 y 50 caracteres.</FieldHelper>
+                )}
+              </div>
+              <span className="text-xs text-muted-foreground whitespace-nowrap pt-1">{formData.nombre.length}/50</span>
+            </div>
+          </div>
 
           <FormField
             label="Estado"
@@ -541,20 +632,46 @@ export function Roles() {
         onClose={() => {
           setIsEditModalOpen(false);
           setSelectedRole(null);
+          setNombreError('');
           setFormData({ nombre: '', descripcion: '', estado: 'Activo', permisos: [] });
         }}
         title={`Editar Rol - ${selectedRole?.nombre}`}
         size="md"
       >
         <Form onSubmit={handleUpdateRole}>
-          <FormField
-            label="Nombre del Rol"
-            name="nombre"
-            value={formData.nombre}
-            onChange={(value) => setFormData({ ...formData, nombre: value as string })}
-            placeholder="Ej: Supervisor, Contador, etc."
-            required
-          />
+          <div>
+            <label className="block text-sm font-medium mb-2">
+              Nombre del Rol <span className="text-destructive">*</span>
+            </label>
+            <input
+              type="text"
+              value={formData.nombre}
+              onChange={(e) => {
+                const value = e.target.value;
+                setFormData({ ...formData, nombre: value });
+                setNombreError(validarNombreRol(value, selectedRole?.id));
+              }}
+              placeholder="Ej: Supervisor, Contador, etc. (3 a 50 caracteres)"
+              maxLength={50}
+              minLength={3}
+              className={`w-full px-4 py-2 bg-input-background border rounded-lg focus:outline-none focus:ring-2 transition-all ${
+                nombreError
+                  ? 'border-destructive ring-1 ring-destructive/20 focus:ring-destructive'
+                  : 'border-border focus:ring-ring'
+              }`}
+              required
+            />
+            <div className="mt-1.5 flex items-start justify-between gap-2">
+              <div className="flex-1 min-w-0">
+                {nombreError ? (
+                  <FieldError>{nombreError}</FieldError>
+                ) : (
+                  <FieldHelper>Debe tener entre 3 y 50 caracteres.</FieldHelper>
+                )}
+              </div>
+              <span className="text-xs text-muted-foreground whitespace-nowrap pt-1">{formData.nombre.length}/50</span>
+            </div>
+          </div>
 
           <FormField
             label="Estado"

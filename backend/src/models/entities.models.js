@@ -240,7 +240,14 @@ const Categorias = {
       'INSERT INTO categorias (nombre, descripcion, estado, cantidad_productos) VALUES ($1, $2, $3, $4) RETURNING id',
       [nombre, descripcion || null, estado, 0]
     );
-    return result.rows[0].id;
+    const newId = result.rows[0].id;
+    await registerCategoriaAudit({
+      categoriaId: newId,
+      accion: 'CREATE',
+      usuarioId: data?.actor_id ?? null,
+      cambios: { before: null, after: { nombre, descripcion: descripcion || null, estado } },
+    });
+    return newId;
   },
   update: async (id, data) => {
     await ensureProductoImageColumn();
@@ -264,10 +271,22 @@ const Categorias = {
       throw error;
     }
 
+    const previous = await Categorias.getById(id);
     await pool.query(
       'UPDATE categorias SET nombre = $1, descripcion = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3',
       [nombre, descripcion || null, id]
     );
+    await registerCategoriaAudit({
+      categoriaId: Number(id),
+      accion: 'UPDATE',
+      usuarioId: data?.actor_id ?? null,
+      cambios: {
+        before: previous
+          ? { nombre: previous.nombre, descripcion: previous.descripcion }
+          : null,
+        after: { nombre, descripcion: descripcion || null },
+      },
+    });
     return true;
   },
   updateStatus: async (id, data = {}) => {
@@ -300,6 +319,17 @@ const Categorias = {
       [estado, id]
     );
 
+    await registerCategoriaAudit({
+      categoriaId: Number(id),
+      accion: 'STATUS_CHANGE',
+      usuarioId: data?.actor_id ?? null,
+      cambios: {
+        before: { estado: current.estado },
+        after: { estado },
+        motivo: typeof data?.motivo === 'string' ? data.motivo.trim() : null,
+      },
+    });
+
     return Categorias.getById(id);
   },
   delete: async (id, options = {}) => {
@@ -331,6 +361,15 @@ const Categorias = {
 
     if (numProductos === 0) {
       await pool.query('DELETE FROM categorias WHERE id = $1', [idNum]);
+      await registerCategoriaAudit({
+        categoriaId: idNum,
+        accion: 'DELETE',
+        usuarioId: options?.actor_id ?? null,
+        cambios: {
+          before: { nombre: current.nombre, estado: current.estado, productos_asociados: 0 },
+          after: null,
+        },
+      });
       return true;
     }
 
@@ -378,6 +417,17 @@ const Categorias = {
 
     await ensureCategoriaProductCountColumn();
     await syncCategoriaProductCount(destId);
+
+    await registerCategoriaAudit({
+      categoriaId: idNum,
+      accion: 'DELETE',
+      usuarioId: options?.actor_id ?? null,
+      cambios: {
+        before: { nombre: current.nombre, estado: current.estado, productos_asociados: numProductos },
+        after: null,
+        productos_reubicados_a: destId,
+      },
+    });
 
     return true;
   }
@@ -458,7 +508,24 @@ const Productos = {
       ]
     );
     await syncCategoriaProductCount(data.categoria_id);
-    return result.rows[0].id;
+    const newId = result.rows[0].id;
+    await registerProductoAudit({
+      productoId: newId,
+      accion: 'CREATE',
+      usuarioId: data?.actor_id ?? null,
+      cambios: {
+        before: null,
+        after: {
+          nombre,
+          categoria_id: data.categoria_id,
+          precio: precioSeguro,
+          stock_minimo: data.stock_minimo || 10,
+          tipo_producto: tipoProducto,
+          estado: 'Activo',
+        },
+      },
+    });
+    return newId;
   },
   update: async (id, data) => {
     await ensureCategoriaProductCountColumn();
@@ -523,6 +590,21 @@ const Productos = {
     if (previousCategoriaId && Number(previousCategoriaId) !== Number(data.categoria_id)) {
       await syncCategoriaProductCount(previousCategoriaId);
     }
+    await registerProductoAudit({
+      productoId: Number(id),
+      accion: 'UPDATE',
+      usuarioId: data?.actor_id ?? null,
+      cambios: {
+        before: { categoria_id: previousCategoriaId, stock: stockActual },
+        after: {
+          nombre,
+          categoria_id: data.categoria_id,
+          precio: data.precio,
+          stock_minimo: data.stock_minimo,
+          tipo_producto: tipoProducto,
+        },
+      },
+    });
     return true;
   },
   updateStatus: async (id, data = {}) => {
@@ -555,16 +637,43 @@ const Productos = {
       [estado, id]
     );
 
+    await registerProductoAudit({
+      productoId: Number(id),
+      accion: 'STATUS_CHANGE',
+      usuarioId: data?.actor_id ?? null,
+      cambios: {
+        before: { estado: current.estado },
+        after: { estado },
+        motivo: typeof data?.motivo === 'string' ? data.motivo.trim() : null,
+      },
+    });
+
     return Productos.getById(id);
   },
-  delete: async (id) => {
+  delete: async (id, options = {}) => {
     await ensureCategoriaProductCountColumn();
-    const previous = await pool.query('SELECT categoria_id FROM productos WHERE id = $1', [id]);
-    const previousCategoriaId = previous.rows[0]?.categoria_id ?? null;
+    const previousFull = await Productos.getById(id);
+    const previousCategoriaId = previousFull?.categoria_id ?? null;
     await pool.query('DELETE FROM productos WHERE id = $1', [id]);
     if (previousCategoriaId) {
       await syncCategoriaProductCount(previousCategoriaId);
     }
+    await registerProductoAudit({
+      productoId: Number(id),
+      accion: 'DELETE',
+      usuarioId: options?.actor_id ?? null,
+      cambios: {
+        before: previousFull
+          ? {
+              nombre: previousFull.nombre,
+              categoria_id: previousCategoriaId,
+              estado: previousFull.estado,
+              stock: previousFull.stock,
+            }
+          : null,
+        after: null,
+      },
+    });
     return true;
   },
   getPublicCatalog: async () => {
@@ -591,13 +700,97 @@ const Productos = {
 };
 
 // ------- CLIENTES -------
+/**
+ * Calcula trabajo pendiente real de un cliente que impide eliminarlo o inactivarlo.
+ * Pendiente significa:
+ *   - pedidos en estado 'Pendiente' o 'En Proceso'
+ *   - ventas en estado 'Pendiente'
+ *   - domicilios cuyo estado no es 'Entregado' ni 'Cancelado' (es decir, en operacion)
+ */
+const getClientePendingWork = async (clienteId) => {
+  const id = Number(clienteId);
+  if (!Number.isFinite(id) || id <= 0) {
+    return { pedidos: 0, ventas: 0, domicilios: 0, total: 0 };
+  }
+  const result = await pool.query(
+    `SELECT
+       (SELECT COUNT(*) FROM pedidos
+         WHERE cliente_id = $1
+           AND TRIM(LOWER(COALESCE(estado, ''))) IN ('pendiente','en proceso'))::int AS pedidos,
+       (SELECT COUNT(*) FROM ventas
+         WHERE cliente_id = $1
+           AND TRIM(LOWER(COALESCE(estado, ''))) = 'pendiente')::int AS ventas,
+       (SELECT COUNT(*) FROM domicilios
+         WHERE cliente_id = $1
+           AND TRIM(LOWER(COALESCE(estado, ''))) NOT IN ('entregado','cancelado'))::int AS domicilios`,
+    [id]
+  );
+  const row = result.rows[0] || {};
+  const pedidos = Number(row.pedidos || 0);
+  const ventas = Number(row.ventas || 0);
+  const domicilios = Number(row.domicilios || 0);
+  return { pedidos, ventas, domicilios, total: pedidos + ventas + domicilios };
+};
+
+const buildClienteBloqueoMensaje = (work, accion) => {
+  const partes = [];
+  if (work.pedidos > 0) {
+    partes.push(`${work.pedidos} pedido${work.pedidos === 1 ? '' : 's'} en estado Pendiente o En Proceso`);
+  }
+  if (work.ventas > 0) {
+    partes.push(`${work.ventas} venta${work.ventas === 1 ? '' : 's'} en estado Pendiente`);
+  }
+  if (work.domicilios > 0) {
+    partes.push(`${work.domicilios} domicilio${work.domicilios === 1 ? '' : 's'} sin entregar`);
+  }
+  const detalle = partes.join(', ');
+  return `No se puede ${accion} el cliente porque tiene ${detalle}. Finalice o cancele esos registros antes de continuar.`;
+};
+
 const Clientes = {
+  getPendingWork: getClientePendingWork,
+  buildBloqueoMensaje: buildClienteBloqueoMensaje,
   getAll: async () => {
-    const result = await pool.query('SELECT * FROM clientes ORDER BY nombre');
+    const result = await pool.query(
+      `SELECT
+         c.*,
+         COALESCE((
+           SELECT COUNT(*)::int
+           FROM ventas v
+           WHERE v.cliente_id = c.id
+             AND TRIM(LOWER(COALESCE(v.estado, ''))) <> 'cancelada'
+         ), 0) AS compras,
+         (
+           SELECT MAX(v.fecha)
+           FROM ventas v
+           WHERE v.cliente_id = c.id
+             AND TRIM(LOWER(COALESCE(v.estado, ''))) <> 'cancelada'
+         ) AS ultima_compra
+       FROM clientes c
+       ORDER BY c.nombre`
+    );
     return result.rows;
   },
   getById: async (id) => {
-    const result = await pool.query('SELECT * FROM clientes WHERE id = $1', [id]);
+    const result = await pool.query(
+      `SELECT
+         c.*,
+         COALESCE((
+           SELECT COUNT(*)::int
+           FROM ventas v
+           WHERE v.cliente_id = c.id
+             AND TRIM(LOWER(COALESCE(v.estado, ''))) <> 'cancelada'
+         ), 0) AS compras,
+         (
+           SELECT MAX(v.fecha)
+           FROM ventas v
+           WHERE v.cliente_id = c.id
+             AND TRIM(LOWER(COALESCE(v.estado, ''))) <> 'cancelada'
+         ) AS ultima_compra
+       FROM clientes c
+       WHERE c.id = $1`,
+      [id]
+    );
     return result.rows[0];
   },
   getByDocumento: async (documento) => {
@@ -737,6 +930,14 @@ const Clientes = {
     }
 
     if (current.estado !== 'Inactivo' && estado === 'Inactivo') {
+      const work = await getClientePendingWork(id);
+      if (work.total > 0) {
+        const error = new Error(buildClienteBloqueoMensaje(work, 'inactivar'));
+        error.statusCode = 409;
+        error.details = { dependencias: work };
+        throw error;
+      }
+      // Mantener compatibilidad con check de BD si existe (no rompe si no esta).
       await checkInactivacionDependencias('cliente', id);
     }
 
@@ -756,10 +957,41 @@ const Clientes = {
       );
     }
 
+    await registerClienteAudit({
+      clienteId: Number(id),
+      accion: 'STATUS_CHANGE',
+      usuarioId: data?.actor_id ?? null,
+      cambios: {
+        before: { estado: current.estado },
+        after: { estado },
+        motivo: typeof data?.motivo === 'string' ? data.motivo.trim() : null,
+        usuario_id_sincronizado: current.usuario_id || null,
+      },
+    });
+
     return Clientes.getById(id);
   },
-  delete: async (id) => {
+  delete: async (id, options = {}) => {
+    const previous = await Clientes.getById(id);
     await pool.query('DELETE FROM clientes WHERE id = $1', [id]);
+    await registerClienteAudit({
+      clienteId: Number(id),
+      accion: 'DELETE',
+      usuarioId: options?.actor_id ?? null,
+      cambios: {
+        before: previous
+          ? {
+              nombre: previous.nombre,
+              apellido: previous.apellido,
+              email: previous.email,
+              documento: previous.documento,
+              estado: previous.estado,
+              usuario_id: previous.usuario_id,
+            }
+          : null,
+        after: null,
+      },
+    });
     return true;
   }
 };
@@ -1950,8 +2182,29 @@ const Ventas = {
 };
 
 // ------- ABONOS -------
+let abonosSchemaEnsured = false;
+let abonosSchemaPromise = null;
+/** Alinea abonos con db.pgsql: agrega columna `detalle` (TEXT) si la BD es anterior. */
+const ensureAbonosSchema = async () => {
+  if (abonosSchemaEnsured) return;
+  if (!abonosSchemaPromise) {
+    abonosSchemaPromise = (async () => {
+      await pool.query(`ALTER TABLE abonos ADD COLUMN IF NOT EXISTS detalle TEXT`);
+      await pool.query(`ALTER TABLE abonos ADD COLUMN IF NOT EXISTS porcentaje_abonado INTEGER`);
+    })();
+  }
+  try {
+    await abonosSchemaPromise;
+    abonosSchemaEnsured = true;
+  } catch (error) {
+    abonosSchemaPromise = null;
+    throw error;
+  }
+};
+
 const Abonos = {
   getAll: async () => {
+    await ensureAbonosSchema();
     const result = await pool.query(`
       SELECT a.*,
              c.nombre AS cliente_nombre,
@@ -1964,6 +2217,7 @@ const Abonos = {
     return result.rows;
   },
   getById: async (id) => {
+    await ensureAbonosSchema();
     const result = await pool.query(
       `SELECT a.*, p.total AS total_pedido
        FROM abonos a
@@ -1974,32 +2228,83 @@ const Abonos = {
     return result.rows[0];
   },
   getByPedido: async (pedidoId) => {
+    await ensureAbonosSchema();
     const result = await pool.query(
       `SELECT a.*, p.total AS total_pedido
        FROM abonos a
        LEFT JOIN pedidos p ON p.id = a.pedido_id
        WHERE a.pedido_id = $1
-       ORDER BY a.fecha DESC`,
+       ORDER BY a.id ASC`,
       [pedidoId]
     );
     return result.rows;
   },
   create: async (data) => {
+    await ensureAbonosSchema();
     const result = await pool.query(
-      'INSERT INTO abonos (numero_abono, pedido_id, cliente_id, monto, fecha, metodo_pago, estado) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id',
-      [data.numero_abono, data.pedido_id, data.cliente_id, data.monto, data.fecha, data.metodo_pago, data.estado || 'Registrado']
+      'INSERT INTO abonos (numero_abono, pedido_id, cliente_id, monto, fecha, metodo_pago, estado, detalle, porcentaje_abonado) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id',
+      [
+        data.numero_abono,
+        data.pedido_id,
+        data.cliente_id,
+        data.monto,
+        data.fecha,
+        data.metodo_pago,
+        data.estado || 'Registrado',
+        data.detalle ?? null,
+        data.porcentaje_abonado != null ? Number(data.porcentaje_abonado) : null,
+      ]
     );
     return result.rows[0].id;
   },
   update: async (id, data) => {
+    await ensureAbonosSchema();
     await pool.query(
-      'UPDATE abonos SET monto = $1, fecha = $2, metodo_pago = $3, estado = $4 WHERE id = $5',
-      [data.monto, data.fecha, data.metodo_pago, data.estado, id]
+      `UPDATE abonos SET
+         monto = COALESCE($1, monto),
+         fecha = COALESCE($2, fecha),
+         metodo_pago = COALESCE($3, metodo_pago),
+         estado = COALESCE($4, estado),
+         detalle = COALESCE($5, detalle)
+       WHERE id = $6`,
+      [
+        data.monto !== undefined ? data.monto : null,
+        data.fecha !== undefined ? data.fecha : null,
+        data.metodo_pago !== undefined ? data.metodo_pago : null,
+        data.estado !== undefined ? data.estado : null,
+        data.detalle !== undefined ? data.detalle : null,
+        id,
+      ]
     );
     return true;
   },
   updateEstado: async (id, estado) => {
+    await ensureAbonosSchema();
     await pool.query('UPDATE abonos SET estado = $1 WHERE id = $2', [estado, id]);
+    return true;
+  },
+  /**
+   * Liquidacion final del abono cuando el domicilio se entrega: combina la
+   * informacion de los abonos previos en `detalle`, eleva el monto a `monto`
+   * y mueve el estado a 'Finalizado' para dar cierre.
+   */
+  updateLiquidacion: async (id, { monto, detalle, estado, porcentaje_abonado }) => {
+    await ensureAbonosSchema();
+    await pool.query(
+      `UPDATE abonos SET
+         monto = COALESCE($1, monto),
+         detalle = COALESCE($2, detalle),
+         estado = COALESCE($3, estado),
+         porcentaje_abonado = COALESCE($4, porcentaje_abonado)
+       WHERE id = $5`,
+      [
+        monto !== undefined ? monto : null,
+        detalle !== undefined ? detalle : null,
+        estado !== undefined ? estado : null,
+        porcentaje_abonado !== undefined ? porcentaje_abonado : null,
+        id,
+      ]
+    );
     return true;
   },
   delete: async (id) => {
@@ -2043,9 +2348,31 @@ const Domicilios = {
   getAll: async () => {
     await ensureDomiciliosSchema();
     const result = await pool.query(`
-      SELECT d.*, 
+      SELECT d.*,
              p.numero_pedido as pedido,
-             CONCAT(c.nombre, ' ', c.apellido) as cliente
+             p.total as total_pedido,
+             p.fecha as fecha_pedido,
+             p.fecha_entrega as fecha_entrega_pedido,
+             p.direccion as direccion_pedido,
+             p.telefono as telefono_pedido,
+             CONCAT(c.nombre, ' ', c.apellido) as cliente,
+             c.direccion as cliente_direccion,
+             c.telefono as cliente_telefono,
+             COALESCE((
+               SELECT json_agg(
+                 json_build_object(
+                   'producto_id', dp.producto_id,
+                   'producto_nombre', pr.nombre,
+                   'cantidad', dp.cantidad,
+                   'precio_unitario', dp.precio_unitario,
+                   'subtotal', dp.subtotal
+                 )
+                 ORDER BY dp.id
+               )
+               FROM detalle_pedidos dp
+               LEFT JOIN productos pr ON dp.producto_id = pr.id
+               WHERE dp.pedido_id = p.id
+             ), '[]'::json) as productos
       FROM domicilios d
       JOIN pedidos p ON d.pedido_id = p.id
       JOIN clientes c ON d.cliente_id = c.id
@@ -2054,7 +2381,39 @@ const Domicilios = {
     return result.rows;
   },
   getById: async (id) => {
-    const result = await pool.query('SELECT * FROM domicilios WHERE id = $1', [id]);
+    const result = await pool.query(`
+      SELECT d.*,
+             p.numero_pedido as pedido,
+             p.total as total_pedido,
+             p.fecha as fecha_pedido,
+             p.fecha_entrega as fecha_entrega_pedido,
+             p.direccion as direccion_pedido,
+             p.telefono as telefono_pedido,
+             p.metodo_pago as metodo_pago_pedido,
+             CONCAT(c.nombre, ' ', c.apellido) as cliente,
+             c.direccion as cliente_direccion,
+             c.telefono as cliente_telefono,
+             c.email as cliente_email,
+             COALESCE((
+               SELECT json_agg(
+                 json_build_object(
+                   'producto_id', dp.producto_id,
+                   'producto_nombre', pr.nombre,
+                   'cantidad', dp.cantidad,
+                   'precio_unitario', dp.precio_unitario,
+                   'subtotal', dp.subtotal
+                 )
+                 ORDER BY dp.id
+               )
+               FROM detalle_pedidos dp
+               LEFT JOIN productos pr ON dp.producto_id = pr.id
+               WHERE dp.pedido_id = p.id
+             ), '[]'::json) as productos
+      FROM domicilios d
+      LEFT JOIN pedidos p ON d.pedido_id = p.id
+      LEFT JOIN clientes c ON d.cliente_id = c.id
+      WHERE d.id = $1
+    `, [id]);
     return result.rows[0];
   },
   getByPedido: async (pedidoId) => {
@@ -3592,6 +3951,96 @@ const InsumoMovimientos = {
   }
 };
 
+// ------- AUDITORÍA: PRODUCTOS / CATEGORÍAS / CLIENTES -------
+let productoAuditTableReady = null;
+let categoriaAuditTableReady = null;
+let clienteAuditTableReady = null;
+
+const ensureProductoAuditTable = async () => {
+  if (!productoAuditTableReady) {
+    productoAuditTableReady = pool.query(`
+      CREATE TABLE IF NOT EXISTS productos_auditoria (
+        id SERIAL PRIMARY KEY,
+        producto_id INTEGER,
+        accion VARCHAR(20) NOT NULL,
+        usuario_id INTEGER,
+        cambios JSONB NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+  }
+  await productoAuditTableReady;
+};
+
+const registerProductoAudit = async ({ productoId, accion, usuarioId = null, cambios }) => {
+  try {
+    await ensureProductoAuditTable();
+    await pool.query(
+      'INSERT INTO productos_auditoria (producto_id, accion, usuario_id, cambios) VALUES ($1, $2, $3, $4)',
+      [productoId, accion, usuarioId, JSON.stringify(cambios || {})]
+    );
+  } catch (err) {
+    // La auditoría nunca debe romper la operación principal
+    console.warn('⚠️  No se pudo registrar auditoría de producto:', err.message);
+  }
+};
+
+const ensureCategoriaAuditTable = async () => {
+  if (!categoriaAuditTableReady) {
+    categoriaAuditTableReady = pool.query(`
+      CREATE TABLE IF NOT EXISTS categorias_auditoria (
+        id SERIAL PRIMARY KEY,
+        categoria_id INTEGER,
+        accion VARCHAR(20) NOT NULL,
+        usuario_id INTEGER,
+        cambios JSONB NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+  }
+  await categoriaAuditTableReady;
+};
+
+const registerCategoriaAudit = async ({ categoriaId, accion, usuarioId = null, cambios }) => {
+  try {
+    await ensureCategoriaAuditTable();
+    await pool.query(
+      'INSERT INTO categorias_auditoria (categoria_id, accion, usuario_id, cambios) VALUES ($1, $2, $3, $4)',
+      [categoriaId, accion, usuarioId, JSON.stringify(cambios || {})]
+    );
+  } catch (err) {
+    console.warn('⚠️  No se pudo registrar auditoría de categoría:', err.message);
+  }
+};
+
+const ensureClienteAuditTable = async () => {
+  if (!clienteAuditTableReady) {
+    clienteAuditTableReady = pool.query(`
+      CREATE TABLE IF NOT EXISTS clientes_auditoria (
+        id SERIAL PRIMARY KEY,
+        cliente_id INTEGER,
+        accion VARCHAR(20) NOT NULL,
+        usuario_id INTEGER,
+        cambios JSONB NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+  }
+  await clienteAuditTableReady;
+};
+
+const registerClienteAudit = async ({ clienteId, accion, usuarioId = null, cambios }) => {
+  try {
+    await ensureClienteAuditTable();
+    await pool.query(
+      'INSERT INTO clientes_auditoria (cliente_id, accion, usuario_id, cambios) VALUES ($1, $2, $3, $4)',
+      [clienteId, accion, usuarioId, JSON.stringify(cambios || {})]
+    );
+  } catch (err) {
+    console.warn('⚠️  No se pudo registrar auditoría de cliente:', err.message);
+  }
+};
+
 // ------- ROLES -------
 let roleAuditTableReady = null;
 let userAuditTableReady = null;
@@ -3827,6 +4276,23 @@ const isLoginBlocked = async (email) => {
   return new Date(record.blocked_until).getTime() > Date.now();
 };
 
+/**
+ * Devuelve información detallada del bloqueo: si está bloqueado y cuánto
+ * tiempo (ms) le queda para volver a intentar. Útil para construir mensajes
+ * claros ("Inténtalo en X minutos") sin hardcodear la cifra en el controller.
+ */
+const getLoginBlockInfo = async (email) => {
+  const record = await getLoginAttemptRecord(email);
+  if (!record?.blocked_until) return { blocked: false, remainingMs: 0, attempts: Number(record?.attempts || 0) };
+  const blockedUntilMs = new Date(record.blocked_until).getTime();
+  const remainingMs = blockedUntilMs - Date.now();
+  return {
+    blocked: remainingMs > 0,
+    remainingMs: Math.max(0, remainingMs),
+    attempts: Number(record.attempts || 0),
+  };
+};
+
 const revokeUserSession = async (jti) => {
   if (!jti) return;
   await ensureUserSessionTable();
@@ -3929,6 +4395,12 @@ const buildUserFilterQuery = (filters = {}) => {
 
   if (!filters.includeDeleted) {
     where.push("(u.estado IS NULL OR u.estado <> 'Eliminado')");
+  }
+
+  // Excluir explícitamente usuarios con rol 'Cliente' del módulo de Gestión de Usuarios.
+  // Los clientes se administran únicamente desde el módulo de Clientes.
+  if (filters.excludeClientes) {
+    where.push("(r.nombre IS NULL OR LOWER(r.nombre) <> 'cliente')");
   }
 
   if (Array.isArray(filters.estados) && filters.estados.length > 0) {
@@ -4089,6 +4561,50 @@ const normalizePermissions = (permissions) => {
 const isClientRoleName = (roleName) =>
   typeof roleName === 'string' && roleName.trim().toLowerCase() === CLIENT_ROLE_NAME;
 
+// Validación intuitiva del nombre de un rol (3-50 caracteres, sin caracteres extraños).
+// Devuelve un Error con statusCode 400 cuando algo no es válido, o null cuando el nombre es correcto.
+const validateRoleName = (rawName) => {
+  const nombre = typeof rawName === 'string' ? rawName.trim() : '';
+
+  if (!nombre) {
+    const error = new Error('El nombre del rol es obligatorio.');
+    error.statusCode = 400;
+    error.details = { field: 'nombre', reason: 'required' };
+    return error;
+  }
+
+  if (nombre.length < 3) {
+    const error = new Error('El nombre del rol debe tener al menos 3 caracteres.');
+    error.statusCode = 400;
+    error.details = { field: 'nombre', reason: 'min_length', min: 3, length: nombre.length };
+    return error;
+  }
+
+  if (nombre.length > 50) {
+    const error = new Error('El nombre del rol no puede superar los 50 caracteres.');
+    error.statusCode = 400;
+    error.details = { field: 'nombre', reason: 'max_length', max: 50, length: nombre.length };
+    return error;
+  }
+
+  // Solo letras (con tildes/ñ), números, espacios, guiones y guion bajo
+  if (!/^[A-Za-zÁÉÍÓÚÑáéíóúñ0-9\s_\-]+$/.test(nombre)) {
+    const error = new Error('El nombre del rol solo puede contener letras, números, espacios, guiones o guion bajo.');
+    error.statusCode = 400;
+    error.details = { field: 'nombre', reason: 'invalid_characters' };
+    return error;
+  }
+
+  return null;
+};
+
+const buildDuplicateRoleNameError = (nombre) => {
+  const error = new Error(`Ya existe un rol con el nombre "${String(nombre || '').trim()}". Elija un nombre diferente.`);
+  error.statusCode = 409;
+  error.details = { field: 'nombre', reason: 'duplicate' };
+  return error;
+};
+
 const validatePermissionsPayload = ({ nextPermissions, roleName }) => {
   if (!Array.isArray(nextPermissions)) return null;
 
@@ -4161,17 +4677,38 @@ const Roles = {
     return result.rows[0];
   },
   create: async (data, options = {}) => {
+    const nameError = validateRoleName(data?.nombre);
+    if (nameError) throw nameError;
+
+    const nombreNormalizado = String(data.nombre).trim();
+
+    const duplicate = await pool.query(
+      'SELECT id FROM roles WHERE LOWER(nombre) = LOWER($1) LIMIT 1',
+      [nombreNormalizado]
+    );
+    if (duplicate.rows.length > 0) {
+      throw buildDuplicateRoleNameError(nombreNormalizado);
+    }
+
     const permisosNormalizados = normalizePermissions(data.permisos || []);
 
-    const permissionsError = validatePermissionsPayload({ nextPermissions: permisosNormalizados, roleName: data.nombre });
+    const permissionsError = validatePermissionsPayload({ nextPermissions: permisosNormalizados, roleName: nombreNormalizado });
 
     if (permissionsError) throw permissionsError;
 
-    const result = await pool.query(
-      'INSERT INTO roles (nombre, descripcion, permisos, estado) VALUES ($1, $2, $3, $4) RETURNING id',
-      [data.nombre, data.descripcion, permisosNormalizados, data.estado || 'Activo']
-    );
-    const id = result.rows[0].id;
+    let id;
+    try {
+      const result = await pool.query(
+        'INSERT INTO roles (nombre, descripcion, permisos, estado) VALUES ($1, $2, $3, $4) RETURNING id',
+        [nombreNormalizado, data.descripcion, permisosNormalizados, data.estado || 'Activo']
+      );
+      id = result.rows[0].id;
+    } catch (insertError) {
+      if (insertError && insertError.code === '23505') {
+        throw buildDuplicateRoleNameError(nombreNormalizado);
+      }
+      throw insertError;
+    }
 
     const createdRole = await Roles.getById(id);
     await registerRoleAudit({
@@ -4188,7 +4725,28 @@ const Roles = {
   },
   update: async (id, data, options = {}) => {
     const currentRole = await Roles.getById(id);
-    const targetRoleName = data.nombre ?? currentRole?.nombre;
+    if (!currentRole) {
+      const error = new Error('No se encontró el rol que intenta actualizar.');
+      error.statusCode = 404;
+      throw error;
+    }
+
+    let nombreNormalizado = currentRole.nombre;
+    if (typeof data.nombre === 'string' && data.nombre.trim() && data.nombre.trim() !== currentRole.nombre) {
+      const nameError = validateRoleName(data.nombre);
+      if (nameError) throw nameError;
+      nombreNormalizado = data.nombre.trim();
+
+      const duplicate = await pool.query(
+        'SELECT id FROM roles WHERE LOWER(nombre) = LOWER($1) AND id <> $2 LIMIT 1',
+        [nombreNormalizado, id]
+      );
+      if (duplicate.rows.length > 0) {
+        throw buildDuplicateRoleNameError(nombreNormalizado);
+      }
+    }
+
+    const targetRoleName = nombreNormalizado;
 
     let nextPermissions = data.permisos;
     if (Array.isArray(data.permisos)) {
@@ -4210,23 +4768,32 @@ const Roles = {
       const assignedUsers = Number(assignedUsersResult.rows[0]?.total || 0);
 
       if (assignedUsers > 0) {
-        const error = new Error('No se puede desactivar el rol porque tiene usuarios asignados');
+        const error = new Error(
+          `No se puede desactivar este rol porque tiene ${assignedUsers} usuario(s) asignado(s). Reasigne esos usuarios antes de desactivarlo.`
+        );
         error.statusCode = 400;
         error.details = { assignedUsers };
         throw error;
       }
     }
 
-    await pool.query(
-      `UPDATE roles
-       SET nombre = COALESCE($1, nombre),
-           descripcion = COALESCE($2, descripcion),
-           permisos = COALESCE($3, permisos),
-           estado = COALESCE($4, estado),
-           updated_at = CURRENT_TIMESTAMP
-       WHERE id = $5`,
-      [data.nombre, data.descripcion, nextPermissions, data.estado, id]
-    );
+    try {
+      await pool.query(
+        `UPDATE roles
+         SET nombre = COALESCE($1, nombre),
+             descripcion = COALESCE($2, descripcion),
+             permisos = COALESCE($3, permisos),
+             estado = COALESCE($4, estado),
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = $5`,
+        [data.nombre ? nombreNormalizado : null, data.descripcion, nextPermissions, data.estado, id]
+      );
+    } catch (updateError) {
+      if (updateError && updateError.code === '23505') {
+        throw buildDuplicateRoleNameError(nombreNormalizado);
+      }
+      throw updateError;
+    }
 
     const updatedRole = await Roles.getById(id);
     const changedFields = getRoleChanges(toRoleSnapshot(currentRole), toRoleSnapshot(updatedRole));
@@ -4510,6 +5077,7 @@ const Usuarios = {
   registerLoginFailure: registerLoginFailure,
   clearLoginAttempts: clearLoginAttempts,
   isLoginBlocked: isLoginBlocked,
+  getLoginBlockInfo: getLoginBlockInfo,
   registerSession: async ({ usuarioId, jti, expiresAt, ipAddress = null, userAgent = null }) => {
     await registerUserSession({ usuarioId, jti, expiresAt, ipAddress, userAgent });
     return true;
@@ -4768,6 +5336,11 @@ module.exports = {
   ProductoInsumos,
   InsumoMovimientos,
   Roles,
-  Usuarios
+  Usuarios,
+  Auditoria: {
+    registerProductoAudit,
+    registerCategoriaAudit,
+    registerClienteAudit,
+  },
 };
 

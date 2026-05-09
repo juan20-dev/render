@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect, useMemo } from 'react';
 import { DataTable, Column, commonActions } from '../../DataTable';
 import { Modal } from '../../Modal';
 import { MotivoModal } from '../../MotivoModal';
@@ -6,7 +6,7 @@ import { Form, FormField, FormActions } from '../../Form';
 import { Button } from '../../Button';
 import { Plus, UserCircle, Upload } from 'lucide-react';
 import { api } from '../../../services/api';
-import { toast } from 'sonner';
+import { toast } from '../../AlertDialog';
 import type { Cliente } from '../../../services/types';
 
 export function Clientes() {
@@ -59,8 +59,50 @@ export function Clientes() {
   };
 
   const validarDocumento = (documento: string) => {
-    return documento.length >= 5 && documento.length <= 15;
+    const d = String(documento || '').replace(/\D/g, '').length;
+    return d >= 6 && d <= 12;
   };
+
+  // ----- Validacion en vivo de duplicados (documento, telefono, correo) -----
+  const docNorm = String(formData.numeroDocumento || '').replace(/\D/g, '');
+  const telNorm = String(formData.telefono || '').replace(/\D/g, '');
+  const emailNorm = String(formData.email || '').trim().toLowerCase();
+
+  const documentoDuplicado = useMemo(() => {
+    if (docNorm.length < 6 || docNorm.length > 12) return '';
+    const dup = clientes.some(
+      (c) =>
+        (!selectedCliente || c.id !== selectedCliente.id) &&
+        String(c.numeroDocumento || '').replace(/\D/g, '') === docNorm
+    );
+    return dup
+      ? 'Este número de documento ya está registrado para otro cliente. Use otro número o edite el cliente existente.'
+      : '';
+  }, [clientes, docNorm, selectedCliente]);
+
+  const telefonoDuplicado = useMemo(() => {
+    if (telNorm.length !== 10) return '';
+    const dup = clientes.some(
+      (c) =>
+        (!selectedCliente || c.id !== selectedCliente.id) &&
+        String(c.telefono || '').replace(/\D/g, '') === telNorm
+    );
+    return dup
+      ? 'Este teléfono ya está registrado para otro cliente. Use uno distinto.'
+      : '';
+  }, [clientes, telNorm, selectedCliente]);
+
+  const emailDuplicado = useMemo(() => {
+    if (!emailNorm || !validarEmail(emailNorm)) return '';
+    const dup = clientes.some(
+      (c) =>
+        (!selectedCliente || c.id !== selectedCliente.id) &&
+        String(c.email || '').trim().toLowerCase() === emailNorm
+    );
+    return dup
+      ? 'Este correo ya está registrado para otro cliente. Use uno distinto.'
+      : '';
+  }, [clientes, emailNorm, selectedCliente]);
 
   const columns: Column[] = [
     {
@@ -122,6 +164,12 @@ export function Clientes() {
   };
 
   const handleEdit = (cliente: Cliente) => {
+    if (cliente.estado === 'inactivo') {
+      toast.warning('Cliente inactivo', {
+        description: 'No se puede editar un cliente inactivo. Reactivelo primero.',
+      });
+      return;
+    }
     setSelectedCliente(cliente);
     setFormData({
       nombre: cliente.nombre,
@@ -199,18 +247,35 @@ export function Clientes() {
       return;
     }
 
-    if (!validarDocumento(formData.numeroDocumento)) {
-      toast.error('El documento debe tener entre 5 y 15 caracteres');
-      return;
-    }
-
     if (!validarEmail(formData.email)) {
       toast.error('Email inválido');
       return;
     }
 
+    if (!validarDocumento(formData.numeroDocumento)) {
+      toast.error('Documento inválido', {
+        description: 'El número de documento debe tener entre 6 y 12 dígitos.',
+      });
+      return;
+    }
+
     if (!validarTelefono(formData.telefono)) {
-      toast.error('Teléfono inválido (debe tener 10 dígitos)');
+      toast.error('Teléfono inválido', {
+        description: 'El teléfono debe tener exactamente 10 dígitos.',
+      });
+      return;
+    }
+
+    if (documentoDuplicado) {
+      toast.error('Documento duplicado', { description: documentoDuplicado });
+      return;
+    }
+    if (telefonoDuplicado) {
+      toast.error('Teléfono duplicado', { description: telefonoDuplicado });
+      return;
+    }
+    if (emailDuplicado) {
+      toast.error('Correo duplicado', { description: emailDuplicado });
       return;
     }
 
@@ -321,7 +386,10 @@ export function Clientes() {
             setSelectedCliente(cliente);
             setIsDetailModalOpen(true);
           }),
-          commonActions.edit(handleEdit),
+          commonActions.edit(handleEdit, {
+            disabled: (row: Cliente) => row.estado === 'inactivo',
+            disabledTitle: 'No se puede editar un cliente inactivo. Reactivelo primero.',
+          }),
           commonActions.delete(handleDelete)
         ]}
       />
@@ -437,7 +505,6 @@ export function Clientes() {
               options={[
                 { value: 'CC', label: 'Cédula de Ciudadanía (CC)' },
                 { value: 'CE', label: 'Cédula de Extranjería (CE)' },
-                { value: 'TI', label: 'Tarjeta de Identidad (TI)' },
                 { value: 'PP', label: 'Pasaporte (PP)' }
               ]}
               required
@@ -447,30 +514,22 @@ export function Clientes() {
               label="Número de Documento"
               name="numeroDocumento"
               value={formData.numeroDocumento}
-              onChange={(value) => {
-                const doc = value as string;
-                if (doc && !validarDocumento(doc)) {
-                  toast.warning('El documento debe tener entre 5 y 15 caracteres');
-                }
-                setFormData({ ...formData, numeroDocumento: doc });
-              }}
-              placeholder="1234567890"
+              onChange={(value) => setFormData({ ...formData, numeroDocumento: value as string })}
+              placeholder="Entre 6 y 12 dígitos"
               required
+              inputDigitRule="documento6to12"
+              error={documentoDuplicado || undefined}
             />
 
             <FormField
               label="Teléfono"
               name="telefono"
               value={formData.telefono}
-              onChange={(value) => {
-                const tel = value as string;
-                if (tel && !validarTelefono(tel)) {
-                  toast.warning('El teléfono debe tener 10 dígitos');
-                }
-                setFormData({ ...formData, telefono: tel });
-              }}
+              onChange={(value) => setFormData({ ...formData, telefono: value as string })}
               placeholder="3001234567"
               required
+              inputDigitRule="telefono10"
+              error={telefonoDuplicado || undefined}
             />
 
             <FormField
@@ -480,13 +539,11 @@ export function Clientes() {
               value={formData.email}
               onChange={(value) => {
                 const email = value as string;
-                if (email && !validarEmail(email)) {
-                  toast.warning('Email inválido');
-                }
                 setFormData({ ...formData, email });
               }}
               placeholder="cliente@email.com"
               required
+              error={emailDuplicado || undefined}
             />
           </div>
 

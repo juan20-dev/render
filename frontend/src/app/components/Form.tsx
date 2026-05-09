@@ -1,4 +1,56 @@
 import React, { useState } from 'react';
+import { AlertCircle, Info, CheckCircle2 } from 'lucide-react';
+
+/* ------------------------------------------------------------------
+ * Primitivas estandarizadas para validación inline.
+ * Mismo lenguaje visual que el resto de la UI (AlertDialog del Login):
+ *   - Icono Lucide a la izquierda
+ *   - Tipografía text-xs
+ *   - Píldora con fondo sutil del color semántico
+ *   - Animación de entrada suave
+ * ------------------------------------------------------------------ */
+
+interface FieldFeedbackProps {
+  children: React.ReactNode;
+  className?: string;
+}
+
+export function FieldError({ children, className = '' }: FieldFeedbackProps) {
+  if (!children) return null;
+  return (
+    <div
+      role="alert"
+      className={`flex items-start gap-1.5 rounded-md bg-destructive/10 px-2.5 py-1.5 text-xs text-destructive transition-all ${className}`}
+    >
+      <AlertCircle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" aria-hidden="true" />
+      <span className="leading-snug">{children}</span>
+    </div>
+  );
+}
+
+export function FieldHelper({ children, className = '' }: FieldFeedbackProps) {
+  if (!children) return null;
+  return (
+    <div
+      className={`flex items-start gap-1.5 px-1 text-xs text-muted-foreground ${className}`}
+    >
+      <Info className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 opacity-70" aria-hidden="true" />
+      <span className="leading-snug">{children}</span>
+    </div>
+  );
+}
+
+export function FieldSuccess({ children, className = '' }: FieldFeedbackProps) {
+  if (!children) return null;
+  return (
+    <div
+      className={`flex items-start gap-1.5 rounded-md bg-green-50 px-2.5 py-1.5 text-xs text-green-700 transition-all ${className}`}
+    >
+      <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" aria-hidden="true" />
+      <span className="leading-snug">{children}</span>
+    </div>
+  );
+}
 
 interface FormFieldProps {
   label: string;
@@ -13,10 +65,34 @@ interface FormFieldProps {
   selectPlaceholder?: boolean;
   rows?: number;
   accept?: string;
-  min?: number;
-  max?: number;
+  min?: number | string;
+  max?: number | string;
   pattern?: string;
+  /** Para type=date/datetime-local. Si se omite, por defecto NO se permiten fechas pasadas (mínimo = hoy). Pase `allowPastDates` para deshabilitar esta restricción (p. ej. filtros). */
+  allowPastDates?: boolean;
+  /** Mensaje de error controlado por el padre (validación inline estándar). Si se proporciona, prevalece sobre las validaciones internas. */
+  error?: string;
+  /** Texto auxiliar bajo el campo (p. ej. contador de caracteres). Mismo estilo que el helper de Login. */
+  helperText?: React.ReactNode;
+  /** Deshabilita el control. */
+  disabled?: boolean;
+  /** Solo dígitos: teléfono 10, documento/NIT 12 (validación en vivo) o NIT/Documento 6–12 (sin error en vivo). */
+  inputDigitRule?: 'telefono10' | 'documento12' | 'documento6to12';
 }
+
+// Devuelve la fecha actual en formato YYYY-MM-DD (zona horaria local).
+const getTodayDateString = (): string => {
+  const now = new Date();
+  const offset = now.getTimezoneOffset() * 60000;
+  return new Date(now.getTime() - offset).toISOString().slice(0, 10);
+};
+
+// Devuelve la fecha+hora actual en formato YYYY-MM-DDTHH:mm (zona horaria local) para datetime-local.
+const getNowDateTimeString = (): string => {
+  const now = new Date();
+  const offset = now.getTimezoneOffset() * 60000;
+  return new Date(now.getTime() - offset).toISOString().slice(0, 16);
+};
 
 export function FormField({
   label,
@@ -32,16 +108,98 @@ export function FormField({
   accept,
   min,
   max,
-  pattern
+  pattern,
+  allowPastDates = false,
+  error: externalError,
+  helperText,
+  disabled = false,
+  inputDigitRule,
 }: FormFieldProps) {
-  const [error, setError] = useState<string>('');
+  const [internalError, setInternalError] = useState<string>('');
   const [touched, setTouched] = useState(false);
+  const error = externalError !== undefined && externalError !== '' ? externalError : internalError;
+  const setError = setInternalError;
+  const digitStr = inputDigitRule ? String(value ?? '').replace(/\D/g, '') : '';
+  // documento6to12 NO muestra el error mientras se escribe; sólo tras blur o submit (touched).
+  const showDigitPartial = Boolean(
+    inputDigitRule && inputDigitRule !== 'documento6to12' && digitStr.length > 0
+  );
+  const showError =
+    externalError !== undefined && externalError !== ''
+      ? true
+      : Boolean(internalError) && (touched || showDigitPartial);
+
+  // Para inputs de fecha en formularios de creación, por defecto bloqueamos fechas pasadas.
+  const effectiveMin =
+    min !== undefined
+      ? min
+      : !allowPastDates && type === 'date'
+        ? getTodayDateString()
+        : !allowPastDates && type === 'datetime-local'
+          ? getNowDateTimeString()
+          : undefined;
 
   const baseInputClasses = `w-full px-4 py-2 bg-input-background border rounded-lg focus:outline-none focus:ring-2 transition-all ${
-    error && touched ? 'border-destructive focus:ring-destructive' : 'border-border focus:ring-ring'
-  }`;
+    showError
+      ? 'border-destructive ring-1 ring-destructive/20 focus:ring-destructive'
+      : 'border-border focus:ring-ring'
+  } ${disabled ? 'opacity-60 cursor-not-allowed' : ''}`;
 
   const validateField = (val: string | number) => {
+    const strVal = val === undefined || val === null ? '' : String(val);
+    const digits = strVal.replace(/\D/g, '');
+
+    if (inputDigitRule === 'telefono10') {
+      if (required && digits.length === 0) {
+        setError(touched ? 'Este campo es obligatorio' : '');
+        return;
+      }
+      if (!required && digits.length === 0) {
+        setError('');
+        return;
+      }
+      if (digits.length !== 10) {
+        setError('El teléfono debe tener exactamente 10 dígitos');
+        return;
+      }
+      setError('');
+      return;
+    }
+
+    if (inputDigitRule === 'documento12') {
+      if (required && digits.length === 0) {
+        setError(touched ? 'Este campo es obligatorio' : '');
+        return;
+      }
+      if (!required && digits.length === 0) {
+        setError('');
+        return;
+      }
+      if (digits.length !== 12) {
+        setError('El documento debe tener exactamente 12 dígitos');
+        return;
+      }
+      setError('');
+      return;
+    }
+
+    if (inputDigitRule === 'documento6to12') {
+      if (required && digits.length === 0) {
+        setError(touched ? 'Este campo es obligatorio' : '');
+        return;
+      }
+      if (!required && digits.length === 0) {
+        setError('');
+        return;
+      }
+      if (digits.length < 6 || digits.length > 12) {
+        setError('El NIT/Documento debe tener entre 6 y 12 dígitos');
+        return;
+      }
+      setError('');
+      return;
+    }
+
     if (!touched) return;
 
     // Validaciones básicas
@@ -61,12 +219,21 @@ export function FormField({
 
     if (type === 'number' && val) {
       const numVal = Number(val);
-      if (min !== undefined && numVal < min) {
+      if (min !== undefined && numVal < Number(min)) {
         setError(`El valor debe ser al menos ${min}`);
         return;
       }
-      if (max !== undefined && numVal > max) {
+      if (max !== undefined && numVal > Number(max)) {
         setError(`El valor no puede ser mayor a ${max}`);
+        return;
+      }
+    }
+
+    // Validación de fechas pasadas en formularios de creación.
+    if ((type === 'date' || type === 'datetime-local') && val && !allowPastDates) {
+      const minDate = effectiveMin ? String(effectiveMin) : '';
+      if (minDate && String(val) < minDate) {
+        setError('No se permite seleccionar una fecha anterior a hoy.');
         return;
       }
     }
@@ -84,13 +251,22 @@ export function FormField({
   };
 
   const handleChange = (newValue: string | number) => {
-    onChange?.(newValue);
-    validateField(newValue);
+    let next: string | number = newValue;
+    if (inputDigitRule) {
+      const d = String(newValue).replace(/\D/g, '');
+      next = inputDigitRule === 'telefono10' ? d.slice(0, 10) : d.slice(0, 12);
+      // documento6to12: NO marcamos `touched` al escribir para que el mensaje no aparezca todavía.
+      if (inputDigitRule !== 'documento6to12') {
+        setTouched(true);
+      }
+    }
+    onChange?.(next);
+    validateField(next);
   };
 
   const handleBlur = () => {
     setTouched(true);
-    validateField(value || '');
+    validateField(value ?? '');
   };
 
   return (
@@ -109,6 +285,7 @@ export function FormField({
           placeholder={placeholder}
           required={required}
           rows={rows}
+          disabled={disabled}
           className={baseInputClasses}
         />
       ) : type === 'select' ? (
@@ -119,6 +296,7 @@ export function FormField({
           onChange={(e) => handleChange(e.target.value)}
           onBlur={handleBlur}
           required={required}
+          disabled={disabled}
           className={baseInputClasses}
         >
           {selectPlaceholder ? <option value="">Seleccionar...</option> : null}
@@ -142,6 +320,7 @@ export function FormField({
           }}
           accept={accept}
           required={required}
+          disabled={disabled}
           className={baseInputClasses}
         />
       ) : (
@@ -154,16 +333,33 @@ export function FormField({
           onBlur={handleBlur}
           placeholder={placeholder}
           required={required}
-          min={min}
-          max={max}
+          min={effectiveMin as any}
+          max={max as any}
           pattern={pattern}
+          disabled={disabled}
+          inputMode={inputDigitRule ? 'numeric' : undefined}
+          maxLength={
+            inputDigitRule === 'telefono10'
+              ? 10
+              : inputDigitRule === 'documento12' || inputDigitRule === 'documento6to12'
+                ? 12
+                : undefined
+          }
           className={baseInputClasses}
         />
       )}
-      
-      {error && touched && (
-        <p className="text-xs text-destructive">{error}</p>
-      )}
+
+      {showError ? (
+        <FieldError>{error}</FieldError>
+      ) : helperText ? (
+        <FieldHelper>{helperText}</FieldHelper>
+      ) : inputDigitRule === 'telefono10' ? (
+        <FieldHelper>Exactamente 10 dígitos (solo números).</FieldHelper>
+      ) : inputDigitRule === 'documento12' ? (
+        <FieldHelper>Exactamente 12 dígitos (solo números).</FieldHelper>
+      ) : inputDigitRule === 'documento6to12' ? (
+        <FieldHelper>Entre 6 y 12 dígitos (solo números).</FieldHelper>
+      ) : null}
     </div>
   );
 }

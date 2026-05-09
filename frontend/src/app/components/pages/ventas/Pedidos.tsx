@@ -1,11 +1,11 @@
 ﻿import React, { useState, useEffect } from 'react';
-import { DataTable, Column, commonActions } from '../../DataTable';
+import { DataTable, Column, commonActions, openPrintablePdf } from '../../DataTable';
 import { Modal } from '../../Modal';
 import { Button } from '../../Button';
 import { Form, FormField, FormActions } from '../../Form';
 import { Plus, Trash2 } from 'lucide-react';
 import { api } from '../../../services/api';
-import { toast } from 'sonner';
+import { toast } from '../../AlertDialog';
 import type { Pedido, Cliente, Producto, PedidoProducto } from '../../../services/types';
 import { MotivoModal } from '../../MotivoModal';
 import { AlertDialog } from '../../AlertDialog';
@@ -272,28 +272,29 @@ export function Pedidos() {
     setIsModalOpen(true);
   };
 
-  const handleEdit = (pedido: PedidoView) => {
+  const handleEdit = async (pedido: PedidoView) => {
     if (pedido.estado !== 'pendiente') {
       toast.error('Solo se pueden editar pedidos en estado pendiente');
       return;
     }
 
-    setSelectedPedido(pedido);
+    const completo = await cargarPedidoCompleto(pedido);
+    setSelectedPedido(completo);
     setFormData({
-      clienteId: pedido.clienteId,
-      metodoPago: pedido.metodoPago,
-      porcentajeAbono: pedido.porcentajeAbono,
-      fechaPedido: pedido.fechaPedido,
-      fechaEntrega: pedido.fechaEntrega,
-      direccion: pedido.direccion || '',
-      telefono: pedido.telefono || ''
+      clienteId: completo.clienteId,
+      metodoPago: completo.metodoPago,
+      porcentajeAbono: completo.porcentajeAbono,
+      fechaPedido: completo.fechaPedido,
+      fechaEntrega: completo.fechaEntrega,
+      direccion: completo.direccion || '',
+      telefono: completo.telefono || ''
     });
 
-    const productosForm: ProductoEnForm[] = pedido.productos.map(p => {
+    const productosForm: ProductoEnForm[] = completo.productos.map(p => {
       const producto = productos.find(prod => prod.id === p.productoId);
       return {
         productoId: p.productoId,
-        nombre: producto?.nombre || 'Desconocido',
+        nombre: p.nombre || producto?.nombre || 'Desconocido',
         cantidad: p.cantidad,
         precio: p.precio,
         subtotal: p.subtotal
@@ -301,6 +302,112 @@ export function Pedidos() {
     });
     setProductosEnPedido(productosForm);
     setIsModalOpen(true);
+  };
+
+  /** Carga el pedido completo (con productos, nombres y subtotales) desde el backend. */
+  const cargarPedidoCompleto = async (pedido: PedidoView): Promise<PedidoView> => {
+    try {
+      const full = await api.pedidos.getById(pedido.id);
+      const cliente = clientes.find((c) => c.id === full.clienteId);
+      return {
+        ...pedido,
+        ...full,
+        clienteNombre:
+          pedido.clienteNombre ||
+          (cliente ? `${cliente.nombre} ${cliente.apellido}` : 'Desconocido'),
+      };
+    } catch (error: any) {
+      toast.error(error?.message || 'No se pudo cargar el detalle del pedido');
+      return pedido;
+    }
+  };
+
+  const handleVerDetallePedido = async (pedido: PedidoView) => {
+    const completo = await cargarPedidoCompleto(pedido);
+    setSelectedPedido(completo);
+    setIsDetailModalOpen(true);
+  };
+
+  const buildPedidoPdf = (pedido: PedidoView) => {
+    const cliente = clientes.find((c) => c.id === pedido.clienteId);
+    const opened = openPrintablePdf({
+      title: `Pedido #${String(pedido.id).padStart(4, '0')}`,
+      subtitle: `Generado el ${new Date().toLocaleString('es-CO')}`,
+      sections: [
+        {
+          title: 'Datos generales',
+          rows: [
+            {
+              label: 'Cliente',
+              value: cliente ? `${cliente.nombre} ${cliente.apellido}` : `ID ${pedido.clienteId}`,
+            },
+            ...(cliente?.numeroDocumento
+              ? [{ label: 'Documento cliente', value: cliente.numeroDocumento }]
+              : []),
+            { label: 'Fecha del pedido', value: pedido.fechaPedido },
+            { label: 'Fecha de entrega', value: pedido.fechaEntrega },
+            { label: 'Dirección de entrega', value: pedido.direccion || 'No especificada' },
+            { label: 'Teléfono de contacto', value: pedido.telefono || 'No especificado' },
+            { label: 'Método de pago', value: pedido.metodoPago },
+            {
+              label: 'Estado',
+              value:
+                pedido.estado === 'completado'
+                  ? 'Completado'
+                  : pedido.estado === 'en proceso'
+                    ? 'En Proceso'
+                    : pedido.estado === 'pendiente'
+                      ? 'Pendiente'
+                      : 'Cancelado',
+            },
+          ],
+        },
+        {
+          title: 'Productos',
+          table: {
+            headers: ['Producto', 'Cantidad', 'Precio unit.', 'Subtotal'],
+            rows: pedido.productos.map((p) => {
+              const prod = productos.find((x) => x.id === p.productoId);
+              return [
+                p.nombre || prod?.nombre || `Producto ${p.productoId}`,
+                p.cantidad,
+                formatCurrency(p.precio),
+                formatCurrency(p.subtotal),
+              ];
+            }),
+          },
+        },
+        {
+          title: 'Totales y abono',
+          rows: [
+            { label: 'Total', value: formatCurrency(pedido.total) },
+            {
+              label: 'Abono',
+              value: `${pedido.porcentajeAbono}% (${formatCurrency(pedido.montoAbonado)})`,
+            },
+            {
+              label: 'Saldo pendiente',
+              value: formatCurrency(pedido.total - pedido.montoAbonado),
+            },
+          ],
+        },
+      ],
+      footer: 'Comprobante generado por Grandma\u2019s Liquors. Use "Descargar PDF" para guardar o imprimir.',
+    });
+    if (!opened) {
+      toast.error('No se pudo abrir la vista PDF', {
+        description: 'Permita las ventanas emergentes para este sitio.',
+      });
+    }
+  };
+
+  /**
+   * Abre vista PDF imprimible con el detalle completo del pedido y un boton
+   * "Descargar PDF" que dispara el dialogo de impresion del navegador.
+   */
+  const handleVerPdfPedido = async (pedido: PedidoView) => {
+    const completo = await cargarPedidoCompleto(pedido);
+    buildPedidoPdf(completo);
   };
 
   const handleAgregarProducto = () => {
@@ -391,6 +498,14 @@ export function Pedidos() {
     const total = calcularTotal();
     const montoAbonado = calcularMontoAbonado(total, formData.porcentajeAbono);
 
+    const telDigits = String(formData.telefono || '').replace(/\D/g, '');
+    if (telDigits.length !== 10) {
+      toast.error('Teléfono de contacto', {
+        description: 'Ingrese exactamente 10 dígitos del teléfono de contacto.',
+      });
+      return;
+    }
+
     const productosPedido: PedidoProducto[] = productosEnPedido.map(p => ({
       productoId: p.productoId,
       cantidad: p.cantidad,
@@ -410,7 +525,7 @@ export function Pedidos() {
           fechaPedido: formData.fechaPedido,
           fechaEntrega: formData.fechaEntrega,
           direccion: formData.direccion,
-          telefono: formData.telefono
+          telefono: telDigits
         });
         toast.success('Pedido actualizado exitosamente');
       } else {
@@ -424,7 +539,7 @@ export function Pedidos() {
           fechaPedido: formData.fechaPedido,
           fechaEntrega: formData.fechaEntrega,
           direccion: formData.direccion,
-          telefono: formData.telefono,
+          telefono: telDigits,
           estado: 'pendiente'
         });
         toast.success('Pedido creado exitosamente');
@@ -541,10 +656,14 @@ export function Pedidos() {
         data={pedidosFiltrados}
         actions={[
           commonActions.view((pedido) => {
-            setSelectedPedido(pedido);
-            setIsDetailModalOpen(true);
+            void handleVerDetallePedido(pedido as PedidoView);
           }),
-          commonActions.edit(handleEdit)
+          commonActions.edit((pedido) => {
+            void handleEdit(pedido as PedidoView);
+          }),
+          commonActions.pdf((pedido) => {
+            void handleVerPdfPedido(pedido as PedidoView);
+          }),
         ]}
       />
 
@@ -658,7 +777,9 @@ export function Pedidos() {
               type="text"
               value={formData.telefono}
               onChange={(value) => setFormData({ ...formData, telefono: value as string })}
-              placeholder="Editable - se cargó del cliente registrado"
+              placeholder="10 dígitos"
+              required
+              inputDigitRule="telefono10"
             />
 
             <div className="col-span-2">
@@ -744,7 +865,7 @@ export function Pedidos() {
                       <tr key={index} className="border-t">
                         <td className="px-4 py-2">
                           <select
-                            className="w-full px-3 py-1 border rounded"
+                            className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
                             value={producto.productoId}
                             onChange={(e) => handleUpdateProducto(index, 'productoId', e.target.value)}
                             required
@@ -759,7 +880,7 @@ export function Pedidos() {
                           <input
                             type="number"
                             min="1"
-                            className="w-full px-3 py-1 border rounded"
+                            className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
                             value={producto.cantidad}
                             onChange={(e) => handleUpdateProducto(index, 'cantidad', e.target.value)}
                             required
@@ -880,16 +1001,30 @@ export function Pedidos() {
 
             <div className="p-4 bg-accent/50 rounded-lg">
               <label className="text-sm text-muted-foreground block mb-3 font-medium">Productos</label>
-              <div className="space-y-2">
-                {selectedPedido.productos.map((producto, index) => {
-                  const prod = productos.find(p => p.id === producto.productoId);
-                  return (
-                    <div key={index} className="flex justify-between p-2 bg-background rounded border text-sm">
-                      <span>{prod?.nombre || 'Desconocido'} x{producto.cantidad}</span>
-                      <span className="font-medium">{formatCurrency(producto.subtotal)}</span>
-                    </div>
-                  );
-                })}
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-accent/50">
+                    <tr>
+                      <th className="text-left p-2">Producto</th>
+                      <th className="text-right p-2">Cantidad</th>
+                      <th className="text-right p-2">Precio Unit.</th>
+                      <th className="text-right p-2">Subtotal</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {selectedPedido.productos.map((producto, index) => {
+                      const prod = productos.find((p) => p.id === producto.productoId);
+                      return (
+                        <tr key={index} className="border-t">
+                          <td className="p-2">{producto.nombre || prod?.nombre || 'Producto desconocido'}</td>
+                          <td className="text-right p-2">{producto.cantidad}</td>
+                          <td className="text-right p-2">{formatCurrency(producto.precio)}</td>
+                          <td className="text-right p-2">{formatCurrency(producto.subtotal)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
             </div>
           </div>

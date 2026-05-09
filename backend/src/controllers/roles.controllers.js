@@ -23,7 +23,11 @@ module.exports = {
       const id = await models.Roles.create(req.body, { usuarioId: req.user?.id || null });
       res.status(201).json({ success: true, id, message: 'Rol creado exitosamente' });
     } catch (error) {
-      res.status(500).json({ success: false, message: error.message });
+      res.status(error.statusCode || 500).json({
+        success: false,
+        message: error.message,
+        details: error.details,
+      });
     }
   },
   update: async (req, res) => {

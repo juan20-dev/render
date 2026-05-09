@@ -1,10 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card } from '../../Card';
-import { Form, FormField, FormActions } from '../../Form';
+import { Form, FormField, FormActions, FieldSuccess } from '../../Form';
 import { Button } from '../../Button';
 import { LogIn, Lock, Mail } from 'lucide-react';
+import { useAuth } from '../../AuthContext';
+import { api, newPasswordPolicyMessage } from '../../../services/api';
+import { toast } from 'sonner';
 
 export function Accesos() {
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<'login' | 'change-password' | 'reset'>('login');
   
   const [loginData, setLoginData] = useState({ email: '', password: '' });
@@ -13,20 +17,77 @@ export function Accesos() {
     newPassword: '', 
     confirmPassword: '' 
   });
+  const [currentPwdOk, setCurrentPwdOk] = useState<boolean | null>(null);
   const [resetData, setResetData] = useState({ email: '' });
+
+  useEffect(() => {
+    if (activeTab !== 'change-password') {
+      setCurrentPwdOk(null);
+      return;
+    }
+    const pwd = changePasswordData.currentPassword.trim();
+    if (!pwd || !user?.id) {
+      setCurrentPwdOk(null);
+      return;
+    }
+    let cancelled = false;
+    const t = window.setTimeout(() => {
+      api.auth
+        .verifyCurrentPassword(pwd)
+        .then((ok) => {
+          if (!cancelled) setCurrentPwdOk(ok);
+        })
+        .catch(() => {
+          if (!cancelled) setCurrentPwdOk(false);
+        });
+    }, 450);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(t);
+    };
+  }, [activeTab, changePasswordData.currentPassword, user?.id]);
+
+  const newPwdErr = newPasswordPolicyMessage(changePasswordData.newPassword);
+  const confirmErr =
+    changePasswordData.confirmPassword.trim() && changePasswordData.newPassword !== changePasswordData.confirmPassword
+      ? 'Las contraseñas nuevas no coinciden.'
+      : '';
+  const currentErr =
+    changePasswordData.currentPassword.trim() && currentPwdOk === false ? 'La contraseña actual no es correcta.' : '';
+
+  const passwordSubmitDisabled =
+    !!newPwdErr ||
+    !!confirmErr ||
+    !!currentErr ||
+    currentPwdOk !== true ||
+    !changePasswordData.currentPassword.trim() ||
+    !changePasswordData.newPassword.trim() ||
+    !changePasswordData.confirmPassword.trim();
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
     alert('Iniciando sesión...');
   };
 
-  const handleChangePassword = (e: React.FormEvent) => {
+  const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (changePasswordData.newPassword !== changePasswordData.confirmPassword) {
-      alert('Las contraseñas no coinciden');
+    if (passwordSubmitDisabled) {
+      toast.error('Completa y corrige los campos antes de continuar.');
       return;
     }
-    alert('Contraseña actualizada correctamente');
+    try {
+      await api.auth.changePassword(
+        changePasswordData.currentPassword,
+        changePasswordData.newPassword,
+        changePasswordData.confirmPassword
+      );
+      toast.success('Contraseña actualizada');
+      setChangePasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
+      setCurrentPwdOk(null);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'No se pudo cambiar la contraseña';
+      toast.error(msg);
+    }
   };
 
   const handleReset = (e: React.FormEvent) => {
@@ -139,7 +200,11 @@ export function Accesos() {
                 onChange={(value) => setChangePasswordData({ ...changePasswordData, currentPassword: value as string })}
                 placeholder="••••••••"
                 required
+                error={currentErr}
               />
+              {changePasswordData.currentPassword.trim() && currentPwdOk === true ? (
+                <FieldSuccess>Contraseña actual verificada.</FieldSuccess>
+              ) : null}
               
               <FormField
                 label="Nueva Contraseña"
@@ -149,6 +214,7 @@ export function Accesos() {
                 onChange={(value) => setChangePasswordData({ ...changePasswordData, newPassword: value as string })}
                 placeholder="••••••••"
                 required
+                error={changePasswordData.newPassword.trim() ? newPwdErr || undefined : undefined}
               />
               
               <FormField
@@ -159,10 +225,11 @@ export function Accesos() {
                 onChange={(value) => setChangePasswordData({ ...changePasswordData, confirmPassword: value as string })}
                 placeholder="••••••••"
                 required
+                error={confirmErr || undefined}
               />
 
               <FormActions>
-                <Button type="submit" className="w-full">
+                <Button type="submit" className="w-full" disabled={passwordSubmitDisabled}>
                   Cambiar Contraseña
                 </Button>
               </FormActions>

@@ -122,6 +122,7 @@ module.exports = {
               fecha: new Date().toISOString().split('T')[0],
               metodo_pago: pedidoRow.metodo_pago || 'Efectivo',
               estado: 'Registrado',
+              porcentaje_abonado: 50,
             });
             // actualizar monto_abonado en pedido
             await models.Pedidos.update(id, { monto_abonado: monto, esquema_abono: '50%' });
@@ -202,7 +203,7 @@ module.exports = {
         if (!transiciones[estadoActual]?.includes(estadoNuevo)) {
           return res.status(400).json({
             success: false,
-            message: `TransiciÃ³n no permitida: ${estadoActual} â†’ ${estadoNuevo}`,
+            message: `TransiciÃ³n no permitida: ${estadoActual} âÿÿ ${estadoNuevo}`,
             permitidas: transiciones[estadoActual] || []
           });
         }

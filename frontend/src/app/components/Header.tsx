@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Settings, User, LogOut, KeyRound, Mail, Phone, MapPin, FileText, CreditCard } from 'lucide-react';
 import { Modal } from './Modal';
-import { Form, FormField, FormActions } from './Form';
+import { Form, FormField, FormActions, FieldSuccess } from './Form';
+import { api, newPasswordPolicyMessage } from '../services/api';
+import { toast } from 'sonner';
 import { Button } from './Button';
 import { AlertDialog } from './AlertDialog';
 
@@ -33,6 +35,7 @@ export function Header({ title, userName = 'Usuario', userRole = 'Rol', userData
     newPassword: '',
     confirmPassword: ''
   });
+  const [currentPwdOk, setCurrentPwdOk] = useState<boolean | null>(null);
   const [alertState, setAlertState] = useState({
     isOpen: false,
     title: '',
@@ -41,47 +44,69 @@ export function Header({ title, userName = 'Usuario', userRole = 'Rol', userData
     onConfirm: () => {}
   });
 
-  const handleChangePassword = (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (passwordData.newPassword !== passwordData.confirmPassword) {
-      setAlertState({
-        isOpen: true,
-        title: 'Error',
-        description: 'Las contraseñas nuevas no coinciden',
-        type: 'danger',
-        onConfirm: () => {}
-      });
+  useEffect(() => {
+    const pwd = passwordData.currentPassword.trim();
+    if (!pwd) {
+      setCurrentPwdOk(null);
       return;
     }
-
-    if (passwordData.newPassword.length < 6) {
-      setAlertState({
-        isOpen: true,
-        title: 'Error',
-        description: 'La contraseña debe tener al menos 6 caracteres',
-        type: 'danger',
-        onConfirm: () => {}
-      });
-      return;
-    }
-
-    // Aquí iría la lógica para cambiar la contraseña
-    setAlertState({
-      isOpen: true,
-      title: 'Contraseña actualizada',
-      description: 'Tu contraseña ha sido actualizada exitosamente',
-      type: 'success',
-      onConfirm: () => {
-        setIsChangePasswordOpen(false);
-        setIsProfileOpen(true);
-        setPasswordData({
-          currentPassword: '',
-          newPassword: '',
-          confirmPassword: ''
+    let cancelled = false;
+    const t = window.setTimeout(() => {
+      api.auth
+        .verifyCurrentPassword(pwd)
+        .then((ok) => {
+          if (!cancelled) setCurrentPwdOk(ok);
+        })
+        .catch(() => {
+          if (!cancelled) setCurrentPwdOk(false);
         });
-      }
-    });
+    }, 450);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(t);
+    };
+  }, [passwordData.currentPassword]);
+
+  const newPwdErr = newPasswordPolicyMessage(passwordData.newPassword);
+  const confirmErr =
+    passwordData.confirmPassword.trim() && passwordData.newPassword !== passwordData.confirmPassword
+      ? 'Las contraseñas nuevas no coinciden.'
+      : '';
+  const currentErr =
+    passwordData.currentPassword.trim() && currentPwdOk === false ? 'La contraseña actual no es correcta.' : '';
+
+  const passwordSubmitDisabled =
+    !!newPwdErr ||
+    !!confirmErr ||
+    !!currentErr ||
+    currentPwdOk !== true ||
+    !passwordData.currentPassword.trim() ||
+    !passwordData.newPassword.trim() ||
+    !passwordData.confirmPassword.trim();
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (passwordSubmitDisabled) return;
+
+    try {
+      await api.auth.changePassword(
+        passwordData.currentPassword,
+        passwordData.newPassword,
+        passwordData.confirmPassword
+      );
+      toast.success('Contraseña actualizada');
+      setIsChangePasswordOpen(false);
+      setIsProfileOpen(true);
+      setPasswordData({
+        currentPassword: '',
+        newPassword: '',
+        confirmPassword: ''
+      });
+      setCurrentPwdOk(null);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'No se pudo cambiar la contraseña';
+      toast.error(msg);
+    }
   };
 
   const handleLogoutClick = () => {
@@ -234,6 +259,7 @@ export function Header({ title, userName = 'Usuario', userRole = 'Rol', userData
             newPassword: '',
             confirmPassword: ''
           });
+          setCurrentPwdOk(null);
         }}
         title="Cambiar Contraseña"
         size="md"
@@ -258,7 +284,11 @@ export function Header({ title, userName = 'Usuario', userRole = 'Rol', userData
             onChange={(value) => setPasswordData({ ...passwordData, currentPassword: value as string })}
             placeholder="••••••••"
             required
+            error={currentErr}
           />
+          {passwordData.currentPassword.trim() && currentPwdOk === true ? (
+            <FieldSuccess>Contraseña actual verificada.</FieldSuccess>
+          ) : null}
 
           <FormField
             label="Nueva Contraseña"
@@ -268,6 +298,7 @@ export function Header({ title, userName = 'Usuario', userRole = 'Rol', userData
             onChange={(value) => setPasswordData({ ...passwordData, newPassword: value as string })}
             placeholder="••••••••"
             required
+            error={passwordData.newPassword.trim() ? newPwdErr || undefined : undefined}
           />
 
           <FormField
@@ -278,12 +309,12 @@ export function Header({ title, userName = 'Usuario', userRole = 'Rol', userData
             onChange={(value) => setPasswordData({ ...passwordData, confirmPassword: value as string })}
             placeholder="••••••••"
             required
+            error={confirmErr || undefined}
           />
 
           <div className="p-4 bg-accent rounded-lg mb-4">
             <p className="text-xs text-muted-foreground">
-              <strong>Nota:</strong> La contraseña debe tener al menos 6 caracteres. 
-              Se recomienda usar una combinación de letras, números y símbolos.
+              <strong>Nota:</strong> Mínimo 8 caracteres, una mayúscula, una minúscula y un número.
             </p>
           </div>
 
@@ -296,10 +327,11 @@ export function Header({ title, userName = 'Usuario', userRole = 'Rol', userData
                 newPassword: '',
                 confirmPassword: ''
               });
+              setCurrentPwdOk(null);
             }}>
               Cancelar
             </Button>
-            <Button type="submit" icon={<KeyRound className="w-5 h-5" />}>
+            <Button type="submit" disabled={passwordSubmitDisabled} icon={<KeyRound className="w-5 h-5" />}>
               Cambiar Contraseña
             </Button>
           </FormActions>

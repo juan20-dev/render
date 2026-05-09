@@ -3,8 +3,9 @@ import { ShoppingCart, Menu, X, Search, User, Phone, Mail, MapPin, Facebook, Ins
 import { Button } from '../Button';
 import { AlertDialog } from '../AlertDialog';
 import { Modal } from '../Modal';
-import { Form, FormField, FormActions } from '../Form';
-import { api } from '../../services/api';
+import { Form, FormField, FormActions, FieldSuccess } from '../Form';
+import { api, newPasswordPolicyMessage } from '../../services/api';
+import { toast } from 'sonner';
 
 // Logo local - using favicon from public folder
 const LOGO_URL = '/favicon/apple-touch-icon.png';
@@ -86,6 +87,7 @@ export function LandingPage({ onNavigateToLogin, onNavigateToRegister, onNavigat
     newPassword: '',
     confirmPassword: ''
   });
+  const [currentPwdOk, setCurrentPwdOk] = useState<boolean | null>(null);
   const [alertState, setAlertState] = useState({
     isOpen: false,
     title: '',
@@ -128,6 +130,29 @@ export function LandingPage({ onNavigateToLogin, onNavigateToRegister, onNavigat
       .then((rows) => setPedidos(Array.isArray(rows) ? rows : []))
       .catch(() => setPedidos([]));
   }, [user]);
+
+  useEffect(() => {
+    const pwd = passwordData.currentPassword.trim();
+    if (!pwd || !user) {
+      setCurrentPwdOk(null);
+      return;
+    }
+    let cancelled = false;
+    const t = window.setTimeout(() => {
+      api.auth
+        .verifyCurrentPassword(pwd)
+        .then((ok) => {
+          if (!cancelled) setCurrentPwdOk(ok);
+        })
+        .catch(() => {
+          if (!cancelled) setCurrentPwdOk(false);
+        });
+    }, 450);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(t);
+    };
+  }, [passwordData.currentPassword, user]);
 
   // Convertir productos de API a formato de la landing
   const productosFromAPI: Producto[] = productosAPI.map(p => {
@@ -250,46 +275,46 @@ export function LandingPage({ onNavigateToLogin, onNavigateToRegister, onNavigat
   };
 
   // Función para manejar cambio de contraseña
-  const handleChangePassword = (e: React.FormEvent) => {
+  const newPwdErr = newPasswordPolicyMessage(passwordData.newPassword);
+  const confirmErr =
+    passwordData.confirmPassword.trim() && passwordData.newPassword !== passwordData.confirmPassword
+      ? 'Las contraseñas nuevas no coinciden.'
+      : '';
+  const currentErr =
+    passwordData.currentPassword.trim() && currentPwdOk === false ? 'La contraseña actual no es correcta.' : '';
+
+  const passwordSubmitDisabled =
+    !!newPwdErr ||
+    !!confirmErr ||
+    !!currentErr ||
+    currentPwdOk !== true ||
+    !passwordData.currentPassword.trim() ||
+    !passwordData.newPassword.trim() ||
+    !passwordData.confirmPassword.trim();
+
+  const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (passwordSubmitDisabled) return;
 
-    if (passwordData.newPassword !== passwordData.confirmPassword) {
-      setAlertState({
-        isOpen: true,
-        title: 'Error',
-        description: 'Las contraseñas nuevas no coinciden',
-        type: 'danger',
-        onConfirm: () => {}
+    try {
+      await api.auth.changePassword(
+        passwordData.currentPassword,
+        passwordData.newPassword,
+        passwordData.confirmPassword
+      );
+      toast.success('Contraseña actualizada');
+      setIsChangePasswordOpen(false);
+      setIsProfileOpen(true);
+      setPasswordData({
+        currentPassword: '',
+        newPassword: '',
+        confirmPassword: ''
       });
-      return;
+      setCurrentPwdOk(null);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'No se pudo cambiar la contraseña';
+      toast.error(msg);
     }
-
-    if (passwordData.newPassword.length < 6) {
-      setAlertState({
-        isOpen: true,
-        title: 'Error',
-        description: 'La contraseña debe tener al menos 6 caracteres',
-        type: 'danger',
-        onConfirm: () => {}
-      });
-      return;
-    }
-
-    setAlertState({
-      isOpen: true,
-      title: 'Contraseña actualizada',
-      description: 'Tu contraseña ha sido actualizada exitosamente',
-      type: 'success',
-      onConfirm: () => {
-        setIsChangePasswordOpen(false);
-        setIsProfileOpen(true);
-        setPasswordData({
-          currentPassword: '',
-          newPassword: '',
-          confirmPassword: ''
-        });
-      }
-    });
   };
 
   return (
@@ -1212,9 +1237,16 @@ export function LandingPage({ onNavigateToLogin, onNavigateToRegister, onNavigat
                       <label className="block mb-2 text-sm">Teléfono de contacto</label>
                       <input
                         type="tel"
+                        inputMode="numeric"
+                        maxLength={10}
                         value={checkoutData.telefono}
-                        onChange={(e) => setCheckoutData((prev) => ({ ...prev, telefono: e.target.value }))}
-                        placeholder="324 610 2339"
+                        onChange={(e) =>
+                          setCheckoutData((prev) => ({
+                            ...prev,
+                            telefono: e.target.value.replace(/\D/g, '').slice(0, 10),
+                          }))
+                        }
+                        placeholder="3246102339"
                         className="w-full px-4 py-3 rounded-lg bg-background border border-border focus:outline-none focus:ring-2 focus:ring-primary/20"
                       />
                     </div>
@@ -1250,6 +1282,10 @@ export function LandingPage({ onNavigateToLogin, onNavigateToRegister, onNavigat
                         if (!checkoutData.telefono.trim()) {
                           throw new Error('El teléfono de contacto es obligatorio');
                         }
+                        const telDigitsCheckout = checkoutData.telefono.replace(/\D/g, '');
+                        if (telDigitsCheckout.length !== 10) {
+                          throw new Error('El teléfono de contacto debe tener exactamente 10 dígitos');
+                        }
 
                         await api.pedidos.create({
                           clienteId: undefined,
@@ -1258,6 +1294,8 @@ export function LandingPage({ onNavigateToLogin, onNavigateToRegister, onNavigat
                           metodoPago,
                           porcentajeAbono: porcentajePago === '50' ? 50 : 100,
                           total: totalCarrito,
+                          direccion: checkoutData.direccion.trim(),
+                          telefono: telDigitsCheckout,
                           productos: carrito.map((item) => ({
                             productoId: Number(item.producto.id),
                             cantidad: item.cantidad,
@@ -1529,6 +1567,7 @@ export function LandingPage({ onNavigateToLogin, onNavigateToRegister, onNavigat
             newPassword: '',
             confirmPassword: ''
           });
+          setCurrentPwdOk(null);
         }}
         title="Cambiar Contraseña"
         size="md"
@@ -1553,7 +1592,11 @@ export function LandingPage({ onNavigateToLogin, onNavigateToRegister, onNavigat
             onChange={(value) => setPasswordData({ ...passwordData, currentPassword: value as string })}
             placeholder="••••••••"
             required
+            error={currentErr}
           />
+          {passwordData.currentPassword.trim() && currentPwdOk === true ? (
+            <FieldSuccess>Contraseña actual verificada.</FieldSuccess>
+          ) : null}
 
           <FormField
             label="Nueva Contraseña"
@@ -1563,6 +1606,7 @@ export function LandingPage({ onNavigateToLogin, onNavigateToRegister, onNavigat
             onChange={(value) => setPasswordData({ ...passwordData, newPassword: value as string })}
             placeholder="••••••••"
             required
+            error={passwordData.newPassword.trim() ? newPwdErr || undefined : undefined}
           />
 
           <FormField
@@ -1573,12 +1617,12 @@ export function LandingPage({ onNavigateToLogin, onNavigateToRegister, onNavigat
             onChange={(value) => setPasswordData({ ...passwordData, confirmPassword: value as string })}
             placeholder="••••••••"
             required
+            error={confirmErr || undefined}
           />
 
           <div className="p-4 bg-accent rounded-lg mb-4">
             <p className="text-xs text-muted-foreground">
-              <strong>Nota:</strong> La contraseña debe tener al menos 6 caracteres. 
-              Se recomienda usar una combinación de letras, números y símbolos.
+              <strong>Nota:</strong> Mínimo 8 caracteres, una mayúscula, una minúscula y un número.
             </p>
           </div>
 
@@ -1591,10 +1635,11 @@ export function LandingPage({ onNavigateToLogin, onNavigateToRegister, onNavigat
                 newPassword: '',
                 confirmPassword: ''
               });
+              setCurrentPwdOk(null);
             }}>
               Cancelar
             </Button>
-            <Button type="submit" icon={<KeyRound className="w-5 h-5" />}>
+            <Button type="submit" disabled={passwordSubmitDisabled} icon={<KeyRound className="w-5 h-5" />}>
               Cambiar Contraseña
             </Button>
           </FormActions>

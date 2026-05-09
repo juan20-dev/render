@@ -7,7 +7,7 @@ const pool = require('../../db');
 const { normalizeClientePayload } = require('./normalizador-http');
 const { isClienteUser, assertOwnClienteParam } = require('../utils/selfServiceAccess');
 const { generateTempPassword, isStrongPassword } = require('../utils/credentials');
-const { sendTemporaryPasswordEmail } = require('../services/email.service');
+const { sendTemporaryPasswordEmail, sendWelcomeEmail } = require('../services/email.service');
 
 module.exports = {
   getAll: async (req, res) => {
@@ -104,13 +104,6 @@ module.exports = {
         return res.status(400).json({
           success: false,
           message: `El campo "${missing.label}" es obligatorio.`,
-        });
-      }
-
-      if (normalizedTelefono.length < 7 || normalizedTelefono.length > 15) {
-        return res.status(400).json({
-          success: false,
-          message: 'Telefono invalido. Debe tener entre 7 y 15 digitos numericos.',
         });
       }
 
@@ -314,13 +307,38 @@ module.exports = {
 
       await client.query('COMMIT');
 
-      if (!useManualPassword && tempPassword) {
-        void sendTemporaryPasswordEmail({
+      void models.Auditoria.registerClienteAudit({
+        clienteId: clienteId,
+        accion: 'CREATE',
+        usuarioId: req.user?.id || null,
+        cambios: {
+          before: null,
+          after: {
+            usuario_id: usuarioId,
+            nombre: normalizedNombre,
+            apellido: normalizedApellido,
+            tipo_documento: tipoDocumento,
+            documento: normalizedDocumento,
+            email: normalizedEmail,
+            telefono: normalizedTelefono,
+            estado,
+          },
+        },
+      });
+
+      // Correo de bienvenida con credenciales (correo + contrasena) al cliente
+      // recien creado desde Gestion Clientes. La contrasena puede haber sido
+      // generada de forma segura por el backend o haber sido digitada por el
+      // administrador.
+      const welcomePassword = useManualPassword ? rawPassword : tempPassword;
+      if (welcomePassword) {
+        void sendWelcomeEmail({
           to: normalizedEmail,
           name: `${normalizedNombre} ${normalizedApellido}`.trim(),
-          tempPassword,
+          email: normalizedEmail,
+          password: welcomePassword,
         }).catch((error) => {
-          console.error('Error enviando contrasena temporal al cliente:', error);
+          console.error('Error enviando correo de bienvenida al cliente:', error);
         });
       }
 
@@ -332,8 +350,8 @@ module.exports = {
           usuario_id: usuarioId,
         },
         message: useManualPassword
-          ? 'Cliente y usuario creados exitosamente con contrasena personalizada.'
-          : 'Cliente y usuario creados exitosamente. Se envio una contrasena temporal al correo registrado.',
+          ? 'Cliente creado exitosamente. Se envio un correo de bienvenida con las credenciales al correo registrado.'
+          : 'Cliente creado exitosamente. Se envio un correo de bienvenida con la contrasena segura al correo registrado.',
       });
     } catch (error) {
       await client.query('ROLLBACK').catch(() => {});
@@ -431,11 +449,12 @@ module.exports = {
           : currentCliente.estado;
       const nextFotoUrl = data.foto_url !== undefined ? data.foto_url : null;
 
-      if (nextTelefono && (nextTelefono.length < 7 || nextTelefono.length > 15)) {
+      const nextTelDigits = nextTelefono ? String(nextTelefono).replace(/\D/g, '') : '';
+      if (nextTelDigits && nextTelDigits.length !== 10) {
         await client.query('ROLLBACK');
         return res.status(400).json({
           success: false,
-          message: 'Telefono invalido. Debe tener entre 7 y 15 digitos numericos.',
+          message: 'Telefono invalido. Debe tener exactamente 10 digitos.',
         });
       }
 
@@ -541,6 +560,36 @@ module.exports = {
       }
 
       await client.query('COMMIT');
+
+      void models.Auditoria.registerClienteAudit({
+        clienteId: clienteId,
+        accion: 'UPDATE',
+        usuarioId: req.user?.id || null,
+        cambios: {
+          before: {
+            nombre: currentCliente.nombre,
+            apellido: currentCliente.apellido,
+            tipo_documento: currentCliente.tipo_documento,
+            documento: currentCliente.documento,
+            telefono: currentCliente.telefono,
+            email: currentCliente.email,
+            direccion: currentCliente.direccion,
+            estado: currentCliente.estado,
+          },
+          after: {
+            nombre: nextNombre,
+            apellido: nextApellido,
+            tipo_documento: nextTipoDocumento,
+            documento: nextDocumento,
+            telefono: nextTelefono,
+            email: nextEmail,
+            direccion: nextDireccion,
+            estado: nextEstado,
+          },
+          usuario_sincronizado: usuarioId || null,
+        },
+      });
+
       return res.json({
         success: true,
         message: usuarioId
@@ -604,7 +653,11 @@ module.exports = {
         });
       }
 
-      const updated = await models.Clientes.updateStatus(req.params.id, { estado, motivo });
+      const updated = await models.Clientes.updateStatus(req.params.id, {
+        estado,
+        motivo,
+        actor_id: req.user?.id || null,
+      });
       return res.json({
         success: true,
         message: 'Estado del cliente actualizado correctamente.',
@@ -663,6 +716,28 @@ module.exports = {
     }
 
     const clienteId = Number(req.params.id);
+    if (!Number.isFinite(clienteId) || clienteId <= 0) {
+      return res.status(400).json({ success: false, message: 'ID de cliente invalido' });
+    }
+
+    // 1) Bloquear si el cliente tiene trabajo pendiente (pedidos/ventas/domicilios en operacion).
+    try {
+      const work = await models.Clientes.getPendingWork(clienteId);
+      if (work.total > 0) {
+        return res.status(409).json({
+          success: false,
+          message: models.Clientes.buildBloqueoMensaje(work, 'eliminar'),
+          details: { dependencias: work },
+        });
+      }
+    } catch (error) {
+      return res.status(500).json({
+        success: false,
+        message:
+          'No se pudieron verificar las dependencias del cliente: ' +
+          (error?.message || 'Error desconocido'),
+      });
+    }
 
     const client = await pool.connect();
     try {
@@ -679,16 +754,36 @@ module.exports = {
 
       const usuarioId = currentResult.rows[0].usuario_id || null;
 
+      const beforeSnapshot = await client.query(
+        'SELECT id, nombre, apellido, email, documento, estado, usuario_id FROM clientes WHERE id = $1 LIMIT 1',
+        [clienteId]
+      );
+
+      // 2) Borrado en orden seguro respetando RESTRICT: primero hijos, luego cliente, luego usuario.
+      // Solo quedaran registros en estados finales tras el chequeo previo.
+      await client.query('DELETE FROM abonos WHERE cliente_id = $1', [clienteId]);
+      await client.query('DELETE FROM domicilios WHERE cliente_id = $1', [clienteId]);
+      await client.query('DELETE FROM ventas WHERE cliente_id = $1', [clienteId]);
+      await client.query('DELETE FROM pedidos WHERE cliente_id = $1', [clienteId]);
+      await client.query('DELETE FROM clientes WHERE id = $1', [clienteId]);
+
       if (usuarioId) {
-        // Limpiar sesiones del usuario antes de eliminarlo (FK puede ser RESTRICT en algunos despliegues)
         await client.query('DELETE FROM usuarios_sesiones WHERE usuario_id = $1', [usuarioId]);
-        // Al eliminar el usuario, la FK clientes.usuario_id ON DELETE CASCADE elimina el cliente automaticamente
         await client.query('DELETE FROM usuarios WHERE id = $1', [usuarioId]);
-      } else {
-        await client.query('DELETE FROM clientes WHERE id = $1', [clienteId]);
       }
 
       await client.query('COMMIT');
+
+      void models.Auditoria.registerClienteAudit({
+        clienteId: clienteId,
+        accion: 'DELETE',
+        usuarioId: req.user?.id || null,
+        cambios: {
+          before: beforeSnapshot.rows[0] || null,
+          after: null,
+          usuario_eliminado: usuarioId || null,
+        },
+      });
 
       return res.json({
         success: true,
@@ -700,16 +795,21 @@ module.exports = {
       await client.query('ROLLBACK').catch(() => {});
 
       if (error?.code === '23503') {
+        // Algun otro registro restringido aparecio en la carrera (auditorias o tablas externas).
         return res.status(409).json({
           success: false,
           message:
-            'No se puede eliminar el cliente porque tiene pedidos, ventas o abonos asociados. Anula o reasigna esos registros antes de continuar.',
+            'No se puede eliminar el cliente porque aun existen registros relacionados (' +
+            (error?.constraint || error?.detail || 'restriccion de integridad referencial') +
+            '). Verifica historial, ventas, pedidos o domicilios antes de continuar.',
         });
       }
 
       return res.status(500).json({
         success: false,
-        message: 'No se pudo eliminar el cliente. Intentalo nuevamente.',
+        message:
+          'No se pudo eliminar el cliente: ' +
+          (error?.message || error?.code || 'Error desconocido'),
       });
     } finally {
       client.release();

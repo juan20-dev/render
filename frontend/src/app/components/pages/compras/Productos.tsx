@@ -6,7 +6,7 @@ import { Button } from '../../Button';
 import { Plus, Eye, Edit, Trash2 } from 'lucide-react';
 import { api } from '../../../services/api';
 import type { Producto, Categoria } from '../../../services/types';
-import { toast } from 'sonner';
+import { toast } from '../../AlertDialog';
 
 export function Productos() {
   const [productos, setProductos] = useState<Producto[]>([]);
@@ -218,6 +218,12 @@ export function Productos() {
   };
 
   const handleEdit = (producto: Producto) => {
+    if (producto.estado === 'inactivo') {
+      toast.warning('Producto inactivo', {
+        description: 'No se puede editar un producto inactivo. Reactivelo primero.',
+      });
+      return;
+    }
     setSelectedProducto(producto);
     setProductoFormularioModo('editar');
     setFormData({
@@ -331,7 +337,8 @@ export function Productos() {
     }
   };
 
-  if (loading) {
+  // Spinner solo en la carga inicial: en recargas la UI permanece para no perder foco al buscar.
+  if (loading && productos.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
@@ -426,7 +433,9 @@ export function Productos() {
             label: 'Editar',
             icon: <Edit className="w-4 h-4" />,
             onClick: handleEdit,
-            variant: 'default'
+            variant: 'default',
+            disabled: (row: Producto) => row.estado === 'inactivo',
+            disabledTitle: 'No se puede editar un producto inactivo. Reactivelo primero.',
           },
           {
             label: 'Eliminar',

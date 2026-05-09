@@ -51,6 +51,36 @@ export const ROUTE_VIEW_PERMISSIONS: Record<string, string[] | ((permisos: strin
   'cliente/perfil': ['Ver Tienda', 'Ver Mis Pedidos', 'Ver Mis Domicilios'],
 };
 
+/** Orden alineado con el menú lateral: primera ruta permitida tras iniciar sesión (personal interno). */
+const STAFF_ROUTE_ORDER = [
+  'dashboard',
+  'configuracion/roles',
+  'usuarios/roles',
+  'usuarios/usuarios',
+  'usuarios/accesos',
+  'compras/proveedores',
+  'compras/compras',
+  'compras/productos',
+  'compras/categorias',
+  'produccion/produccion',
+  'produccion/entrega-insumos',
+  'produccion/insumos',
+  'ventas/clientes',
+  'ventas/ventas',
+  'ventas/abonos',
+  'ventas/pedidos',
+  'ventas/domicilios',
+] as const;
+
+export function firstPermittedStaffPath(permisos: string[], roleName: string): string {
+  for (const route of STAFF_ROUTE_ORDER) {
+    if (routeAllowsAccess(route, permisos, roleName)) {
+      return `/${route}`;
+    }
+  }
+  return '/dashboard';
+}
+
 export function routeAllowsAccess(route: string, permisos: string[], roleName: string): boolean {
   if (roleName === 'Administrador') return true;
 

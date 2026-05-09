@@ -185,6 +185,8 @@ export interface PedidoProducto {
   cantidad: number;
   precio: number;
   subtotal: number;
+  /** Nombre del producto al momento del pedido. Útil cuando el producto fue desactivado o eliminado. */
+  nombre?: string;
 }
 
 export interface Pedido {
@@ -226,7 +228,13 @@ export interface Abono {
   valorTotal: number;
   fecha: string;
   metodoPago: 'efectivo' | 'transferencia';
-  estado: 'registrado' | 'verificado' | 'cancelado' | 'aplicado';
+  /**
+   * `finalizado` es un estado de cierre automatico que asigna el backend cuando
+   * el domicilio del pedido se entrega (consolida abono inicial y saldo).
+   */
+  estado: 'registrado' | 'verificado' | 'cancelado' | 'aplicado' | 'finalizado';
+  /** Texto consolidado con la informacion de las partes del abono cuando se liquida al 100%. */
+  detalle?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -242,6 +250,10 @@ export interface Domicilio {
   fechaEntrega: string;
   estado: 'pendiente' | 'en ruta' | 'completado' | 'cancelado';
   motivoCancelacion?: string;
+  /** Dirección de entrega tomada del pedido (o del cliente si el pedido no tenía). */
+  direccion?: string;
+  /** Teléfono de contacto tomado del pedido (o del cliente si el pedido no tenía). */
+  telefono?: string;
   createdAt: string;
   updatedAt: string;
 }

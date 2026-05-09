@@ -6,6 +6,46 @@ const path = require('path');
 const config = require('./config');
 const db = require('./db');
 const routes = require('./src/routes');
+const pool = db;
+
+/**
+ * Bootstrap de auto-recuperación del admin del sistema (id=1, admin@grandmas.com).
+ *
+ * Razón: el límite anti-fuerza-bruta puede dejar al admin del sistema bloqueado
+ * 15 minutos tras 5 intentos fallidos, impidiendo el acceso aun con la
+ * contraseña correcta. Para evitar quedarse sin acceso administrativo, cada
+ * vez que arranca el backend se limpian los bloqueos del correo de admin.
+ *
+ * Esto NO afecta a otros usuarios ni desactiva el bloqueo durante operación
+ * normal (cualquier nuevo bloqueo se aplica igual). Solo elimina el estado
+ * residual del admin al reiniciar el servicio.
+ */
+const SYSTEM_ADMIN_EMAIL = (process.env.SYSTEM_ADMIN_EMAIL || 'admin@grandmas.com')
+  .trim()
+  .toLowerCase();
+
+const ensureAdminUnblocked = async () => {
+  try {
+    await pool.query(
+      `CREATE TABLE IF NOT EXISTS usuarios_login_intentos (
+        email VARCHAR(255) PRIMARY KEY,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        blocked_until TIMESTAMP NULL,
+        last_attempt_at TIMESTAMP NULL,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )`
+    );
+    const result = await pool.query(
+      'DELETE FROM usuarios_login_intentos WHERE LOWER(email) = LOWER($1) RETURNING email',
+      [SYSTEM_ADMIN_EMAIL]
+    );
+    if (result.rowCount > 0) {
+      console.log(`🔓 Bloqueo de login eliminado para ${SYSTEM_ADMIN_EMAIL} (auto-recuperación al arranque)`);
+    }
+  } catch (err) {
+    console.warn('⚠️  No se pudo aplicar auto-recuperación del admin:', err.message);
+  }
+};
 
 const app = express();
 
@@ -70,7 +110,8 @@ app.use((err, req, res, next) => {
 // ===== INICIAR SERVIDOR =====
 const PORT = config.server.port;
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
+  await ensureAdminUnblocked();
   console.log(`\n`);
   console.log(`╔════════════════════════════════════════════════════════════╗`);
   console.log(`║        LIQUEUR SALES MANAGEMENT APP - BACKEND              ║`);

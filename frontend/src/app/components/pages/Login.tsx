@@ -34,7 +34,7 @@ export function Login({ onLogin, initialTab = 'login', onBackToLanding }: LoginP
   
   const [loginData, setLoginData] = useState({ email: '', password: '' });
   const [registerData, setRegisterData] = useState({ 
-    tipoDocumento: 'CC' as 'CC' | 'CE' | 'TI' | 'Pasaporte',
+    tipoDocumento: 'CC' as 'CC' | 'CE' | 'Pasaporte',
     numeroDocumento: '',
     nombre: '',
     apellido: '',
@@ -281,7 +281,6 @@ export function Login({ onLogin, initialTab = 'login', onBackToLanding }: LoginP
                   options={[
                     { value: 'CC', label: 'Cédula de Ciudadanía' },
                     { value: 'CE', label: 'Cédula de Extranjería' },
-                    { value: 'TI', label: 'Tarjeta de Identidad' },
                     { value: 'Pasaporte', label: 'Pasaporte' }
                   ]}
                   required
@@ -292,8 +291,9 @@ export function Login({ onLogin, initialTab = 'login', onBackToLanding }: LoginP
                   name="numeroDocumento"
                   value={registerData.numeroDocumento}
                   onChange={(value) => setRegisterData({ ...registerData, numeroDocumento: value as string })}
-                  placeholder="1234567890"
+                  placeholder="Entre 6 y 12 dígitos"
                   required
+                  inputDigitRule="documento6to12"
                 />
               </div>
 
@@ -331,8 +331,9 @@ export function Login({ onLogin, initialTab = 'login', onBackToLanding }: LoginP
                 name="telefono"
                 value={registerData.telefono}
                 onChange={(value) => setRegisterData({ ...registerData, telefono: value as string })}
-                placeholder="300 123 4567"
+                placeholder="3001234567"
                 required
+                inputDigitRule="telefono10"
               />
               
               <FormField

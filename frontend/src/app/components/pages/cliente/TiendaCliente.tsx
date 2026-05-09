@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Card } from '../../Card';
 import { Button } from '../../Button';
 import { Modal } from '../../Modal';
@@ -109,12 +109,17 @@ export function TiendaCliente() {
     e.preventDefault();
     try {
       if (carrito.length === 0) throw new Error('Debes agregar al menos un producto al carrito');
+      const tel = String(datosEntrega.telefono || '').replace(/\D/g, '');
+      if (tel.length !== 10) throw new Error('El teléfono debe tener exactamente 10 dígitos');
+      if (!datosEntrega.direccion.trim()) throw new Error('La dirección de entrega es obligatoria');
       await api.pedidos.create({
         fechaPedido: new Date().toISOString().split('T')[0],
         fechaEntrega: new Date(Date.now() + 86400000).toISOString().split('T')[0],
         metodoPago: datosEntrega.metodoPago === 'Transferencia' ? 'transferencia' : 'efectivo',
         porcentajeAbono: 100,
         total: calcularTotal(),
+        direccion: datosEntrega.direccion.trim(),
+        telefono: tel,
         productos: carrito.map((item) => ({
           productoId: item.producto.id,
           cantidad: item.cantidad,
@@ -289,7 +294,7 @@ export function TiendaCliente() {
           </div>
 
           <FormField label="Dirección de Entrega" name="direccion" type="textarea" value={datosEntrega.direccion} onChange={(value) => setDatosEntrega({ ...datosEntrega, direccion: value as string })} placeholder="Ingresa la dirección completa de entrega" rows={2} required />
-          <FormField label="Teléfono de Contacto" name="telefono" value={datosEntrega.telefono} onChange={(value) => setDatosEntrega({ ...datosEntrega, telefono: value as string })} placeholder="300 123 4567" required />
+          <FormField label="Teléfono de Contacto" name="telefono" value={datosEntrega.telefono} onChange={(value) => setDatosEntrega({ ...datosEntrega, telefono: value as string })} placeholder="3001234567" required inputDigitRule="telefono10" />
           <FormField label="Método de Pago" name="metodoPago" type="select" value={datosEntrega.metodoPago} onChange={(value) => setDatosEntrega({ ...datosEntrega, metodoPago: value as any })} options={[{ value: 'Efectivo', label: 'Efectivo' }, { value: 'Transferencia', label: 'Transferencia Bancaria' }]} required />
           <FormField label="Observaciones (Opcional)" name="observaciones" type="textarea" value={datosEntrega.observaciones} onChange={(value) => setDatosEntrega({ ...datosEntrega, observaciones: value as string })} placeholder="Instrucciones especiales para la entrega..." rows={3} />
 

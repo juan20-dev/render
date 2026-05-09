@@ -125,6 +125,7 @@ module.exports = {
       const canon = (raw) => {
         const t = String(raw || '').trim().toLowerCase();
         if (t.includes('cancel')) return 'Cancelado';
+        if (t.includes('finaliz')) return 'Finalizado';
         if (t.includes('aplic')) return 'Aplicado';
         if (t.includes('verif')) return 'Verificado';
         if (t.includes('registr')) return 'Registrado';
@@ -132,7 +133,7 @@ module.exports = {
       };
 
       const actual = canon(abonoActual.estado);
-      const estadosOrigenReconocidos = ['Registrado', 'Verificado', 'Cancelado', 'Aplicado'];
+      const estadosOrigenReconocidos = ['Registrado', 'Verificado', 'Cancelado', 'Aplicado', 'Finalizado'];
       if (!estadosOrigenReconocidos.includes(actual)) {
         return res.status(400).json({
           success: false,
@@ -141,11 +142,13 @@ module.exports = {
       }
 
       // Validar transiciones de estado permitidas
+      // Finalizado es estado de cierre automatico (tras entregar el domicilio): no se puede modificar manualmente.
       const transicionesPermitidas = {
         Registrado: ['Verificado', 'Cancelado'],
         Verificado: ['Cancelado'],
         Aplicado: ['Cancelado'],
         Cancelado: [],
+        Finalizado: [],
       };
 
       if (!transicionesPermitidas[actual]?.includes(estado)) {

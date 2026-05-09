@@ -97,6 +97,7 @@ const ventaEstadoDb = (s: string) => {
 const abonoEstadoUi = (s?: string | null) => {
   const t = String(s || '').trim().toLowerCase();
   if (t.includes('cancel')) return 'cancelado';
+  if (t.includes('finaliz')) return 'finalizado';
   if (t.includes('aplic')) return 'aplicado';
   if (t.includes('verific')) return 'verificado';
   return 'registrado';
@@ -105,6 +106,7 @@ const abonoEstadoUi = (s?: string | null) => {
 const abonoEstadoDb = (s: string) => {
   const t = String(s || '').trim().toLowerCase();
   if (t === 'cancelado') return 'Cancelado';
+  if (t === 'finalizado' || t.includes('finaliz')) return 'Finalizado';
   if (t === 'verificado') return 'Verificado';
   if (t === 'aplicado' || t.includes('aplic')) return 'Aplicado';
   return 'Registrado';
@@ -120,6 +122,17 @@ const metodoPagoDb = (s: string) => {
   if (t === 'transferencia') return 'Transferencia';
   return 'Efectivo';
 };
+
+/** Alineado con el backend (`isStrongPassword`): mensaje de error o null si cumple. */
+export function newPasswordPolicyMessage(password: string): string | null {
+  const value = String(password ?? '').trim();
+  if (!value) return null;
+  if (value.length < 8) return 'Mínimo 8 caracteres.';
+  if (!/[A-Z]/.test(value)) return 'Debe incluir al menos una mayúscula.';
+  if (!/[a-z]/.test(value)) return 'Debe incluir al menos una minúscula.';
+  if (!/\d/.test(value)) return 'Debe incluir al menos un número.';
+  return null;
+}
 
 let rolesCache: { id: number; nombre: string }[] | null = null;
 async function rolIdByNombre(nombre: string): Promise<number> {
@@ -242,6 +255,7 @@ function mapCompra(r: any): Compra {
 }
 
 function mapCliente(r: any): Cliente {
+  const ultima = r.ultima_compra ?? r.ultimaCompra ?? null;
   return {
     id: Number(r.id),
     tipoDocumento: r.tipo_documento || 'CC',
@@ -252,6 +266,7 @@ function mapCliente(r: any): Cliente {
     email: r.email || '',
     direccion: r.direccion || '',
     comprasRealizadas: Number(r.compras ?? r.compras_realizadas ?? 0),
+    ultimaCompra: ultima ? String(ultima).split('T')[0] : undefined,
     estado: uiAct(r.estado) as Cliente['estado'],
     createdAt: r.created_at || '',
     updatedAt: r.updated_at || '',
@@ -266,6 +281,7 @@ function mapPedidoListRow(r: any): Pedido {
     cantidad: 0,
     precio: 0,
     subtotal: 0,
+    nombre: undefined,
   }));
   return {
     id: Number(r.id),
@@ -292,6 +308,7 @@ function mapPedidoDetail(r: any): Pedido {
     cantidad: Number(d.cantidad),
     precio: Number(d.precio_unitario),
     subtotal: Number(d.subtotal ?? Number(d.cantidad) * Number(d.precio_unitario)),
+    nombre: d.producto_nombre ? String(d.producto_nombre) : undefined,
   }));
   return {
     id: Number(r.id),
@@ -353,21 +370,52 @@ function mapAbono(r: any): Abono {
     fecha: String(r.fecha || '').split('T')[0],
     metodoPago: metodoPagoUi(r.metodo_pago) as Abono['metodoPago'],
     estado: estadoUi,
+    detalle: r.detalle ? String(r.detalle) : undefined,
     createdAt: r.created_at || '',
     updatedAt: r.updated_at || '',
   } as Abono;
 }
 
 function mapDomicilio(r: any): Domicilio {
+  let prodArr: any[] = [];
+  if (Array.isArray(r.productos)) {
+    prodArr = r.productos;
+  } else if (typeof r.productos === 'string') {
+    try {
+      const parsed = JSON.parse(r.productos);
+      if (Array.isArray(parsed)) prodArr = parsed;
+    } catch {
+      /* ignore */
+    }
+  }
+  const productos = prodArr
+    .filter((d: any) => d && (d.producto_id !== null && d.producto_id !== undefined))
+    .map((d: any) => ({
+      productoId: Number(d.producto_id),
+      cantidad: Number(d.cantidad ?? 0),
+      precio: Number(d.precio_unitario ?? 0),
+      subtotal: Number(
+        d.subtotal ?? Number(d.cantidad ?? 0) * Number(d.precio_unitario ?? 0)
+      ),
+      nombre: d.producto_nombre ? String(d.producto_nombre) : undefined,
+    }));
+
+  const direccion = String(r.direccion_pedido || r.direccion || r.cliente_direccion || '').trim();
+  const telefono = String(r.telefono_pedido || r.cliente_telefono || '').trim();
+  const fechaEntregaRaw = r.fecha_entrega_pedido || r.fecha_entrega || r.fecha || '';
+
   return {
     id: Number(r.id),
     pedidoId: Number(r.pedido_id),
     clienteId: Number(r.cliente_id),
     repartidorId: Number(r.repartidor_id || 0),
-    productos: [],
+    productos,
     total: Number(r.total_pedido ?? r.total ?? 0),
     fechaPedido: String(r.fecha_pedido || r.fecha || '').split('T')[0],
-    fechaEntrega: String(r.fecha_entrega || r.fecha || '').split('T')[0],
+    fechaEntrega: String(fechaEntregaRaw || '').split('T')[0],
+    motivoCancelacion: r.motivo_cancelacion ? String(r.motivo_cancelacion) : undefined,
+    direccion: direccion || undefined,
+    telefono: telefono || undefined,
     estado: domicilioEstadoUi(r.estado) as Domicilio['estado'],
     createdAt: r.created_at || '',
     updatedAt: r.updated_at || '',
@@ -454,11 +502,23 @@ export const api = {
     },
     logout: async () => {
       await apiFetch('/api/auth/logout', { method: 'POST', json: {} });
+      rolesCache = null;
     },
-    changePassword: async (currentPassword: string, newPassword: string) => {
+    verifyCurrentPassword: async (currentPassword: string): Promise<boolean> => {
+      const d = await apiFetchData<{ valid: boolean }>('/api/auth/verify-current-password', {
+        method: 'POST',
+        json: { currentPassword },
+      });
+      return !!d?.valid;
+    },
+    changePassword: async (currentPassword: string, newPassword: string, confirmPassword?: string) => {
       await apiFetch('/api/auth/change-password', {
         method: 'POST',
-        json: { currentPassword, newPassword },
+        json: {
+          currentPassword,
+          newPassword,
+          confirmPassword: confirmPassword ?? newPassword,
+        },
       });
     },
     requestPasswordReset: async (email: string) => {
@@ -1130,6 +1190,10 @@ export const api = {
       const rows = await apiFetchData<any[]>('/api/domicilios');
       return rows.map(mapDomicilio);
     },
+    getById: async (id: number): Promise<Domicilio> => {
+      const row = await apiFetchData<any>(`/api/domicilios/${id}`);
+      return mapDomicilio(row);
+    },
     create: async (
       data: Partial<Domicilio> & {
         fechaEntrega?: string;
@@ -1193,6 +1257,29 @@ export const api = {
           estado: domicilioEstadoDb(estado),
           motivo_cancelacion: motivo,
         },
+      });
+    },
+    update: async (
+      id: number,
+      data: { repartidorId?: number; repartidorNombre?: string }
+    ) => {
+      const body: Record<string, unknown> = {};
+      if (data.repartidorId !== undefined && data.repartidorId !== null) {
+        const rid = Number(data.repartidorId);
+        if (Number.isFinite(rid) && rid > 0) {
+          body.repartidor_id = rid;
+        }
+      }
+      if (data.repartidorNombre !== undefined) {
+        const n = String(data.repartidorNombre || '').trim().slice(0, 100);
+        if (n) body.repartidor = n;
+      }
+      if (Object.keys(body).length === 0) {
+        throw new Error('No hay cambios para actualizar el domicilio');
+      }
+      await apiFetch(`/api/domicilios/${id}`, {
+        method: 'PUT',
+        json: body,
       });
     },
   },

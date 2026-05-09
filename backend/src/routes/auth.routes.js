@@ -7,6 +7,7 @@ router.post('/login', controller.login);
 router.get('/me', authenticateJWT, controller.me);
 router.post('/logout', authenticateJWT, controller.logout);
 router.post('/logout-all', authenticateJWT, controller.logoutAll);
+router.post('/verify-current-password', authenticateJWT, controller.verifyCurrentPassword);
 router.post('/change-password', authenticateJWT, controller.changePassword);
 router.post('/password-reset-request', controller.requestPasswordReset);
 router.post('/password-reset-confirm', controller.confirmPasswordReset);

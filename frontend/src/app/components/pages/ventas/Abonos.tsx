@@ -1,11 +1,11 @@
 ﻿import React, { useState, useEffect } from 'react';
-import { DataTable, Column, commonActions } from '../../DataTable';
+import { DataTable, Column, commonActions, openPrintablePdf } from '../../DataTable';
 import { Modal } from '../../Modal';
 import { Form, FormField, FormActions } from '../../Form';
 import { Button } from '../../Button';
 import { Plus } from 'lucide-react';
 import { api } from '../../../services/api';
-import { toast } from 'sonner';
+import { toast } from '../../AlertDialog';
 import type { Abono, Pedido, Cliente } from '../../../services/types';
 import { AlertDialog } from '../../AlertDialog';
 
@@ -111,6 +111,10 @@ export function Abonos() {
         { v: 'cancelado', l: 'Cancelado' }
       ];
     }
+    if (row.estado === 'finalizado') {
+      // Estado terminal automatico al entregar el domicilio: no se puede modificar.
+      return [{ v: 'finalizado', l: 'Finalizado' }];
+    }
     return [{ v: 'cancelado', l: 'Cancelado' }];
   };
 
@@ -139,7 +143,9 @@ export function Abonos() {
         ? 'Cancelado'
         : e === 'aplicado'
           ? 'Aplicado'
-          : 'Registrado';
+          : e === 'finalizado'
+            ? 'Finalizado'
+            : 'Registrado';
 
   // Filtrar pedidos según búsqueda
   const pedidosFiltrados = pedidos
@@ -197,19 +203,23 @@ export function Abonos() {
         const bg =
           row.estado === 'verificado'
             ? '#dcfce7'
-            : row.estado === 'aplicado'
-              ? '#e0e7ff'
-              : row.estado === 'cancelado'
-                ? '#fee2e2'
-                : '#fef9c3';
+            : row.estado === 'finalizado'
+              ? '#bbf7d0'
+              : row.estado === 'aplicado'
+                ? '#e0e7ff'
+                : row.estado === 'cancelado'
+                  ? '#fee2e2'
+                  : '#fef9c3';
         const fg =
           row.estado === 'verificado'
             ? '#166534'
-            : row.estado === 'aplicado'
-              ? '#3730a3'
-              : row.estado === 'cancelado'
-                ? '#991b1b'
-                : '#854d0e';
+            : row.estado === 'finalizado'
+              ? '#14532d'
+              : row.estado === 'aplicado'
+                ? '#3730a3'
+                : row.estado === 'cancelado'
+                  ? '#991b1b'
+                  : '#854d0e';
         return (
           <select
             value={row.estado}
@@ -241,6 +251,55 @@ export function Abonos() {
     setBusquedaPedido('');
     setMostrarListaPedidos(false);
     setIsModalOpen(true);
+  };
+
+  /**
+   * Abre vista PDF imprimible con la informacion completa del abono y un boton
+   * "Descargar PDF" que invoca el dialogo de impresion del navegador.
+   */
+  const handleVerPdfAbono = (abono: AbonoView) => {
+    const opened = openPrintablePdf({
+      title: `Abono #${String(abono.id).padStart(4, '0')}`,
+      subtitle: `Generado el ${new Date().toLocaleString('es-CO')}`,
+      sections: [
+        {
+          title: 'Datos generales',
+          rows: [
+            { label: 'Pedido', value: abono.pedidoNumero || `ID ${abono.pedidoId}` },
+            { label: 'Cliente', value: abono.clienteNombre || 'Desconocido' },
+            { label: 'Fecha', value: abono.fecha },
+            { label: 'Método de pago', value: abono.metodoPago },
+            { label: 'Estado', value: labelEstadoAbono(abono.estado) },
+          ],
+        },
+        {
+          title: 'Importes',
+          rows: [
+            { label: 'Valor total del pedido', value: formatCurrency(abono.valorTotal) },
+            { label: 'Monto abonado', value: formatCurrency(abono.montoAbonado) },
+            { label: 'Porcentaje abonado', value: `${abono.porcentajeAbonado}%` },
+            {
+              label: 'Saldo pendiente',
+              value: formatCurrency(Math.max(0, abono.valorTotal - abono.montoAbonado)),
+            },
+          ],
+        },
+        ...(abono.detalle
+          ? [
+              {
+                title: 'Detalles del abono (consolidado)',
+                text: abono.detalle,
+              },
+            ]
+          : []),
+      ],
+      footer: 'Comprobante generado por Grandma\u2019s Liquors. Use "Descargar PDF" para guardar o imprimir.',
+    });
+    if (!opened) {
+      toast.error('No se pudo abrir la vista PDF', {
+        description: 'Permita las ventanas emergentes para este sitio.',
+      });
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -375,6 +434,7 @@ export function Abonos() {
               <option value="registrado">Registrado</option>
               <option value="verificado">Verificado</option>
               <option value="aplicado">Aplicado</option>
+              <option value="finalizado">Finalizado</option>
               <option value="cancelado">Cancelado</option>
             </select>
             <Button
@@ -407,7 +467,8 @@ export function Abonos() {
           commonActions.view((abono) => {
             setSelectedAbono(abono);
             setIsDetailModalOpen(true);
-          })
+          }),
+          commonActions.pdf((abono) => handleVerPdfAbono(abono as AbonoView)),
         ]}
       />
 
@@ -581,11 +642,13 @@ export function Abonos() {
                 className={`px-4 py-2 rounded-full text-sm ${
                   selectedAbono.estado === 'verificado'
                     ? 'bg-green-100 text-green-700'
-                    : selectedAbono.estado === 'aplicado'
-                      ? 'bg-indigo-100 text-indigo-800'
-                    : selectedAbono.estado === 'cancelado'
-                      ? 'bg-red-100 text-red-700'
-                      : 'bg-yellow-100 text-yellow-700'
+                    : selectedAbono.estado === 'finalizado'
+                      ? 'bg-emerald-200 text-emerald-900'
+                      : selectedAbono.estado === 'aplicado'
+                        ? 'bg-indigo-100 text-indigo-800'
+                        : selectedAbono.estado === 'cancelado'
+                          ? 'bg-red-100 text-red-700'
+                          : 'bg-yellow-100 text-yellow-700'
                 }`}
               >
                 {labelEstadoAbono(selectedAbono.estado)}
@@ -627,9 +690,20 @@ export function Abonos() {
               </div>
             </div>
 
+            {selectedAbono.detalle && (
+              <div className="p-4 bg-emerald-50 rounded-lg border border-emerald-200">
+                <label className="text-sm text-emerald-800 block mb-2 font-medium">
+                  Detalles del abono (consolidado)
+                </label>
+                <p className="text-sm text-emerald-900 whitespace-pre-line break-words">
+                  {selectedAbono.detalle}
+                </p>
+              </div>
+            )}
+
             <div className="p-4 bg-accent/50 rounded-lg">
               <p className="text-sm text-muted-foreground">
-                El estado de este abono se sincroniza automáticamente cuando se completa el domicilio relacionado al pedido.
+                El estado de este abono se sincroniza automáticamente cuando se completa el domicilio relacionado al pedido. Al entregar el domicilio, el abono inicial pasa a 100 % y se marca como <strong>Finalizado</strong> con el detalle consolidado de las dos partes del pago.
               </p>
             </div>
           </div>

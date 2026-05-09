@@ -6,9 +6,9 @@ import { AlertTriangle, Info, CheckCircle, Trash2 } from 'lucide-react';
 interface AlertDialogProps {
   isOpen: boolean;
   onClose: () => void;
-  onConfirm: () => void;
+  onConfirm?: () => void;
   title: string;
-  description: string;
+  description: React.ReactNode;
   type?: 'warning' | 'info' | 'success' | 'danger';
   confirmText?: string;
   cancelText?: string;
@@ -29,7 +29,9 @@ export function AlertDialog({
   const handleConfirm = () => {
     void (async () => {
       try {
-        await Promise.resolve(onConfirm());
+        if (typeof onConfirm === 'function') {
+          await Promise.resolve(onConfirm());
+        }
       } finally {
         onClose();
       }
@@ -77,7 +79,7 @@ export function AlertDialog({
             {getIcon()}
           </div>
           <div className="flex-1">
-            <p className="text-muted-foreground">{description}</p>
+            <div className="text-muted-foreground">{description}</div>
           </div>
         </div>
 
@@ -104,7 +106,7 @@ export function useAlertDialog() {
   const [alertState, setAlertState] = React.useState<{
     isOpen: boolean;
     title: string;
-    description: string;
+    description: React.ReactNode;
     type: 'warning' | 'info' | 'success' | 'danger';
     onConfirm: () => void;
     confirmText?: string;
@@ -148,3 +150,6 @@ export function useAlertDialog() {
 
   return { showAlert, hideAlert, AlertComponent };
 }
+
+/** Notificaciones flotantes (formularios, API). Misma API que sonner. */
+export { toast, Toaster } from 'sonner';

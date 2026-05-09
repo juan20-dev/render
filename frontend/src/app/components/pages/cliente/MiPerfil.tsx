@@ -1,12 +1,13 @@
 ﻿import React, { useEffect, useState } from 'react';
 import { Card } from '../../Card';
 import { Button } from '../../Button';
-import { Form, FormField, FormActions } from '../../Form';
+import { Form, FormField, FormActions, FieldSuccess } from '../../Form';
 import { User, Mail, Phone, MapPin, Upload, Lock } from 'lucide-react';
 import { useAlertDialog } from '../../AlertDialog';
 import { Modal } from '../../Modal';
-import { api } from '../../../services/api';
+import { api, newPasswordPolicyMessage } from '../../../services/api';
 import { useAuth } from '../../AuthContext';
+import { toast } from 'sonner';
 
 interface PerfilCliente {
   nombre: string;
@@ -14,7 +15,7 @@ interface PerfilCliente {
   email: string;
   telefono: string;
   direccion: string;
-  tipoDocumento: 'CC' | 'CE' | 'TI' | 'Pasaporte';
+  tipoDocumento: 'CC' | 'CE' | 'Pasaporte';
   numeroDocumento: string;
   foto?: string;
 }
@@ -37,6 +38,7 @@ export function MiPerfil() {
   const [fotoPreview, setFotoPreview] = useState<string | null>(perfil.foto || null);
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
   const [passwordData, setPasswordData] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
+  const [currentPwdOk, setCurrentPwdOk] = useState<boolean | null>(null);
 
   const { showAlert, AlertComponent } = useAlertDialog();
 
@@ -76,6 +78,29 @@ export function MiPerfil() {
     };
     load();
   }, [user]);
+
+  useEffect(() => {
+    const pwd = passwordData.currentPassword.trim();
+    if (!pwd || !user?.id) {
+      setCurrentPwdOk(null);
+      return;
+    }
+    let cancelled = false;
+    const t = window.setTimeout(() => {
+      api.auth
+        .verifyCurrentPassword(pwd)
+        .then((ok) => {
+          if (!cancelled) setCurrentPwdOk(ok);
+        })
+        .catch(() => {
+          if (!cancelled) setCurrentPwdOk(false);
+        });
+    }, 450);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(t);
+    };
+  }, [passwordData.currentPassword, user?.id]);
 
   const handleFotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -125,31 +150,39 @@ export function MiPerfil() {
     setIsEditing(false);
   };
 
+  const newPwdErr = newPasswordPolicyMessage(passwordData.newPassword);
+  const confirmErr =
+    passwordData.confirmPassword.trim() && passwordData.newPassword !== passwordData.confirmPassword
+      ? 'Las contraseñas nuevas no coinciden.'
+      : '';
+  const currentErr =
+    passwordData.currentPassword.trim() && currentPwdOk === false ? 'La contraseña actual no es correcta.' : '';
+
+  const passwordSubmitDisabled =
+    !!newPwdErr ||
+    !!confirmErr ||
+    !!currentErr ||
+    currentPwdOk !== true ||
+    !passwordData.currentPassword.trim() ||
+    !passwordData.newPassword.trim() ||
+    !passwordData.confirmPassword.trim();
+
   const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
-
-    if (passwordData.newPassword !== passwordData.confirmPassword) {
-      showAlert({ title: 'Error', description: 'Las contraseñas no coinciden', type: 'danger', confirmText: 'Entendido', onConfirm: () => {} });
-      return;
-    }
-    if (passwordData.newPassword.length < 8) {
-      showAlert({ title: 'Error', description: 'La contraseña debe tener al menos 8 caracteres', type: 'danger', confirmText: 'Entendido', onConfirm: () => {} });
-      return;
-    }
+    if (passwordSubmitDisabled) return;
 
     try {
-      await api.auth.changePassword(passwordData.currentPassword, passwordData.newPassword);
-      showAlert({
-        title: 'Contraseña actualizada',
-        description: 'Tu contraseña ha sido cambiada exitosamente',
-        type: 'success',
-        confirmText: 'Entendido',
-        onConfirm: () => {
-          setIsChangePasswordOpen(false);
-          setPasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
-        },
-      });
+      await api.auth.changePassword(
+        passwordData.currentPassword,
+        passwordData.newPassword,
+        passwordData.confirmPassword
+      );
+      toast.success('Contraseña actualizada');
+      setIsChangePasswordOpen(false);
+      setPasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
+      setCurrentPwdOk(null);
     } catch (error: any) {
+      toast.error(error.message || 'No se pudo cambiar la contraseña');
       showAlert({ title: 'Error', description: error.message || 'No se pudo cambiar la contraseña', type: 'danger', confirmText: 'Entendido', onConfirm: () => {} });
     }
   };
@@ -227,12 +260,12 @@ export function MiPerfil() {
               <FormField label="Apellido" name="apellido" value={formData.apellido} onChange={(value) => setFormData({ ...formData, apellido: value as string })} placeholder="Pérez" required />
             </div>
             <FormField label="Correo Electrónico" name="email" type="email" value={formData.email} onChange={(value) => setFormData({ ...formData, email: value as string })} placeholder="usuario@example.com" required />
-            <FormField label="Teléfono" name="telefono" value={formData.telefono} onChange={(value) => setFormData({ ...formData, telefono: value as string })} placeholder="300 123 4567" required />
+            <FormField label="Teléfono" name="telefono" value={formData.telefono} onChange={(value) => setFormData({ ...formData, telefono: value as string })} placeholder="3001234567" required inputDigitRule="telefono10" />
             <FormField label="Dirección" name="direccion" type="textarea" value={formData.direccion} onChange={(value) => setFormData({ ...formData, direccion: value as string })} placeholder="Dirección completa" rows={2} required />
 
             <div className="grid grid-cols-2 gap-4">
-              <FormField label="Tipo de Documento" name="tipoDocumento" type="select" value={formData.tipoDocumento} onChange={(value) => setFormData({ ...formData, tipoDocumento: value as any })} options={[{ value: 'CC', label: 'Cédula de Ciudadanía' }, { value: 'CE', label: 'Cédula de Extranjería' }, { value: 'TI', label: 'Tarjeta de Identidad' }, { value: 'Pasaporte', label: 'Pasaporte' }]} required />
-              <FormField label="Número de Documento" name="numeroDocumento" value={formData.numeroDocumento} onChange={(value) => setFormData({ ...formData, numeroDocumento: value as string })} placeholder="1234567890" required />
+              <FormField label="Tipo de Documento" name="tipoDocumento" type="select" value={formData.tipoDocumento} onChange={(value) => setFormData({ ...formData, tipoDocumento: value as any })} options={[{ value: 'CC', label: 'Cédula de Ciudadanía' }, { value: 'CE', label: 'Cédula de Extranjería' }, { value: 'Pasaporte', label: 'Pasaporte' }]} required />
+              <FormField label="Número de Documento" name="numeroDocumento" value={formData.numeroDocumento} onChange={(value) => setFormData({ ...formData, numeroDocumento: value as string })} placeholder="Entre 6 y 12 dígitos" required inputDigitRule="documento6to12" />
             </div>
 
             <FormActions>
@@ -243,15 +276,18 @@ export function MiPerfil() {
         </Card>
       )}
 
-      <Modal isOpen={isChangePasswordOpen} onClose={() => { setIsChangePasswordOpen(false); setPasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' }); }} title="Cambiar Contraseña" size="md">
+      <Modal isOpen={isChangePasswordOpen} onClose={() => { setIsChangePasswordOpen(false); setPasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' }); setCurrentPwdOk(null); }} title="Cambiar Contraseña" size="md">
         <Form onSubmit={handleChangePassword}>
-          <FormField label="Contraseña Actual" name="currentPassword" type="password" value={passwordData.currentPassword} onChange={(value) => setPasswordData({ ...passwordData, currentPassword: value as string })} placeholder="••••••••" required />
-          <FormField label="Nueva Contraseña" name="newPassword" type="password" value={passwordData.newPassword} onChange={(value) => setPasswordData({ ...passwordData, newPassword: value as string })} placeholder="••••••••" required />
-          <FormField label="Confirmar Nueva Contraseña" name="confirmPassword" type="password" value={passwordData.confirmPassword} onChange={(value) => setPasswordData({ ...passwordData, confirmPassword: value as string })} placeholder="••••••••" required />
-          <div className="p-4 bg-accent rounded-lg mb-4"><p className="text-xs text-muted-foreground">La contraseña debe tener al menos 8 caracteres.</p></div>
+          <FormField label="Contraseña Actual" name="currentPassword" type="password" value={passwordData.currentPassword} onChange={(value) => setPasswordData({ ...passwordData, currentPassword: value as string })} placeholder="••••••••" required error={currentErr} />
+          {passwordData.currentPassword.trim() && currentPwdOk === true ? (
+            <FieldSuccess>Contraseña actual verificada.</FieldSuccess>
+          ) : null}
+          <FormField label="Nueva Contraseña" name="newPassword" type="password" value={passwordData.newPassword} onChange={(value) => setPasswordData({ ...passwordData, newPassword: value as string })} placeholder="••••••••" required error={passwordData.newPassword.trim() ? newPwdErr || undefined : undefined} />
+          <FormField label="Confirmar Nueva Contraseña" name="confirmPassword" type="password" value={passwordData.confirmPassword} onChange={(value) => setPasswordData({ ...passwordData, confirmPassword: value as string })} placeholder="••••••••" required error={confirmErr || undefined} />
+          <div className="p-4 bg-accent rounded-lg mb-4"><p className="text-xs text-muted-foreground">Mínimo 8 caracteres, una mayúscula, una minúscula y un número.</p></div>
           <FormActions>
-            <Button variant="outline" onClick={() => { setIsChangePasswordOpen(false); setPasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' }); }}>Cancelar</Button>
-            <Button type="submit" icon={<Lock className="w-5 h-5" />}>Cambiar Contraseña</Button>
+            <Button variant="outline" onClick={() => { setIsChangePasswordOpen(false); setPasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' }); setCurrentPwdOk(null); }}>Cancelar</Button>
+            <Button type="submit" disabled={passwordSubmitDisabled} icon={<Lock className="w-5 h-5" />}>Cambiar Contraseña</Button>
           </FormActions>
         </Form>
       </Modal>

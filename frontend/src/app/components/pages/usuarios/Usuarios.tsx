@@ -1,13 +1,13 @@
-﻿import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect, useMemo } from 'react';
 import { DataTable, Column } from '../../DataTable';
 import { Modal } from '../../Modal';
-import { Form, FormField, FormActions } from '../../Form';
+import { Form, FormField, FormActions, FieldError, FieldSuccess } from '../../Form';
 import { Button } from '../../Button';
 import { Plus, Eye, Edit, Trash2 } from 'lucide-react';
 import { AlertDialog } from '../../AlertDialog';
 import { api } from '../../../services/api';
 import type { Usuario } from '../../../services/types';
-import { toast } from 'sonner';
+import { toast } from '../../AlertDialog';
 
 type RolCatalogo = { id: number; nombre: string; estado: string };
 
@@ -35,7 +35,7 @@ export function Usuarios() {
   const [formData, setFormData] = useState({
     nombre: '',
     apellido: '',
-    tipoDocumento: 'CC' as 'CC' | 'CE' | 'TI' | 'Pasaporte',
+    tipoDocumento: 'CC' as 'CC' | 'CE' | 'Pasaporte',
     numeroDocumento: '',
     direccion: '',
     email: '',
@@ -101,16 +101,23 @@ export function Usuarios() {
         q,
         rol_id: rolId ? String(rolId) : '',
         estados,
+        exclude_clientes: 'true',
       });
       setUsuarios(data);
     } catch (error: any) {
-      toast.error('Error al cargar usuarios', { description: error.message });
+      toast.error('No se pudieron cargar los usuarios', {
+        description: error?.message || 'Verifique su conexión e intente nuevamente.',
+      });
     } finally {
       setLoading(false);
     }
   };
 
-  const rolesActivos = roles.filter((r) => r.nombre && r.estado.toLowerCase() !== 'inactivo');
+  // Roles válidos para usuarios del sistema (excluye 'Cliente' porque se gestiona desde Clientes).
+  const rolesAsignables = roles.filter(
+    (r) => r.nombre && r.nombre.toLowerCase() !== 'cliente'
+  );
+  const rolesActivos = rolesAsignables.filter((r) => r.estado.toLowerCase() !== 'inactivo');
 
   const opcionesRolModal = (() => {
     const base = rolesActivos.map((r) => ({ value: r.nombre, label: r.nombre }));
@@ -127,12 +134,13 @@ export function Usuarios() {
   };
 
   const validarTelefono = (telefono: string) => {
-    const regex = /^[0-9\s]+$/;
-    return regex.test(telefono);
+    const d = String(telefono || '').replace(/\D/g, '');
+    return d.length === 10;
   };
 
   const validarDocumento = (documento: string) => {
-    return documento.length >= 6 && documento.length <= 15;
+    const d = String(documento || '').replace(/\D/g, '').length;
+    return d >= 6 && d <= 12;
   };
 
   const validarPassword = (password: string) => {
@@ -143,7 +151,54 @@ export function Usuarios() {
     return tieneMayuscula && tieneMinuscula && tieneNumero;
   };
 
-  const usuariosFiltrados = usuarios;
+  // Filtro defensivo: aunque el backend ya excluye clientes, evitamos que
+  // se muestren si por algún motivo llegaran en la respuesta.
+  const usuariosFiltrados = usuarios.filter(
+    (u) => String(u.rol || '').toLowerCase() !== 'cliente'
+  );
+
+  // ----- Validacion en vivo de duplicados (documento, telefono, email) -----
+  const docNormU = String(formData.numeroDocumento || '').replace(/\D/g, '');
+  const telNormU = String(formData.telefono || '').replace(/\D/g, '');
+  const emailNormU = String(formData.email || '').trim().toLowerCase();
+
+  const documentoDuplicadoU = useMemo(() => {
+    if (docNormU.length < 6 || docNormU.length > 12) return '';
+    const dup = usuarios.some(
+      (u) =>
+        (!selectedUsuario || u.id !== selectedUsuario.id) &&
+        String(u.numeroDocumento || '').replace(/\D/g, '') === docNormU
+    );
+    return dup
+      ? 'Este número de documento ya está registrado para otro usuario. Use otro o edite el existente.'
+      : '';
+  }, [usuarios, docNormU, selectedUsuario]);
+
+  const telefonoDuplicadoU = useMemo(() => {
+    if (telNormU.length !== 10) return '';
+    const dup = usuarios.some(
+      (u) =>
+        (!selectedUsuario || u.id !== selectedUsuario.id) &&
+        String(u.telefono || '').replace(/\D/g, '') === telNormU
+    );
+    return dup
+      ? 'Este teléfono ya está registrado para otro usuario. Use uno distinto.'
+      : '';
+  }, [usuarios, telNormU, selectedUsuario]);
+
+  const emailDuplicadoU = useMemo(() => {
+    if (!emailNormU) return '';
+    const valid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailNormU);
+    if (!valid) return '';
+    const dup = usuarios.some(
+      (u) =>
+        (!selectedUsuario || u.id !== selectedUsuario.id) &&
+        String(u.email || '').trim().toLowerCase() === emailNormU
+    );
+    return dup
+      ? 'Este correo ya está registrado para otro usuario. Use uno distinto.'
+      : '';
+  }, [usuarios, emailNormU, selectedUsuario]);
 
   const columns: Column[] = [
     {
@@ -194,10 +249,16 @@ export function Usuarios() {
   const confirmarCambioEstado = async () => {
     if (!usuarioEstadoPendiente) return;
 
-    // Validar motivo
-    if (motivoEstado.length < 10 || motivoEstado.length > 50) {
-      toast.error('Error de validación', {
-        description: 'El motivo debe tener entre 10 y 50 caracteres'
+    const motivoTrim = motivoEstado.trim();
+    if (motivoTrim.length < 10) {
+      toast.warning('Motivo demasiado corto', {
+        description: `Escribe al menos 10 caracteres explicando el motivo del cambio (actual: ${motivoTrim.length}).`,
+      });
+      return;
+    }
+    if (motivoTrim.length > 50) {
+      toast.warning('Motivo demasiado largo', {
+        description: `El motivo no puede superar los 50 caracteres (actual: ${motivoTrim.length}).`,
       });
       return;
     }
@@ -206,14 +267,17 @@ export function Usuarios() {
       await api.usuarios.changeEstado(
         usuarioEstadoPendiente.usuario.id,
         usuarioEstadoPendiente.nuevoEstado,
-        motivoEstado
+        motivoTrim
       );
 
-      toast.success('Estado actualizado', {
-        description: `Usuario ${
-          usuarioEstadoPendiente.nuevoEstado === 'activo' ? 'activado' : 'inactivado'
-        } exitosamente`
-      });
+      toast.success(
+        usuarioEstadoPendiente.nuevoEstado === 'activo' ? 'Usuario activado' : 'Usuario inactivado',
+        {
+          description: `${usuarioEstadoPendiente.usuario.nombre} ${usuarioEstadoPendiente.usuario.apellido} ahora está ${
+            usuarioEstadoPendiente.nuevoEstado === 'activo' ? 'activo' : 'inactivo'
+          }.`,
+        }
+      );
 
       setIsEstadoModalOpen(false);
       setMotivoEstado('');
@@ -224,7 +288,9 @@ export function Usuarios() {
         estado: filtroEstado,
       });
     } catch (error: any) {
-      toast.error('Error al cambiar estado', { description: error.message });
+      toast.error('No se pudo cambiar el estado', {
+        description: error?.message || 'Ocurrió un error al actualizar el estado del usuario.',
+      });
       cargarUsuarios({
         q: searchDebounced.length >= 2 ? searchDebounced : '',
         rol: filtroRol,
@@ -256,6 +322,12 @@ export function Usuarios() {
   };
 
   const handleEdit = (usuario: Usuario) => {
+    if (usuario.estado === 'inactivo') {
+      toast.warning('Usuario inactivo', {
+        description: 'No se puede editar un usuario inactivo. Reactivelo primero.',
+      });
+      return;
+    }
     setSelectedUsuario(usuario);
     setFormData({
       nombre: usuario.nombre,
@@ -269,11 +341,10 @@ export function Usuarios() {
       rol: usuario.rol,
       estado: usuario.estado
     });
-    // Validar datos existentes
     setEmailValido(validarEmail(usuario.email));
     setTelefonoValido(validarTelefono(usuario.telefono));
     setDocumentoValido(validarDocumento(usuario.numeroDocumento));
-    setPasswordValido(null); // No validar password en edición si está vacía
+    setPasswordValido(null);
     setIsModalOpen(true);
   };
 
@@ -351,15 +422,28 @@ export function Usuarios() {
 
     if (!validarTelefono(formData.telefono)) {
       toast.error('Teléfono inválido', {
-        description: 'El teléfono solo puede contener números y espacios'
+        description: 'Debe contener exactamente 10 dígitos.',
       });
       return;
     }
 
     if (!validarDocumento(formData.numeroDocumento)) {
       toast.error('Documento inválido', {
-        description: 'El documento debe tener entre 6 y 15 caracteres'
+        description: 'El documento debe tener entre 6 y 12 dígitos.',
       });
+      return;
+    }
+
+    if (documentoDuplicadoU) {
+      toast.error('Documento duplicado', { description: documentoDuplicadoU });
+      return;
+    }
+    if (telefonoDuplicadoU) {
+      toast.error('Teléfono duplicado', { description: telefonoDuplicadoU });
+      return;
+    }
+    if (emailDuplicadoU) {
+      toast.error('Correo duplicado', { description: emailDuplicadoU });
       return;
     }
 
@@ -409,7 +493,10 @@ export function Usuarios() {
     }
   };
 
-  if (loading) {
+  // Mostrar el spinner SOLO en la carga inicial (cuando aún no hay datos).
+  // En recargas posteriores (al filtrar/buscar) mantenemos la UI montada para no
+  // perder el foco del input de búsqueda mientras el usuario sigue escribiendo.
+  if (loading && usuarios.length === 0 && !searchQuery && filtroRol === 'Todos' && filtroEstado === 'Todos') {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
@@ -452,13 +539,11 @@ export function Usuarios() {
               className="px-3 py-2.5 border border-border rounded-lg bg-white text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary min-w-[140px]"
             >
               <option value="Todos">Filtrar por rol</option>
-              {roles
-                .filter((r) => r.nombre)
-                .map((r) => (
-                  <option key={r.id} value={r.nombre}>
-                    {r.nombre}
-                  </option>
-                ))}
+              {rolesAsignables.map((r) => (
+                <option key={r.id} value={r.nombre}>
+                  {r.nombre}
+                </option>
+              ))}
             </select>
             <select
               value={filtroEstado}
@@ -498,7 +583,9 @@ export function Usuarios() {
             label: 'Editar',
             icon: <Edit className="w-4 h-4" />,
             onClick: handleEdit,
-            variant: 'default'
+            variant: 'default',
+            disabled: (row: Usuario) => row.estado === 'inactivo',
+            disabledTitle: 'No se puede editar un usuario inactivo. Reactivelo primero.',
           },
           {
             label: 'Eliminar',
@@ -546,7 +633,6 @@ export function Usuarios() {
               options={[
                 { value: 'CC', label: 'Cédula de Ciudadanía' },
                 { value: 'CE', label: 'Cédula de Extranjería' },
-                { value: 'TI', label: 'Tarjeta de Identidad' },
                 { value: 'Pasaporte', label: 'Pasaporte' }
               ]}
               required
@@ -557,29 +643,42 @@ export function Usuarios() {
               <label className="block text-sm font-medium mb-2">Número de Documento</label>
               <input
                 type="text"
+                inputMode="numeric"
+                maxLength={12}
                 value={formData.numeroDocumento}
                 onChange={(e) => {
-                  const value = e.target.value;
+                  const value = e.target.value.replace(/\D/g, '').slice(0, 12);
                   setFormData({ ...formData, numeroDocumento: value });
-                  if (value) {
-                    setDocumentoValido(validarDocumento(value));
-                  } else {
+                  // Sin validación en vivo: ocultamos el feedback hasta el blur.
+                  setDocumentoValido(null);
+                }}
+                onBlur={(e) => {
+                  const value = e.target.value.replace(/\D/g, '');
+                  if (!value) {
                     setDocumentoValido(null);
+                  } else {
+                    setDocumentoValido(validarDocumento(value));
                   }
                 }}
-                placeholder="Ej: 1020304050"
-                className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 ${
+                placeholder="Entre 6 y 12 dígitos"
+                className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 transition-all ${
                   documentoValido === null ? 'border-border focus:ring-primary' :
-                  documentoValido ? 'border-green-500 focus:ring-green-500' : 'border-red-500 focus:ring-red-500'
+                  documentoValido ? 'border-green-500 ring-1 ring-green-500/20 focus:ring-green-500'
+                                  : 'border-destructive ring-1 ring-destructive/20 focus:ring-destructive'
                 }`}
                 required
               />
-              {documentoValido === false && (
-                <p className="text-xs text-red-600 mt-1">El documento debe tener entre 6 y 15 caracteres</p>
-              )}
-              {documentoValido === true && (
-                <p className="text-xs text-green-600 mt-1">✓ Documento válido</p>
-              )}
+              <div className="mt-1.5 space-y-1.5">
+                {documentoValido === false && (
+                  <FieldError>El documento debe tener entre 6 y 12 dígitos.</FieldError>
+                )}
+                {documentoValido === true && !documentoDuplicadoU && (
+                  <FieldSuccess>Documento válido.</FieldSuccess>
+                )}
+                {documentoDuplicadoU && (
+                  <FieldError>{documentoDuplicadoU}</FieldError>
+                )}
+              </div>
             </div>
           </div>
 
@@ -609,18 +708,24 @@ export function Usuarios() {
                   }
                 }}
                 placeholder="ejemplo@email.com"
-                className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 ${
+                className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 transition-all ${
                   emailValido === null ? 'border-border focus:ring-primary' :
-                  emailValido ? 'border-green-500 focus:ring-green-500' : 'border-red-500 focus:ring-red-500'
+                  emailValido ? 'border-green-500 ring-1 ring-green-500/20 focus:ring-green-500'
+                              : 'border-destructive ring-1 ring-destructive/20 focus:ring-destructive'
                 }`}
                 required
               />
-              {emailValido === false && (
-                <p className="text-xs text-red-600 mt-1">Formato de email inválido</p>
-              )}
-              {emailValido === true && (
-                <p className="text-xs text-green-600 mt-1">✓ Email válido</p>
-              )}
+              <div className="mt-1.5 space-y-1.5">
+                {emailValido === false && (
+                  <FieldError>Formato de correo electrónico inválido.</FieldError>
+                )}
+                {emailValido === true && !emailDuplicadoU && (
+                  <FieldSuccess>Correo electrónico válido.</FieldSuccess>
+                )}
+                {emailDuplicadoU && (
+                  <FieldError>{emailDuplicadoU}</FieldError>
+                )}
+              </div>
             </div>
 
             {/* Teléfono con validación visual */}
@@ -628,9 +733,11 @@ export function Usuarios() {
               <label className="block text-sm font-medium mb-2">Teléfono</label>
               <input
                 type="text"
+                inputMode="numeric"
+                maxLength={10}
                 value={formData.telefono}
                 onChange={(e) => {
-                  const value = e.target.value;
+                  const value = e.target.value.replace(/\D/g, '').slice(0, 10);
                   setFormData({ ...formData, telefono: value });
                   if (value) {
                     setTelefonoValido(validarTelefono(value));
@@ -638,19 +745,25 @@ export function Usuarios() {
                     setTelefonoValido(null);
                   }
                 }}
-                placeholder="300 123 4567"
-                className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 ${
+                placeholder="3001234567"
+                className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 transition-all ${
                   telefonoValido === null ? 'border-border focus:ring-primary' :
-                  telefonoValido ? 'border-green-500 focus:ring-green-500' : 'border-red-500 focus:ring-red-500'
+                  telefonoValido ? 'border-green-500 ring-1 ring-green-500/20 focus:ring-green-500'
+                                 : 'border-destructive ring-1 ring-destructive/20 focus:ring-destructive'
                 }`}
                 required
               />
-              {telefonoValido === false && (
-                <p className="text-xs text-red-600 mt-1">Solo se permiten números y espacios</p>
-              )}
-              {telefonoValido === true && (
-                <p className="text-xs text-green-600 mt-1">✓ Teléfono válido</p>
-              )}
+              <div className="mt-1.5 space-y-1.5">
+                {telefonoValido === false && (
+                  <FieldError>El teléfono debe tener exactamente 10 dígitos.</FieldError>
+                )}
+                {telefonoValido === true && !telefonoDuplicadoU && (
+                  <FieldSuccess>Teléfono válido.</FieldSuccess>
+                )}
+                {telefonoDuplicadoU && (
+                  <FieldError>{telefonoDuplicadoU}</FieldError>
+                )}
+              </div>
             </div>
           </div>
 
@@ -672,20 +785,23 @@ export function Usuarios() {
                 }
               }}
               placeholder="Mínimo 8 caracteres"
-              className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 ${
+              className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 transition-all ${
                 passwordValido === null ? 'border-border focus:ring-primary' :
-                passwordValido ? 'border-green-500 focus:ring-green-500' : 'border-red-500 focus:ring-red-500'
+                passwordValido ? 'border-green-500 ring-1 ring-green-500/20 focus:ring-green-500'
+                               : 'border-destructive ring-1 ring-destructive/20 focus:ring-destructive'
               }`}
               required={!selectedUsuario}
             />
-            {passwordValido === false && (
-              <p className="text-xs text-red-600 mt-1">
-                Debe tener al menos 8 caracteres con mayúsculas, minúsculas y números
-              </p>
-            )}
-            {passwordValido === true && (
-              <p className="text-xs text-green-600 mt-1">✓ Contraseña segura</p>
-            )}
+            <div className="mt-1.5">
+              {passwordValido === false && (
+                <FieldError>
+                  Debe tener al menos 8 caracteres con mayúsculas, minúsculas y números.
+                </FieldError>
+              )}
+              {passwordValido === true && (
+                <FieldSuccess>Contraseña segura.</FieldSuccess>
+              )}
+            </div>
           </div>
 
           {/* Nota informativa sobre contraseñas */}

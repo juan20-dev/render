@@ -85,6 +85,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (error) {
       console.error('Error en logout:', error);
     } finally {
+      api.roles.clearCache();
       setUser(null);
     }
   };

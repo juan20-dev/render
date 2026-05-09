@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
-import { Toaster } from 'sonner';
+import { Toaster } from './components/AlertDialog';
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
 import { AuthProvider, useAuth } from './components/AuthContext';
+import { api } from './services/api';
+import { firstPermittedStaffPath } from './services/routePermissions';
 
 // Landing Page
 import { LandingPage } from './components/pages/LandingPage';
@@ -102,10 +104,9 @@ function AppContent() {
   React.useEffect(() => {
     if (user && !currentPath && !stayOnLanding) {
       if (user.rol === 'Cliente') {
-        // Los clientes se quedan en el landing page
         setStayOnLanding(true);
       } else {
-        setCurrentPath('/dashboard');
+        setCurrentPath(firstPermittedStaffPath(user.permisos || [], user.rol));
       }
     }
   }, [user, currentPath, stayOnLanding]);
@@ -122,16 +123,27 @@ function AppContent() {
   const handleLogin = async (email: string, password: string) => {
     const success = await login(email, password);
     if (success) {
-      console.log('Login exitoso');
-      setShowAuth('landing');
-      setStayOnLanding(true);
+      try {
+        const me = await api.auth.me();
+        setShowAuth('landing');
+        if (me.rol === 'Cliente') {
+          setStayOnLanding(true);
+          setCurrentPath('');
+        } else {
+          setStayOnLanding(false);
+          setCurrentPath(firstPermittedStaffPath(me.permisos || [], me.rol));
+        }
+      } catch {
+        setStayOnLanding(false);
+        setCurrentPath('/dashboard');
+      }
     } else {
       alert('Credenciales incorrectas');
     }
   };
 
-  const handleLogout = () => {
-    logout();
+  const handleLogout = async () => {
+    await logout();
     setStayOnLanding(false);
     setCurrentPath('');
     setShowAuth('landing');
@@ -202,10 +214,10 @@ function AppContent() {
           userName={`${user.nombre} ${user.apellido}`}
           userRole={user.rol}
           userData={user}
-          onLogout={logout}
+          onLogout={handleLogout}
         />
 
-        <main className="flex-1 overflow-y-auto p-3 sm:p-4 md:p-6">
+        <main key={user.id} className="flex-1 overflow-y-auto p-3 sm:p-4 md:p-6">
           <CurrentPage />
         </main>
       </div>
@@ -216,7 +228,7 @@ function AppContent() {
 export default function App() {
   return (
     <AuthProvider>
-      <Toaster position="top-center" richColors closeButton />
+      <Toaster richColors position="top-center" closeButton />
       <AppContent />
     </AuthProvider>
   );
