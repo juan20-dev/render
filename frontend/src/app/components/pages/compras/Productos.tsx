@@ -6,6 +6,7 @@ import { Button } from '../../Button';
 import { Plus, Eye, Edit, Trash2 } from 'lucide-react';
 import { api } from '../../../services/api';
 import type { Producto, Categoria } from '../../../services/types';
+import { INSUMO_UNIDADES_API } from '../../../services/types';
 import { toast } from '../../AlertDialog';
 
 export function Productos() {
@@ -32,10 +33,12 @@ export function Productos() {
     nombre: '',
     descripcion: '',
     categoriaId: 0,
-    typo: 'terminado' as 'terminado' | 'de preparacion',
+    typo: 'terminado' as 'terminado' | 'de preparacion' | 'insumo',
     precioVenta: 0,
     stockMinimo: 0,
-    estado: 'activo' as 'activo' | 'inactivo'
+    estado: 'activo' as 'activo' | 'inactivo',
+    insumoUnidadMedida: 'Gramos' as string,
+    insumoCantidadMedida: 1,
   });
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -115,17 +118,28 @@ export function Productos() {
       key: 'typo',
       label: 'Tipo',
       render: (typo: string) => (
-        <span className={`px-2 py-1 rounded-full text-xs ${
-          typo === 'terminado' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'
-        }`}>
-          {typo === 'terminado' ? 'Terminado' : 'De Preparación'}
+        <span
+          className={`px-2 py-1 rounded-full text-xs ${
+            typo === 'terminado'
+              ? 'bg-blue-100 text-blue-700'
+              : typo === 'insumo'
+                ? 'bg-amber-100 text-amber-800'
+                : 'bg-purple-100 text-purple-700'
+          }`}
+        >
+          {typo === 'terminado' ? 'Terminado' : typo === 'insumo' ? 'Insumo' : 'De Preparación'}
         </span>
       )
     },
     {
       key: 'precioVenta',
       label: 'Precio',
-      render: (precio: number) => formatCurrency(precio)
+      render: (precio: number, row: Producto) =>
+        row.typo === 'insumo' ? (
+          <span className="text-muted-foreground">—</span>
+        ) : (
+          formatCurrency(precio)
+        ),
     },
     {
       key: 'stock',
@@ -212,7 +226,9 @@ export function Productos() {
       typo: 'terminado',
       precioVenta: 0,
       stockMinimo: 0,
-      estado: 'activo'
+      estado: 'activo',
+      insumoUnidadMedida: 'Gramos',
+      insumoCantidadMedida: 1,
     });
     setIsModalOpen(true);
   };
@@ -233,7 +249,12 @@ export function Productos() {
       typo: producto.typo,
       precioVenta: producto.precioVenta,
       stockMinimo: producto.stockMinimo,
-      estado: producto.estado
+      estado: producto.estado,
+      insumoUnidadMedida: producto.insumoUnidadMedida || 'Gramos',
+      insumoCantidadMedida:
+        producto.insumoCantidadMedida != null && Number.isFinite(producto.insumoCantidadMedida)
+          ? producto.insumoCantidadMedida
+          : 1,
     });
     setIsModalOpen(true);
   };
@@ -305,6 +326,20 @@ export function Productos() {
         description: 'El stock mínimo no puede ser negativo'
       });
       return;
+    }
+
+    if (formData.typo === 'insumo') {
+      if (!INSUMO_UNIDADES_API.includes(formData.insumoUnidadMedida as (typeof INSUMO_UNIDADES_API)[number])) {
+        toast.error('Error de validación', { description: 'Seleccione una unidad de presentación válida' });
+        return;
+      }
+      const med = Number(formData.insumoCantidadMedida);
+      if (!Number.isFinite(med) || med <= 0) {
+        toast.error('Error de validación', {
+          description: 'Indique cantidad o volumen de presentación mayor a 0',
+        });
+        return;
+      }
     }
 
     try {
@@ -401,7 +436,8 @@ export function Productos() {
             >
               <option value="Todos">Filtrar por tipo</option>
               <option value="terminado">Terminado</option>
-              <option value="de preparación">De preparación</option>
+              <option value="de preparacion">De preparación</option>
+              <option value="insumo">Insumo</option>
             </select>
             <Button
               variant="outline"
@@ -510,14 +546,56 @@ export function Productos() {
               name="typo"
               type="select"
               value={formData.typo}
-              onChange={(value) => setFormData({ ...formData, typo: value as any })}
+              onChange={(value) => {
+                const next = value as 'terminado' | 'de preparacion' | 'insumo';
+                setFormData({
+                  ...formData,
+                  typo: next,
+                  insumoUnidadMedida: next === 'insumo' ? formData.insumoUnidadMedida || 'Gramos' : 'Gramos',
+                  insumoCantidadMedida: next === 'insumo' ? formData.insumoCantidadMedida || 1 : 1,
+                });
+              }}
               options={[
                 { value: 'terminado', label: 'Terminado' },
-                { value: 'de preparacion', label: 'De Preparación' }
+                { value: 'de preparacion', label: 'De Preparación' },
+                { value: 'insumo', label: 'Insumo' },
               ]}
               required
             />
           </div>
+
+          {formData.typo === 'insumo' && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4 rounded-lg border border-amber-200 bg-amber-50/60">
+              <FormField
+                label="Unidad de presentación *"
+                name="insumoUnidadMedida"
+                type="select"
+                selectPlaceholder={false}
+                value={formData.insumoUnidadMedida}
+                onChange={(v) => setFormData({ ...formData, insumoUnidadMedida: v as string })}
+                options={INSUMO_UNIDADES_API.map((u) => ({ value: u, label: u }))}
+                required
+              />
+              <FormField
+                label="Cantidad / volumen *"
+                name="insumoCantidadMedida"
+                type="number"
+                value={formData.insumoCantidadMedida === 0 ? '' : formData.insumoCantidadMedida}
+                onChange={(value) => {
+                  const num = Number(value);
+                  if (Number.isFinite(num) && num >= 0) {
+                    setFormData({ ...formData, insumoCantidadMedida: num });
+                  }
+                }}
+                min={0.0001}
+                required
+              />
+              <p className="sm:col-span-2 text-xs text-muted-foreground">
+                Describe la presentación física del insumo (por ejemplo 500 gramos, 12 unidades, 1 caja). El stock en
+                almacén se gestiona por <strong>unidades</strong> al registrar compras.
+              </p>
+            </div>
+          )}
 
           <div className={`grid gap-4 ${productoFormularioModo === 'editar' ? 'grid-cols-2' : 'grid-cols-1'}`}>
             {productoFormularioModo === 'editar' && (
@@ -550,10 +628,17 @@ export function Productos() {
             />
           </div>
 
-          {productoFormularioModo === 'nuevo' && (
+          {productoFormularioModo === 'nuevo' && formData.typo !== 'insumo' && (
             <p className="text-xs text-muted-foreground bg-blue-50 p-3 rounded-lg">
               ℹ️ El stock actual inicia en 0 y se incrementa al recibir compras. El precio de venta inicia en $0 y se
               define al registrar la compra al proveedor (precio de compra y margen).
+            </p>
+          )}
+          {productoFormularioModo === 'nuevo' && formData.typo === 'insumo' && (
+            <p className="text-xs text-muted-foreground bg-amber-50/80 p-3 rounded-lg border border-amber-200">
+              ℹ️ Producto insumo: el precio de venta no aplica (no se vende al cliente). El stock inicia en 0 y aumenta
+              con compras a proveedor. En la tabla de gestión el precio se muestra vacío hasta que exista costo por
+              compra.
             </p>
           )}
 
@@ -610,23 +695,49 @@ export function Productos() {
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Tipo</p>
-                <span className={`px-2 py-1 rounded-full text-xs ${
-                  selectedProducto.typo === 'terminado' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'
-                }`}>
-                  {selectedProducto.typo === 'terminado' ? 'Terminado' : 'De Preparación'}
+                <span
+                  className={`px-2 py-1 rounded-full text-xs ${
+                    selectedProducto.typo === 'terminado'
+                      ? 'bg-blue-100 text-blue-700'
+                      : selectedProducto.typo === 'insumo'
+                        ? 'bg-amber-100 text-amber-800'
+                        : 'bg-purple-100 text-purple-700'
+                  }`}
+                >
+                  {selectedProducto.typo === 'terminado'
+                    ? 'Terminado'
+                    : selectedProducto.typo === 'insumo'
+                      ? 'Insumo'
+                      : 'De Preparación'}
                 </span>
               </div>
+              {selectedProducto.typo === 'insumo' && (
+                <div className="col-span-2">
+                  <p className="text-sm text-muted-foreground">Presentación (volumen / unidad)</p>
+                  <p className="font-medium">
+                    {selectedProducto.insumoCantidadMedida != null &&
+                    selectedProducto.insumoUnidadMedida != null &&
+                    selectedProducto.insumoUnidadMedida !== ''
+                      ? `${selectedProducto.insumoCantidadMedida} ${selectedProducto.insumoUnidadMedida}`
+                      : '—'}
+                  </p>
+                </div>
+              )}
               <div>
                 <p className="text-sm text-muted-foreground">Precio de Compra</p>
-                <p className="font-medium">{formatCurrency(selectedProducto.precioCompra)}</p>
+                <p className="font-medium">
+                  {selectedProducto.typo === 'insumo' ? '—' : formatCurrency(selectedProducto.precioCompra)}
+                </p>
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Precio de Venta</p>
-                <p className="font-medium">{formatCurrency(selectedProducto.precioVenta)}</p>
+                <p className="font-medium">
+                  {selectedProducto.typo === 'insumo' ? '—' : formatCurrency(selectedProducto.precioVenta)}
+                </p>
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Ganancia</p>
-                <p className="font-medium">{selectedProducto.ganancia}%</p>
+                <p className="font-medium">{selectedProducto.typo === 'insumo' ? '—' : `${selectedProducto.ganancia}%`}</p>
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Stock Actual</p>

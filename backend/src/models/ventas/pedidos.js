@@ -114,7 +114,11 @@ const Pedidos = {
   addDetalle: async (pedidoId, productoId, cantidad, precioUnitario) => {
     const subtotal = cantidad * precioUnitario;
     // Verificar stock y estado del producto antes de agregar
-    const prod = await pool.query('SELECT id, stock, estado FROM productos WHERE id = $1 LIMIT 1', [productoId]);
+    const prod = await pool.query(
+      `SELECT id, stock, estado, COALESCE(tipo_producto, 'terminado') AS tipo_producto
+       FROM productos WHERE id = $1 LIMIT 1`,
+      [productoId]
+    );
     if (!prod.rows[0]) {
       const error = new Error('Producto no encontrado');
       error.statusCode = 404;
@@ -124,6 +128,11 @@ const Pedidos = {
     if (String(p.estado || '').toLowerCase() !== 'activo') {
       const error = new Error('No se puede agregar al pedido un producto inactivo');
       error.statusCode = 409;
+      throw error;
+    }
+    if (String(p.tipo_producto || '').toLowerCase() === 'insumo') {
+      const error = new Error('Los productos tipo insumo no se pueden incluir en pedidos de cliente');
+      error.statusCode = 400;
       throw error;
     }
     const available = Number(p.stock || 0);

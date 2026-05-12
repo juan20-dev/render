@@ -24,7 +24,7 @@ interface EntregaInsumoView extends EntregaInsumo {
 export function EntregaInsumos() {
   const [entregas, setEntregas] = useState<EntregaInsumoView[]>([]);
   const [catalogoInsumos, setCatalogoInsumos] = useState<
-    { id: number; nombre: string; unidad: string; estado: 'activo' | 'inactivo' }[]
+    { id: number; nombre: string; unidad: string; estado: 'activo' | 'inactivo'; productoCatalogoId?: number }[]
   >([]);
   const [productores, setProductores] = useState<Usuario[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -36,6 +36,7 @@ export function EntregaInsumos() {
   const [filtroFecha, setFiltroFecha] = useState<string>('');
   const [formData, setFormData] = useState({
     insumoId: 0,
+    productoCatalogoId: 0,
     cantidad: 1,
     productorId: 0,
     fecha: new Date().toISOString().split('T')[0],
@@ -69,18 +70,22 @@ export function EntregaInsumos() {
 
   const cargarDatos = async () => {
     try {
-      const [entregasData, usuariosData, insumosCat] = await Promise.all([
+      const [entregasData, usuariosData, insumosInv] = await Promise.all([
         api.entregasInsumos.getAll(),
         api.usuarios.getAll(),
-        api.insumos.listCatalogo(),
+        api.insumos.getAll(),
       ]);
 
       setCatalogoInsumos(
-        insumosCat.filter((i) => i.estado === 'activo').map((i) => ({
+        insumosInv.map((i) => ({
           id: i.id,
           nombre: i.nombre,
-          unidad: i.unidad,
-          estado: i.estado,
+          unidad: String(i.unidad || 'Unidades'),
+          estado: 'activo' as const,
+          productoCatalogoId:
+            i.productoRelacionadoId != null && i.productoRelacionadoId > 0
+              ? i.productoRelacionadoId
+              : undefined,
         }))
       );
 
@@ -136,6 +141,7 @@ export function EntregaInsumos() {
   const handleAdd = () => {
     setFormData({
       insumoId: 0,
+      productoCatalogoId: 0,
       cantidad: 1,
       productorId: 0,
       fecha: new Date().toISOString().split('T')[0],
@@ -166,10 +172,17 @@ export function EntregaInsumos() {
     return full.includes(term) || String(p.id).includes(term);
   });
 
-  const seleccionarInsumoForm = (
-    insumo: { id: number; nombre: string; unidad: string }
-  ) => {
-    setFormData({ ...formData, insumoId: insumo.id });
+  const seleccionarInsumoForm = (insumo: {
+    id: number;
+    nombre: string;
+    unidad: string;
+    productoCatalogoId?: number;
+  }) => {
+    setFormData({
+      ...formData,
+      insumoId: insumo.id,
+      productoCatalogoId: insumo.productoCatalogoId ?? 0,
+    });
     setBusquedaInsumo(`${insumo.nombre} (${insumo.unidad})`);
     setMostrarListaInsumos(false);
   };
@@ -235,7 +248,9 @@ export function EntregaInsumos() {
 
     try {
       await api.entregasInsumos.create({
-        insumoId: formData.insumoId,
+        ...(formData.productoCatalogoId > 0
+          ? { productoCatalogoId: formData.productoCatalogoId }
+          : { insumoId: formData.insumoId }),
         unidad: insSel.unidad,
         cantidad: formData.cantidad,
         operarioId: formData.productorId,
@@ -361,8 +376,8 @@ export function EntregaInsumos() {
                   onChange={(e) => {
                     setBusquedaInsumo(e.target.value);
                     setMostrarListaInsumos(true);
-                    if (formData.insumoId !== 0) {
-                      setFormData({ ...formData, insumoId: 0 });
+                    if (formData.insumoId !== 0 || formData.productoCatalogoId !== 0) {
+                      setFormData({ ...formData, insumoId: 0, productoCatalogoId: 0 });
                     }
                   }}
                   onFocus={() => setMostrarListaInsumos(true)}

@@ -42,7 +42,7 @@ export interface Producto {
   nombre: string;
   descripcion: string;
   categoriaId: number;
-  typo: 'terminado' | 'de preparacion';
+  typo: 'terminado' | 'de preparacion' | 'insumo';
   precioCompra: number;
   precioVenta: number;
   ganancia: number;
@@ -52,6 +52,10 @@ export interface Producto {
   createdAt: string;
   updatedAt: string;
   historialCambios: HistorialCambio[];
+  /** Solo tipo insumo: unidad de la presentación (Gramos, Kilogramos, etc.). */
+  insumoUnidadMedida?: string | null;
+  /** Solo tipo insumo: cantidad/volumen de la presentación. */
+  insumoCantidadMedida?: number | null;
 }
 
 export interface Proveedor {
@@ -148,6 +152,11 @@ export interface Insumo {
   operarioId?: number;
   fecha?: string;
   productoRelacionadoId?: number;
+  /** `catalogo` = tabla insumos; `producto_insumo` = producto tipo insumo. */
+  origenInventario?: string;
+  categoriaNombre?: string;
+  presentacionCantidad?: number | null;
+  presentacionUnidad?: string | null;
 }
 
 /** Línea de receta desde GET /api/producto-insumos/producto/:id */

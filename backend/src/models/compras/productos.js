@@ -9,6 +9,7 @@ const pool = require('../../../db');
 const {
   ensureProductoImageColumn,
   ensureProductoTipoColumn,
+  ensureProductoInsumoMedidaColumns,
   ensureProductoInsumosTable,
   normalizeProductoTipoValue,
   syncCategoriaProductCount,
@@ -18,9 +19,29 @@ const {
   registerProductoAudit,
 } = require('../shared/auditoria');
 
+const INSUMO_UNIDADES_VALIDAS = ['Litros', 'Kilogramos', 'Gramos', 'Unidades', 'Cajas', 'Botellas', 'Mililitros'];
+
+const parseInsumoMedidasForProduct = (tipoProducto, data) => {
+  if (tipoProducto !== 'insumo') return { u: null, q: null };
+  const u = String(data?.insumo_unidad_medida ?? data?.insumoUnidadMedida ?? '').trim();
+  if (!INSUMO_UNIDADES_VALIDAS.includes(u)) {
+    const error = new Error(`Unidad de presentación inválida. Valores: ${INSUMO_UNIDADES_VALIDAS.join(', ')}`);
+    error.statusCode = 400;
+    throw error;
+  }
+  const q = Number(data?.insumo_cantidad_medida ?? data?.insumoCantidadMedida);
+  if (!Number.isFinite(q) || q <= 0) {
+    const error = new Error('La cantidad / volumen de presentación del insumo debe ser mayor a 0');
+    error.statusCode = 400;
+    throw error;
+  }
+  return { u, q };
+};
+
 const Productos = {
   getAll: async () => {
     await ensureProductoTipoColumn();
+    await ensureProductoInsumoMedidaColumns();
     const result = await pool.query(`
       SELECT p.*, c.nombre as categoria 
       FROM productos p 
@@ -32,6 +53,7 @@ const Productos = {
     return result.rows;
   },
   getById: async (id) => {
+    await ensureProductoInsumoMedidaColumns();
     const result = await pool.query(`
       SELECT p.*, c.nombre as categoria 
       FROM productos p 
@@ -50,6 +72,7 @@ const Productos = {
   create: async (data) => {
     await ensureCategoriaProductCountColumn();
     await ensureProductoTipoColumn();
+    await ensureProductoInsumoMedidaColumns();
     const nombre = String(data?.nombre || '').trim();
     if (!nombre) {
       const error = new Error('El nombre del producto es obligatorio');
@@ -78,9 +101,13 @@ const Productos = {
     }
 
     const tipoProducto = normalizeProductoTipoValue(data?.tipo_producto ?? data?.tipo);
+    const { u: insumoUnidad, q: insumoCantidad } = parseInsumoMedidasForProduct(tipoProducto, data);
 
     const result = await pool.query(
-      'INSERT INTO productos (nombre, categoria_id, descripcion, precio, stock, stock_minimo, imagen_url, estado, tipo_producto) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id',
+      `INSERT INTO productos (
+         nombre, categoria_id, descripcion, precio, stock, stock_minimo, imagen_url, estado, tipo_producto,
+         insumo_unidad_medida, insumo_cantidad_medida
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id`,
       [
         nombre,
         data.categoria_id,
@@ -91,6 +118,8 @@ const Productos = {
         data.imagen_url,
         'Activo',
         tipoProducto,
+        insumoUnidad,
+        insumoCantidad,
       ]
     );
     await syncCategoriaProductCount(data.categoria_id);
@@ -107,6 +136,8 @@ const Productos = {
           precio: precioSeguro,
           stock_minimo: data.stock_minimo || 10,
           tipo_producto: tipoProducto,
+          insumo_unidad_medida: insumoUnidad,
+          insumo_cantidad_medida: insumoCantidad,
           estado: 'Activo',
         },
       },
@@ -116,6 +147,7 @@ const Productos = {
   update: async (id, data) => {
     await ensureCategoriaProductCountColumn();
     await ensureProductoTipoColumn();
+    await ensureProductoInsumoMedidaColumns();
     const nombre = String(data?.nombre || '').trim();
     if (!nombre) {
       const error = new Error('El nombre del producto es obligatorio');
@@ -133,45 +165,49 @@ const Productos = {
       throw error;
     }
 
-    const previous = await pool.query('SELECT categoria_id, stock FROM productos WHERE id = $1', [id]);
+    const previous = await pool.query(
+      'SELECT categoria_id, stock, tipo_producto FROM productos WHERE id = $1',
+      [id]
+    );
     const previousCategoriaId = previous.rows[0]?.categoria_id ?? null;
-    const stockActual = previous.rows[0]?.stock ?? 0; // Mantener stock actual
+    const stockActual = previous.rows[0]?.stock ?? 0;
+    const currentTipo = normalizeProductoTipoValue(previous.rows[0]?.tipo_producto);
 
-    const tipoProducto =
+    const tipoProductoInput =
       data.tipo_producto !== undefined || data.tipo !== undefined
         ? normalizeProductoTipoValue(data?.tipo_producto ?? data?.tipo)
         : undefined;
+    const newTipo = tipoProductoInput !== undefined ? tipoProductoInput : currentTipo;
+    const { u: insumoUnidad, q: insumoCantidad } = parseInsumoMedidasForProduct(newTipo, data);
 
-    if (tipoProducto !== undefined) {
-      await pool.query(
-        `UPDATE productos
-         SET nombre = $1,
-             categoria_id = $2,
-             descripcion = $3,
-             precio = $4,
-             stock = $5,
-             stock_minimo = $6,
-             imagen_url = $7,
-             tipo_producto = $8,
-             updated_at = CURRENT_TIMESTAMP
-         WHERE id = $9`,
-        [nombre, data.categoria_id, data.descripcion, data.precio, stockActual, data.stock_minimo, data.imagen_url, tipoProducto, id]
-      );
-    } else {
-      await pool.query(
-        `UPDATE productos
-         SET nombre = $1,
-             categoria_id = $2,
-             descripcion = $3,
-             precio = $4,
-             stock = $5,
-             stock_minimo = $6,
-             imagen_url = $7,
-             updated_at = CURRENT_TIMESTAMP
-         WHERE id = $8`,
-        [nombre, data.categoria_id, data.descripcion, data.precio, stockActual, data.stock_minimo, data.imagen_url, id]
-      );
-    }
+    await pool.query(
+      `UPDATE productos
+       SET nombre = $1,
+           categoria_id = $2,
+           descripcion = $3,
+           precio = $4,
+           stock = $5,
+           stock_minimo = $6,
+           imagen_url = $7,
+           tipo_producto = $8,
+           insumo_unidad_medida = $9,
+           insumo_cantidad_medida = $10,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $11`,
+      [
+        nombre,
+        data.categoria_id,
+        data.descripcion,
+        data.precio,
+        stockActual,
+        data.stock_minimo,
+        data.imagen_url,
+        newTipo,
+        insumoUnidad,
+        insumoCantidad,
+        id,
+      ]
+    );
     await syncCategoriaProductCount(data.categoria_id);
     if (previousCategoriaId && Number(previousCategoriaId) !== Number(data.categoria_id)) {
       await syncCategoriaProductCount(previousCategoriaId);
@@ -187,7 +223,9 @@ const Productos = {
           categoria_id: data.categoria_id,
           precio: data.precio,
           stock_minimo: data.stock_minimo,
-          tipo_producto: tipoProducto,
+          tipo_producto: newTipo,
+          insumo_unidad_medida: insumoUnidad,
+          insumo_cantidad_medida: insumoCantidad,
         },
       },
     });
@@ -269,7 +307,8 @@ const Productos = {
       FROM categorias c
       INNER JOIN productos p ON p.categoria_id = c.id
       WHERE p.estado = 'Activo' AND c.estado = 'Activo'
-        AND (p.tipo_producto IS NULL OR p.tipo_producto = 'terminado')
+        AND (p.tipo_producto IS NULL OR p.tipo_producto IN ('terminado','preparacion'))
+        AND COALESCE(p.tipo_producto, 'terminado') <> 'insumo'
       ORDER BY c.nombre
     `);
     const productos = await pool.query(`
@@ -277,7 +316,8 @@ const Productos = {
       FROM productos p
       INNER JOIN categorias c ON p.categoria_id = c.id
       WHERE p.estado = 'Activo' AND c.estado = 'Activo'
-        AND (p.tipo_producto IS NULL OR p.tipo_producto = 'terminado')
+        AND (p.tipo_producto IS NULL OR p.tipo_producto IN ('terminado','preparacion'))
+        AND COALESCE(p.tipo_producto, 'terminado') <> 'insumo'
       ORDER BY p.nombre
       LIMIT 200
     `);

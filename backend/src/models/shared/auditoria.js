@@ -48,6 +48,39 @@ const ensureProductoImageColumn = async () => {
   }
 };
 
+let productoTipoCheckAllowsInsumoReady = null;
+const ensureProductoTipoCheckAllowsInsumo = async () => {
+  if (!productoTipoCheckAllowsInsumoReady) {
+    productoTipoCheckAllowsInsumoReady = (async () => {
+      await pool.query(`
+DO $$
+DECLARE r RECORD;
+BEGIN
+  FOR r IN (
+    SELECT c.conname
+    FROM pg_constraint c
+    JOIN pg_class t ON c.conrelid = t.oid
+    WHERE t.relname = 'productos' AND c.contype = 'c'
+      AND pg_get_constraintdef(c.oid) ILIKE '%tipo_producto%'
+  ) LOOP
+    EXECUTE format('ALTER TABLE productos DROP CONSTRAINT IF EXISTS %I', r.conname);
+  END LOOP;
+END $$;
+`);
+      await pool.query(`
+ALTER TABLE productos
+ADD CONSTRAINT productos_tipo_producto_check
+CHECK (tipo_producto IN ('terminado','preparacion','insumo'))
+`);
+    })();
+  }
+  try {
+    await productoTipoCheckAllowsInsumoReady;
+  } catch (_e) {
+    productoTipoCheckAllowsInsumoReady = null;
+  }
+};
+
 let productoTipoColumnReady = null;
 const ensureProductoTipoColumn = async () => {
   if (!productoTipoColumnReady) {
@@ -64,6 +97,26 @@ const ensureProductoTipoColumn = async () => {
     await pool.query(`ALTER TABLE productos ALTER COLUMN precio TYPE NUMERIC(18,2)`);
   } catch (_e) {
     /* ya ampliado o permisos */
+  }
+  await ensureProductoTipoCheckAllowsInsumo();
+};
+
+let productoInsumoMedidaColumnsReady = null;
+/** Presentación física del producto tipo insumo (unidad + cantidad); NULL en otros tipos. */
+const ensureProductoInsumoMedidaColumns = async () => {
+  if (!productoInsumoMedidaColumnsReady) {
+    productoInsumoMedidaColumnsReady = (async () => {
+      await pool.query(`
+        ALTER TABLE productos
+          ADD COLUMN IF NOT EXISTS insumo_unidad_medida VARCHAR(30),
+          ADD COLUMN IF NOT EXISTS insumo_cantidad_medida NUMERIC(12,4)
+      `);
+    })();
+  }
+  try {
+    await productoInsumoMedidaColumnsReady;
+  } catch (_e) {
+    productoInsumoMedidaColumnsReady = null;
   }
 };
 
@@ -90,12 +143,44 @@ const ensureProductoInsumosTable = async () => {
   }
 };
 
+let entregasInsumoProductoCatalogoReady = null;
+/** Entregas pueden referir inventario tipo insumo vía productos (producto_catalogo_id) o la tabla legacy insumos (insumo_id). */
+const ensureEntregasInsumoProductoCatalogo = async () => {
+  if (!entregasInsumoProductoCatalogoReady) {
+    entregasInsumoProductoCatalogoReady = (async () => {
+      await pool.query(`
+        ALTER TABLE entregas_insumos
+          ADD COLUMN IF NOT EXISTS producto_catalogo_id INTEGER REFERENCES productos(id) ON DELETE RESTRICT
+      `);
+      await pool.query('ALTER TABLE entregas_insumos ALTER COLUMN insumo_id DROP NOT NULL');
+      const chk = await pool.query(
+        `SELECT 1 FROM pg_constraint WHERE conname = 'entregas_insumos_catalogo_xor_chk'`
+      );
+      if (!chk.rows[0]) {
+        await pool.query(`
+          ALTER TABLE entregas_insumos
+            ADD CONSTRAINT entregas_insumos_catalogo_xor_chk CHECK (
+              (insumo_id IS NOT NULL AND producto_catalogo_id IS NULL)
+              OR (insumo_id IS NULL AND producto_catalogo_id IS NOT NULL)
+            )
+        `);
+      }
+    })();
+  }
+  try {
+    await entregasInsumoProductoCatalogoReady;
+  } catch (_e) {
+    entregasInsumoProductoCatalogoReady = null;
+  }
+};
+
 const normalizeProductoTipoValue = (raw) => {
   const compact = String(raw ?? 'terminado')
     .trim()
     .toLowerCase()
     .replace(/[\s-]+/g, '_');
   if (compact === 'preparacion' || compact === 'de_preparacion') return 'preparacion';
+  if (compact === 'insumo' || compact === 'insumos') return 'insumo';
   return 'terminado';
 };
 
@@ -888,7 +973,9 @@ module.exports = {
   ensureVentasMoneyColumns,
   ensureProductoImageColumn,
   ensureProductoTipoColumn,
+  ensureProductoInsumoMedidaColumns,
   ensureProductoInsumosTable,
+  ensureEntregasInsumoProductoCatalogo,
   ensureCategoriaProductCountColumn,
   syncCategoriaProductCount,
   // helpers genericos

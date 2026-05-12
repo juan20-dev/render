@@ -179,10 +179,12 @@ function mapCategoria(r: any): Categoria {
 
 function mapProducto(r: any): Producto {
   const tipoRaw = String(r.tipo_producto || r.tipoProducto || '').toLowerCase();
-  const typo =
-    tipoRaw === 'preparacion' || tipoRaw.includes('prepar')
-      ? ('de preparacion' as Producto['typo'])
-      : ('terminado' as Producto['typo']);
+  const typo: Producto['typo'] =
+    tipoRaw === 'insumo'
+      ? 'insumo'
+      : tipoRaw === 'preparacion' || tipoRaw.includes('prepar')
+        ? 'de preparacion'
+        : 'terminado';
   const precioVenta = Number(r.precio ?? r.precio_venta ?? 0);
   const precioCompra = Number(r.precio_compra ?? r.precioCompra ?? precioVenta);
   const ganancia = Number(r.ganancia ?? (precioCompra > 0 ? ((precioVenta - precioCompra) / precioCompra) * 100 : 0));
@@ -201,6 +203,11 @@ function mapProducto(r: any): Producto {
     createdAt: r.created_at || '',
     updatedAt: r.updated_at || '',
     historialCambios: [],
+    insumoUnidadMedida: r.insumo_unidad_medida != null && r.insumo_unidad_medida !== '' ? String(r.insumo_unidad_medida) : null,
+    insumoCantidadMedida:
+      r.insumo_cantidad_medida != null && r.insumo_cantidad_medida !== ''
+        ? Number(r.insumo_cantidad_medida)
+        : null,
   } as Producto;
 }
 
@@ -732,8 +739,15 @@ export const api = {
           descripcion: data.descripcion,
           precio,
           stock_minimo: data.stockMinimo,
-          tipo_producto: data.typo === 'de preparacion' ? 'preparacion' : 'terminado',
+          typo: data.typo,
+          tipo_producto: data.typo === 'de preparacion' ? 'preparacion' : data.typo === 'insumo' ? 'insumo' : 'terminado',
           estado: 'Activo',
+          ...(data.typo === 'insumo'
+            ? {
+                insumo_unidad_medida: data.insumoUnidadMedida,
+                insumo_cantidad_medida: data.insumoCantidadMedida,
+              }
+            : {}),
         },
       });
     },
@@ -752,9 +766,22 @@ export const api = {
           descripcion: updates.descripcion,
           ...(precio !== undefined ? { precio } : {}),
           stock_minimo: updates.stockMinimo,
+          typo: updates.typo,
           tipo_producto:
-            updates.typo === 'de preparacion' ? 'preparacion' : updates.typo === 'terminado' ? 'terminado' : undefined,
+            updates.typo === 'de preparacion'
+              ? 'preparacion'
+              : updates.typo === 'insumo'
+                ? 'insumo'
+                : updates.typo === 'terminado'
+                  ? 'terminado'
+                  : undefined,
           estado: updates.estado ? dbAct(updates.estado as 'activo' | 'inactivo') : undefined,
+          ...(updates.typo === 'insumo'
+            ? {
+                insumo_unidad_medida: updates.insumoUnidadMedida,
+                insumo_cantidad_medida: updates.insumoCantidadMedida,
+              }
+            : {}),
         },
       });
     },
@@ -924,19 +951,28 @@ export const api = {
           }) as EntregaInsumo
       );
     },
-    create: async (data: Partial<EntregaInsumo> & { insumoId?: number; unidad?: string; numeroEntrega?: string }) => {
-      await apiFetch('/api/entregas-insumos', {
-        method: 'POST',
-        json: {
-          numero_entrega: data.numeroEntrega || `ENT-${Date.now()}`,
-          insumo_id: data.insumoId,
-          cantidad: data.cantidad,
-          unidad: data.unidad || 'Unidades',
-          operario_id: data.operarioId,
-          fecha: data.fecha,
-          hora: data.hora,
-        },
-      });
+    create: async (
+      data: Partial<EntregaInsumo> & {
+        insumoId?: number;
+        productoCatalogoId?: number;
+        unidad?: string;
+        numeroEntrega?: string;
+      }
+    ) => {
+      const json: Record<string, unknown> = {
+        numero_entrega: data.numeroEntrega || `ENT-${Date.now()}`,
+        cantidad: data.cantidad,
+        unidad: data.unidad || 'Unidades',
+        operario_id: data.operarioId,
+        fecha: data.fecha,
+        hora: data.hora,
+      };
+      if (data.productoCatalogoId != null && data.productoCatalogoId > 0) {
+        json.producto_catalogo_id = data.productoCatalogoId;
+      } else if (data.insumoId != null && data.insumoId > 0) {
+        json.insumo_id = data.insumoId;
+      }
+      await apiFetch('/api/entregas-insumos', { method: 'POST', json });
     },
     delete: async (id: number, _motivo?: string) => {
       await apiFetch(`/api/entregas-insumos/${id}`, { method: 'DELETE' });
@@ -955,6 +991,19 @@ export const api = {
         unidad: r.unidad,
         operario: r.operario != null ? String(r.operario) : undefined,
         fechaUltimaModificacion: r.fecha ? String(r.fecha).split('T')[0] : '',
+        productoRelacionadoId:
+          r.producto_catalogo_id != null && r.producto_catalogo_id !== ''
+            ? Number(r.producto_catalogo_id)
+            : undefined,
+        origenInventario: r.origen_inventario != null ? String(r.origen_inventario) : undefined,
+        categoriaNombre: r.categoria_nombre != null ? String(r.categoria_nombre) : undefined,
+        presentacionCantidad:
+          r.presentacion_cantidad != null && r.presentacion_cantidad !== ''
+            ? Number(r.presentacion_cantidad)
+            : null,
+        presentacionUnidad:
+          r.presentacion_unidad != null && r.presentacion_unidad !== '' ? String(r.presentacion_unidad) : null,
+        stockMinimo: r.stock_minimo != null && r.stock_minimo !== '' ? Number(r.stock_minimo) : undefined,
       }));
     },
     listCatalogo: async () => {

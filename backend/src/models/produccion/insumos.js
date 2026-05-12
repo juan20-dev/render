@@ -6,7 +6,15 @@
  * lo importa. La fuente activa es este archivo modular.
  */
 const pool = require('../../../db');
-const { ensureMotivoEstado, checkInactivacionDependencias } = require('../shared/auditoria');
+const {
+  ensureMotivoEstado,
+  checkInactivacionDependencias,
+  ensureProductoTipoColumn,
+  ensureProductoInsumoMedidaColumns,
+} = require('../shared/auditoria');
+
+/** Evita solaparse con ids reales de la tabla insumos al exponer filas de inventario desde productos tipo insumo. */
+const INSUMO_VISTA_DESDE_PRODUCTO_ID_BASE = 900000000;
 
 const Insumos = {
   getAll: async () => {
@@ -179,27 +187,42 @@ const Insumos = {
     return true;
   },
   getResumenGestion: async () => {
-    const result = await pool.query(`
-      SELECT i.id,
-             i.nombre,
-             i.cantidad,
-             i.unidad,
-             i.stock_minimo,
-             TRIM(CONCAT(COALESCE(u.nombre, ''), ' ', COALESCE(u.apellido, ''))) AS operario,
-             le.fecha AS fecha
-      FROM insumos i
-      LEFT JOIN LATERAL (
-        SELECT ei.fecha, ei.operario_id
-        FROM entregas_insumos ei
-        WHERE ei.insumo_id = i.id
-        ORDER BY ei.fecha DESC, ei.hora DESC NULLS LAST, ei.id DESC
-        LIMIT 1
-      ) le ON true
-      LEFT JOIN usuarios u ON u.id = le.operario_id
-      ORDER BY i.nombre
-    `);
+    await ensureProductoTipoColumn();
+    await ensureProductoInsumoMedidaColumns();
+    const result = await pool.query(
+      `
+        SELECT ($1 + p.id) AS id,
+               p.nombre,
+               p.stock::numeric AS cantidad,
+               'Unidades'::varchar AS unidad,
+               p.stock_minimo::numeric AS stock_minimo,
+               NULL::text AS operario,
+               COALESCE(rc.fecha_ultima::date, p.updated_at::date, p.created_at::date) AS fecha,
+               p.id AS producto_catalogo_id,
+               c.nombre AS categoria_nombre,
+               p.insumo_cantidad_medida AS presentacion_cantidad,
+               p.insumo_unidad_medida AS presentacion_unidad,
+               'producto_insumo'::varchar AS origen_inventario
+        FROM productos p
+        LEFT JOIN categorias c ON c.id = p.categoria_id
+        LEFT JOIN (
+          SELECT dc.producto_id,
+                 MAX(COALESCE(cp.updated_at, cp.created_at, CURRENT_TIMESTAMP)) AS fecha_ultima
+          FROM detalle_compras dc
+          INNER JOIN compras cp ON cp.id = dc.compra_id
+          WHERE LOWER(TRIM(COALESCE(cp.estado, ''))) = 'recibida'
+          GROUP BY dc.producto_id
+        ) rc ON rc.producto_id = p.id
+        WHERE COALESCE(p.tipo_producto, 'terminado') = 'insumo'
+          AND LOWER(TRIM(COALESCE(p.estado, ''))) = 'activo'
+        ORDER BY p.nombre
+      `,
+      [INSUMO_VISTA_DESDE_PRODUCTO_ID_BASE]
+    );
     return result.rows;
   }
 };
+
+Insumos.INSUMO_VISTA_DESDE_PRODUCTO_ID_BASE = INSUMO_VISTA_DESDE_PRODUCTO_ID_BASE;
 
 module.exports = Insumos;

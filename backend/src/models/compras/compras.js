@@ -59,7 +59,12 @@ const getProveedorActivo = async (proveedorId) => {
 };
 
 const getProductoById = async (productoId) => {
-  const result = await pool.query('SELECT id, nombre, precio, stock, estado FROM productos WHERE id = $1', [productoId]);
+  const result = await pool.query(
+    `SELECT id, nombre, precio, stock, estado,
+            COALESCE(tipo_producto, 'terminado') AS tipo_producto
+     FROM productos WHERE id = $1`,
+    [productoId]
+  );
   return result.rows[0] || null;
 };
 
@@ -236,8 +241,10 @@ const Compras = {
     }
 
     const pctRaw = options?.porcentajeGanancia;
-    const parsedPct = pctRaw === undefined || pctRaw === null || pctRaw === '' ? 0 : Number(pctRaw);
-    if (!Number.isFinite(parsedPct) || parsedPct < 0 || parsedPct > 1000) {
+    let parsedPct = pctRaw === undefined || pctRaw === null || pctRaw === '' ? 0 : Number(pctRaw);
+    if (String(producto.tipo_producto || '').toLowerCase() === 'insumo') {
+      parsedPct = 0;
+    } else if (!Number.isFinite(parsedPct) || parsedPct < 0 || parsedPct > 1000) {
       const error = new Error('El porcentaje de ganancia debe ser un número entre 0 y 1000');
       error.statusCode = 400;
       throw error;

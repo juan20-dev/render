@@ -47,7 +47,8 @@ const aplicarDescuentoStockYLíneaDetalleVenta = async (
   }
 
   const pRes = await client.query(
-    `SELECT id, nombre, COALESCE(stock, 0)::bigint AS stock, estado
+    `SELECT id, nombre, COALESCE(stock, 0)::bigint AS stock, estado,
+            COALESCE(tipo_producto, 'terminado') AS tipo_producto
      FROM productos WHERE id = $1 FOR UPDATE`,
     [productoId],
   );
@@ -64,6 +65,12 @@ const aplicarDescuentoStockYLíneaDetalleVenta = async (
   if (String(row.estado || '').toLowerCase() !== 'activo') {
     const error = new Error(`No se puede vender "${nombre}": el producto no está activo.`);
     error.statusCode = 409;
+    throw error;
+  }
+
+  if (String(row.tipo_producto || '').toLowerCase() === 'insumo') {
+    const error = new Error(`No se puede vender "${nombre}": es un producto tipo insumo (solo compras a proveedor).`);
+    error.statusCode = 400;
     throw error;
   }
 

@@ -1,13 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { DataTable, Column } from '../../DataTable';
 import { Modal } from '../../Modal';
-import { Form, FormField, FormActions } from '../../Form';
 import { Button } from '../../Button';
-import { Plus, Package, Search } from 'lucide-react';
 import { api } from '../../../services/api';
 import { toast } from '../../AlertDialog';
-import type { Insumo, Producto } from '../../../services/types';
-import { INSUMO_UNIDADES_API } from '../../../services/types';
+import type { Insumo } from '../../../services/types';
 
 interface InsumoView extends Insumo {
   operarioNombre?: string;
@@ -15,122 +12,26 @@ interface InsumoView extends Insumo {
 
 export function Insumos() {
   const [insumos, setInsumos] = useState<InsumoView[]>([]);
-  const [productos, setProductos] = useState<Producto[]>([]);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [selectedInsumo, setSelectedInsumo] = useState<InsumoView | null>(null);
   const [busqueda, setBusqueda] = useState('');
   const [filtroFecha, setFiltroFecha] = useState<string>('');
   const [filtroOperario, setFiltroOperario] = useState<string>('');
 
-  // Estado del buscador del campo "Nombre" (mismo patron que el select
-  // "Producto *" de Nueva Compra). El usuario puede escribir un nombre nuevo
-  // (ej. "Anis") o seleccionar un producto existente del catalogo.
-  const [mostrarListaProductos, setMostrarListaProductos] = useState(false);
-
-  const [formNuevo, setFormNuevo] = useState({
-    nombre: '',
-    descripcion: '',
-    unidad: 'Unidades' as string,
-    cantidad: 0,
-    stockMinimo: 10,
-    estado: 'activo' as 'activo' | 'inactivo',
-  });
-
   useEffect(() => {
     cargarDatos();
   }, []);
 
-  // Cerrar dropdown al clic fuera
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      const target = event.target as HTMLElement;
-      if (!target.closest('.insumo-nombre-picker')) {
-        setMostrarListaProductos(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
   const cargarDatos = async () => {
     try {
-      const [insumosData, productosData] = await Promise.all([
-        api.insumos.getAll(),
-        api.productos.getAll(),
-      ]);
-
+      const insumosData = await api.insumos.getAll();
       const insumosConInfo: InsumoView[] = insumosData.map((insumo) => ({
         ...insumo,
         operarioNombre: insumo.operario?.trim() || undefined,
       }));
-
       setInsumos(insumosConInfo);
-      // Solo productos activos para el selector del campo Nombre
-      setProductos(productosData.filter((p) => p.estado === 'activo'));
     } catch {
       toast.error('Error al cargar datos');
-    }
-  };
-
-  // Lista filtrada de productos que coincidan con lo que el usuario escribe
-  // en el campo Nombre. Si no escribe nada, se muestra el catalogo completo.
-  const productosFiltradosNombre = productos.filter((p) => {
-    const term = formNuevo.nombre.trim().toLowerCase();
-    if (!term) return true;
-    return (
-      p.nombre.toLowerCase().includes(term) || String(p.id).includes(term)
-    );
-  });
-
-  const seleccionarProductoComoNombre = (producto: Producto) => {
-    setFormNuevo({ ...formNuevo, nombre: producto.nombre });
-    setMostrarListaProductos(false);
-  };
-
-  const handleNuevoInsumo = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const nombre = formNuevo.nombre.trim();
-    if (nombre.length < 2 || nombre.length > 150) {
-      toast.error('El nombre debe tener entre 2 y 150 caracteres');
-      return;
-    }
-    if (!INSUMO_UNIDADES_API.includes(formNuevo.unidad as (typeof INSUMO_UNIDADES_API)[number])) {
-      toast.error('Seleccione una unidad válida');
-      return;
-    }
-    if (formNuevo.cantidad < 0) {
-      toast.error('La cantidad no puede ser negativa');
-      return;
-    }
-    if (formNuevo.stockMinimo < 0) {
-      toast.error('El stock mínimo no puede ser negativo');
-      return;
-    }
-
-    try {
-      await api.insumos.create({
-        nombre,
-        descripcion: formNuevo.descripcion.trim() || undefined,
-        unidad: formNuevo.unidad,
-        cantidad: formNuevo.cantidad,
-        stock_minimo: formNuevo.stockMinimo,
-        estado: formNuevo.estado === 'activo' ? 'Activo' : 'Inactivo',
-      });
-      toast.success('Insumo registrado en catálogo');
-      setIsCreateModalOpen(false);
-      setMostrarListaProductos(false);
-      setFormNuevo({
-        nombre: '',
-        descripcion: '',
-        unidad: 'Unidades',
-        cantidad: 0,
-        stockMinimo: 10,
-        estado: 'activo',
-      });
-      cargarDatos();
-    } catch (err: any) {
-      toast.error(err.message || 'Error al crear insumo');
     }
   };
 
@@ -146,13 +47,30 @@ export function Insumos() {
     },
     {
       key: 'nombre',
-      label: 'Insumo',
+      label: 'Nombre',
+      render: (v: string) => <span className="font-medium text-foreground">{v}</span>,
     },
     {
       key: 'cantidad',
-      label: 'Cantidad',
-      render: (_: number, row: InsumoView) =>
-        `${row.cantidad} ${row.unidad ? `(${row.unidad})` : ''}`.trim(),
+      label: 'Stock',
+      render: (_: number, row: InsumoView) => (
+        <span className="text-sm tabular-nums">
+          {row.cantidad}
+          {row.unidad ? <span className="text-muted-foreground"> ({row.unidad})</span> : null}
+        </span>
+      ),
+    },
+    {
+      key: 'stockMinimo',
+      label: 'Stock mín.',
+      render: (v: number | undefined) => (
+        <span className="text-sm tabular-nums text-muted-foreground">{v ?? '—'}</span>
+      ),
+    },
+    {
+      key: 'categoriaNombre',
+      label: 'Categoría',
+      render: (v: string | undefined) => <span className="text-sm">{v?.trim() || '—'}</span>,
     },
     {
       key: 'operarioNombre',
@@ -161,7 +79,7 @@ export function Insumos() {
     },
     {
       key: 'fechaUltimaModificacion',
-      label: 'Última entrega',
+      label: 'Última actividad',
       render: (v: string | undefined) => v || '—',
     },
   ];
@@ -179,34 +97,19 @@ export function Insumos() {
           (insumo.operarioNombre || '').toLowerCase().includes(busqueda.toLowerCase()) ||
           String(insumo.id).includes(busqueda)));
 
-    const matchFecha =
-      !filtroFecha || (insumo.fechaUltimaModificacion || '') === filtroFecha;
-    const matchOperario =
-      !filtroOperario || (insumo.operarioNombre || '') === filtroOperario;
+    const matchFecha = !filtroFecha || (insumo.fechaUltimaModificacion || '') === filtroFecha;
+    const matchOperario = !filtroOperario || (insumo.operarioNombre || '') === filtroOperario;
 
     return matchBusqueda && matchFecha && matchOperario;
   });
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2>Inventario de Insumos</h2>
-          <p className="text-muted-foreground">
-            Catálogo y stock; las entregas a productores aumentan el inventario registrado.
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 px-4 py-2 bg-blue-50 rounded-lg border border-blue-200">
-            <Package className="w-5 h-5 text-blue-600" />
-            <span className="text-sm font-medium text-blue-700">
-              Total en vista: {insumosFiltrados.reduce((sum, i) => sum + i.cantidad, 0)}
-            </span>
-          </div>
-          <Button icon={<Plus className="w-5 h-5" />} onClick={() => setIsCreateModalOpen(true)}>
-            Nuevo insumo
-          </Button>
-        </div>
+      <div>
+        <h2>Inventario de Insumos</h2>
+        <p className="text-muted-foreground">
+          Administra el stock de productos tipo insumo (Gestión de productos y compras a proveedor).
+        </p>
       </div>
 
       <div className="bg-white rounded-lg border border-border p-4">
@@ -257,9 +160,8 @@ export function Insumos() {
 
       <div className="p-4 bg-accent/50 rounded-lg">
         <p className="text-sm text-muted-foreground">
-          Use <strong>Nuevo insumo</strong> para dar de alta materiales en el catálogo (con stock inicial
-          opcional). Use <strong>Entrega de insumos</strong> para cargar inventario a un productor
-          concretando cantidad y movimiento.
+          Solo se listan <strong>productos tipo insumo</strong> activos. El stock aumenta al marcar como recibidas las
+          compras a proveedor. Para entregas a productores use el módulo <strong>Entrega de insumos</strong>.
         </p>
       </div>
 
@@ -276,167 +178,58 @@ export function Insumos() {
       />
 
       <Modal
-        isOpen={isCreateModalOpen}
-        onClose={() => setIsCreateModalOpen(false)}
-        title="Nuevo insumo (catálogo)"
-        size="lg"
-      >
-        <Form onSubmit={handleNuevoInsumo}>
-          {/* Campo "Nombre" hibrido: permite escribir un nombre nuevo (insumo
-              que no existe, ej. "Anis") o seleccionar un producto existente
-              del catalogo (ej. "Tequila Patron 750ml"). Mismo diseno que el
-              selector "Producto *" de Nueva Compra. */}
-          <div className="relative insumo-nombre-picker">
-            <label className="block text-sm font-medium mb-2 flex items-center gap-2">
-              <Package className="w-4 h-4" />
-              Nombre *
-            </label>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-              <input
-                type="text"
-                value={formNuevo.nombre}
-                onChange={(e) => {
-                  setFormNuevo({ ...formNuevo, nombre: e.target.value });
-                  setMostrarListaProductos(true);
-                }}
-                onFocus={() => setMostrarListaProductos(true)}
-                placeholder="Escribe un nombre nuevo (ej. Anís) o selecciona un producto del catálogo..."
-                className="w-full pl-10 pr-4 py-3 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-base bg-white"
-                required
-                minLength={2}
-                maxLength={150}
-              />
-            </div>
-            {mostrarListaProductos && (
-              <div className="absolute z-10 w-full mt-1 bg-white border border-border rounded-lg shadow-lg max-h-64 overflow-y-auto">
-                {productosFiltradosNombre.length > 0 ? (
-                  <>
-                    <div className="sticky top-0 bg-primary/10 px-4 py-2 border-b border-border font-medium text-sm">
-                      {formNuevo.nombre.trim() === ''
-                        ? `Todos los productos (${productosFiltradosNombre.length})`
-                        : `${productosFiltradosNombre.length} producto(s) encontrado(s)`}
-                    </div>
-                    {productosFiltradosNombre.map((p) => (
-                      <div
-                        key={p.id}
-                        onClick={() => seleccionarProductoComoNombre(p)}
-                        className="px-4 py-3 border-b border-border last:border-b-0 hover:bg-accent cursor-pointer"
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2">
-                              <Package className="w-4 h-4 text-primary" />
-                              <span className="font-medium">{p.nombre}</span>
-                            </div>
-                            <div className="text-sm text-muted-foreground mt-1">
-                              ID: {p.id} | Stock actual: {p.stock}
-                            </div>
-                          </div>
-                          <Plus className="w-5 h-5 text-primary" />
-                        </div>
-                      </div>
-                    ))}
-                  </>
-                ) : (
-                  <div className="px-4 py-3 text-muted-foreground text-sm text-center">
-                    Sin coincidencias. Continúa escribiendo para crear un insumo nuevo con este nombre.
-                  </div>
-                )}
-              </div>
-            )}
-            <p className="text-xs text-muted-foreground mt-1">
-              Puedes crear un insumo nuevo escribiendo su nombre, o seleccionar un producto existente.
-            </p>
-          </div>
-          <FormField
-            label="Descripción"
-            name="descripcion"
-            type="textarea"
-            value={formNuevo.descripcion}
-            onChange={(v) => setFormNuevo({ ...formNuevo, descripcion: v as string })}
-            placeholder="Opcional (10-50 caracteres si se completa)"
-            minLength={10}
-            maxLength={50}
-          />
-          <FormField
-            label="Unidad"
-            name="unidad"
-            type="select"
-            selectPlaceholder={false}
-            value={formNuevo.unidad}
-            onChange={(v) => setFormNuevo({ ...formNuevo, unidad: v as string })}
-            options={INSUMO_UNIDADES_API.map((u) => ({ value: u, label: u }))}
-            required
-          />
-          <div className="grid grid-cols-2 gap-4">
-            <FormField
-              label="Cantidad inicial"
-              name="cantidad"
-              type="number"
-              value={formNuevo.cantidad}
-              min={0}
-              onChange={(v) => setFormNuevo({ ...formNuevo, cantidad: Number(v) || 0 })}
-            />
-            <FormField
-              label="Stock mínimo"
-              name="stockMinimo"
-              type="number"
-              value={formNuevo.stockMinimo}
-              min={0}
-              onChange={(v) => setFormNuevo({ ...formNuevo, stockMinimo: Number(v) || 0 })}
-            />
-          </div>
-          <FormField
-            label="Estado"
-            name="estado"
-            type="select"
-            selectPlaceholder={false}
-            value={formNuevo.estado}
-            onChange={(v) => setFormNuevo({ ...formNuevo, estado: v as 'activo' | 'inactivo' })}
-            options={[
-              { value: 'activo', label: 'Activo' },
-              { value: 'inactivo', label: 'Inactivo' },
-            ]}
-          />
-          <FormActions>
-            <Button type="button" variant="outline" onClick={() => setIsCreateModalOpen(false)}>
-              Cancelar
-            </Button>
-            <Button type="submit">Guardar</Button>
-          </FormActions>
-        </Form>
-      </Modal>
-
-      <Modal
         isOpen={isDetailModalOpen}
         onClose={() => setIsDetailModalOpen(false)}
-        title="Detalle de Insumo"
+        title="Detalle de línea de inventario"
         size="lg"
       >
         {selectedInsumo && (
           <div className="space-y-6">
-            <div className="flex items-center justify-between p-4 bg-accent rounded-lg">
+            <div className="flex items-center justify-between p-4 bg-accent/50 rounded-lg">
               <div>
                 <h3 className="text-lg">#{String(selectedInsumo.id).padStart(4, '0')}</h3>
-                <p className="text-sm text-muted-foreground">{selectedInsumo.nombre}</p>
+                <p className="font-medium mt-1">{selectedInsumo.nombre}</p>
               </div>
               <div className="text-right">
-                <p className="text-sm text-muted-foreground">Cantidad</p>
-                <p className="text-xl font-semibold">
+                <p className="text-sm text-muted-foreground">Stock</p>
+                <p className="text-xl font-semibold tabular-nums">
                   {selectedInsumo.cantidad}
                   {selectedInsumo.unidad ? ` ${selectedInsumo.unidad}` : ''}
                 </p>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-6">
+            <div className="grid grid-cols-2 gap-4 text-sm">
               <div>
-                <label className="text-sm text-muted-foreground">Último operario (entrega)</label>
+                <label className="text-muted-foreground">Presentación</label>
+                <p className="mt-1 font-medium">
+                  {selectedInsumo.presentacionCantidad != null &&
+                  selectedInsumo.presentacionUnidad != null &&
+                  String(selectedInsumo.presentacionUnidad).trim() !== ''
+                    ? `${selectedInsumo.presentacionCantidad} ${selectedInsumo.presentacionUnidad}`
+                    : '—'}
+                </p>
+              </div>
+              <div>
+                <label className="text-muted-foreground">Stock mínimo</label>
+                <p className="mt-1 font-medium">{selectedInsumo.stockMinimo ?? '—'}</p>
+              </div>
+              <div>
+                <label className="text-muted-foreground">Categoría</label>
+                <p className="mt-1 font-medium">{selectedInsumo.categoriaNombre?.trim() || '—'}</p>
+              </div>
+              <div>
+                <label className="text-muted-foreground">ID producto</label>
+                <p className="mt-1 font-medium">
+                  {selectedInsumo.productoRelacionadoId != null ? `#${selectedInsumo.productoRelacionadoId}` : '—'}
+                </p>
+              </div>
+              <div>
+                <label className="text-muted-foreground">Último operario</label>
                 <p className="mt-1">{selectedInsumo.operarioNombre || '—'}</p>
               </div>
               <div>
-                <label className="text-sm text-muted-foreground">Fecha última entrega</label>
+                <label className="text-muted-foreground">Última actividad</label>
                 <p className="mt-1">{selectedInsumo.fechaUltimaModificacion || '—'}</p>
               </div>
             </div>

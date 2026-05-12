@@ -73,14 +73,16 @@ const getInsumosEntregadosByProductor = async (productorId) => {
     `SELECT ei.id,
             ei.numero_entrega,
             ei.insumo_id,
+            ei.producto_catalogo_id,
             ei.cantidad,
             ei.unidad,
             ei.operario_id,
             ei.fecha,
             ei.hora,
-            i.nombre AS insumo_nombre
+            COALESCE(i.nombre, pr.nombre) AS insumo_nombre
      FROM entregas_insumos ei
-     JOIN insumos i ON i.id = ei.insumo_id
+     LEFT JOIN insumos i ON i.id = ei.insumo_id
+     LEFT JOIN productos pr ON pr.id = ei.producto_catalogo_id
      WHERE ei.operario_id = $1
        AND NOT EXISTS (
          SELECT 1
@@ -148,9 +150,10 @@ const Produccion = {
     }
 
     const insumosResult = await pool.query(
-      `SELECT ei.*, i.nombre AS insumo_nombre
+      `SELECT ei.*, COALESCE(i.nombre, pr.nombre) AS insumo_nombre
        FROM entregas_insumos ei
-       JOIN insumos i ON i.id = ei.insumo_id
+       LEFT JOIN insumos i ON i.id = ei.insumo_id
+       LEFT JOIN productos pr ON pr.id = ei.producto_catalogo_id
        WHERE ei.insumo_id IN (
          SELECT insumo_id FROM producto_insumos WHERE producto_id = $1
        )
@@ -218,10 +221,11 @@ const Produccion = {
           throw err;
         }
         const entregasRes = await client.query(
-          `SELECT ei.id, ei.insumo_id, ei.cantidad, ei.unidad, ei.operario_id,
-                  ei.numero_entrega, i.nombre AS insumo_nombre
+          `SELECT ei.id, ei.insumo_id, ei.producto_catalogo_id, ei.cantidad, ei.unidad, ei.operario_id,
+                  ei.numero_entrega, COALESCE(i.nombre, pr.nombre) AS insumo_nombre
            FROM entregas_insumos ei
-           JOIN insumos i ON i.id = ei.insumo_id
+           LEFT JOIN insumos i ON i.id = ei.insumo_id
+           LEFT JOIN productos pr ON pr.id = ei.producto_catalogo_id
            WHERE ei.id = ANY($1::int[])
            FOR UPDATE OF ei`,
           [idsEntregas]
@@ -258,7 +262,13 @@ const Produccion = {
         }
         insumosEntregadosUsados = entregasRes.rows.map((e) => ({
           entrega_id: Number(e.id),
-          insumo_id: Number(e.insumo_id),
+          insumo_id: Number(
+            e.insumo_id != null && e.insumo_id !== ''
+              ? e.insumo_id
+              : e.producto_catalogo_id != null && e.producto_catalogo_id !== ''
+                ? e.producto_catalogo_id
+                : 0
+          ),
           insumo_nombre: e.insumo_nombre,
           cantidad: Number(e.cantidad),
           unidad: e.unidad,

@@ -102,7 +102,9 @@ CREATE TABLE productos (
     imagen_url VARCHAR(255),
     estado VARCHAR(20) DEFAULT 'Activo',
     tipo_producto VARCHAR(30) NOT NULL DEFAULT 'terminado'
-        CHECK (tipo_producto IN ('terminado','preparacion')),
+        CHECK (tipo_producto IN ('terminado','preparacion','insumo')),
+    insumo_unidad_medida VARCHAR(30),
+    insumo_cantidad_medida NUMERIC(12,4),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -321,13 +323,18 @@ CREATE TABLE producto_insumos (
 CREATE TABLE entregas_insumos (
     id SERIAL PRIMARY KEY,
     numero_entrega VARCHAR(50) UNIQUE NOT NULL,
-    insumo_id INTEGER NOT NULL REFERENCES insumos(id) ON DELETE CASCADE,
+    insumo_id INTEGER REFERENCES insumos(id) ON DELETE CASCADE,
+    producto_catalogo_id INTEGER REFERENCES productos(id) ON DELETE RESTRICT,
     cantidad DECIMAL(10,2) NOT NULL,
     unidad VARCHAR(20) NOT NULL,
     operario_id INTEGER REFERENCES usuarios(id) ON DELETE SET NULL,
     fecha DATE NOT NULL,
     hora TIME,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT entregas_insumos_catalogo_xor_chk CHECK (
+        (insumo_id IS NOT NULL AND producto_catalogo_id IS NULL)
+        OR (insumo_id IS NULL AND producto_catalogo_id IS NOT NULL)
+    )
 );
 
 -- TABLA: insumo_movimientos
@@ -564,12 +571,8 @@ INSERT INTO proveedores (tipo_persona, nombre_empresa, nit, nombre, apellido, ti
 INSERT INTO clientes (usuario_id, nombre, apellido, tipo_documento, documento, email, telefono, direccion, estado) VALUES
 (5, 'Cliente', 'Ejemplo', 'CC', '100012345682', 'cliente@grandmas.com', '3001234571', 'Calle Secundaria 456', 'Activo');
 
--- Insertar insumos de ejemplo (para producción)
-INSERT INTO insumos (nombre, descripcion, cantidad, unidad, stock_minimo, estado) VALUES
-('Levadura', 'Levadura de cervecería', 50.00, 'kg', 5.00, 'Activo'),
-('Lúpulo', 'Lúpulo para cerveza', 30.00, 'kg', 5.00, 'Activo'),
-('Malta', 'Malta tostada clara', 100.00, 'kg', 20.00, 'Activo'),
-('Agua Purificada', 'Agua para destilación', 500.00, 'litros', 100.00, 'Activo');
+-- La tabla insumos permanece vacía en el seed: el inventario de insumos en pantalla
+-- proviene de productos tipo insumo (Gestión de productos + compras).
 
 -- ============================================================
 -- PARTE 4: FUNCIONES Y TRIGGERS (Sin cambios)

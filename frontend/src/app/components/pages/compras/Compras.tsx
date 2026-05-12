@@ -71,7 +71,12 @@ export function Compras() {
   })();
 
   const seleccionarProductoCompra = (producto: Producto) => {
-    setProductoActual({ ...productoActual, productoId: producto.id });
+    const esInsumo = producto.typo === 'insumo';
+    setProductoActual({
+      ...productoActual,
+      productoId: producto.id,
+      ganancia: esInsumo ? 0 : productoActual.ganancia,
+    });
     setBusquedaProducto(`${producto.nombre} (ID: ${producto.id})`);
     setMostrarListaProductos(false);
   };
@@ -371,14 +376,19 @@ export function Compras() {
       return;
     }
 
-    if (productoActual.ganancia < 0) {
-      toast.error('Error', { description: 'La ganancia no puede ser negativa' });
-      return;
-    }
+    const prodSel = productos.find((p) => p.id === productoActual.productoId);
+    const esInsumo = prodSel?.typo === 'insumo';
 
-    if (productoActual.ganancia > 100) {
-      toast.error('Error', { description: 'La ganancia debe estar entre 0% y 100%' });
-      return;
+    if (!esInsumo) {
+      if (productoActual.ganancia < 0) {
+        toast.error('Error', { description: 'La ganancia no puede ser negativa' });
+        return;
+      }
+
+      if (productoActual.ganancia > 100) {
+        toast.error('Error', { description: 'La ganancia debe estar entre 0% y 100%' });
+        return;
+      }
     }
 
     // Verificar si el producto ya está en la lista
@@ -392,7 +402,7 @@ export function Compras() {
       productoId: productoActual.productoId,
       cantidad: productoActual.cantidad,
       precioCompra: productoActual.precioCompra,
-      ganancia: productoActual.ganancia,
+      ganancia: esInsumo ? 0 : productoActual.ganancia,
       subtotal: productoActual.cantidad * productoActual.precioCompra
     };
 
@@ -480,6 +490,9 @@ export function Compras() {
       toast.error('No se pudo crear la compra', { description: msg });
     }
   };
+
+  const productoSeleccionadoCompra = productos.find((p) => p.id === productoActual.productoId);
+  const lineaCompraEsInsumo = productoSeleccionadoCompra?.typo === 'insumo';
 
   // Spinner solo en la carga inicial: en recargas la UI permanece para no perder foco al buscar.
   if (loading && compras.length === 0) {
@@ -690,7 +703,7 @@ export function Compras() {
               )}
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className={`grid gap-4 ${lineaCompraEsInsumo ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1 sm:grid-cols-3'}`}>
               <FormField
                 label="Cantidad *"
                 name="cantidad"
@@ -723,26 +736,28 @@ export function Compras() {
                 min={1}
               />
 
-              <FormField
-                label="Ganancia (%) *"
-                name="ganancia"
-                type="number"
-                value={productoActual.ganancia === 0 ? '' : productoActual.ganancia}
-                onChange={(value) => {
-                  const num = parseInt(value as string) || 0;
-                  if (num < 0) {
-                    toast.warning('No se permiten números negativos');
-                    return;
-                  }
-                  if (num > 100) {
-                    toast.warning('La ganancia no puede ser mayor al 100%');
-                    return;
-                  }
-                  setProductoActual({ ...productoActual, ganancia: num });
-                }}
-                min={0}
-                max={100}
-              />
+              {!lineaCompraEsInsumo && (
+                <FormField
+                  label="Ganancia (%) *"
+                  name="ganancia"
+                  type="number"
+                  value={productoActual.ganancia === 0 ? '' : productoActual.ganancia}
+                  onChange={(value) => {
+                    const num = parseInt(value as string) || 0;
+                    if (num < 0) {
+                      toast.warning('No se permiten números negativos');
+                      return;
+                    }
+                    if (num > 100) {
+                      toast.warning('La ganancia no puede ser mayor al 100%');
+                      return;
+                    }
+                    setProductoActual({ ...productoActual, ganancia: num });
+                  }}
+                  min={0}
+                  max={100}
+                />
+              )}
             </div>
 
             <Button type="button" onClick={agregarProducto} size="sm">
@@ -762,8 +777,11 @@ export function Compras() {
                       <div className="flex-1">
                         <p className="font-medium">{producto?.nombre}</p>
                         <p className="text-sm text-muted-foreground">
-                          Cantidad: {prod.cantidad} | Precio: {formatCurrency(prod.precioCompra)} |
-                          Ganancia: {prod.ganancia}% | Subtotal: {formatCurrency(prod.subtotal)}
+                          Cantidad: {prod.cantidad} | Precio: {formatCurrency(prod.precioCompra)}
+                          {productos.find((x) => x.id === prod.productoId)?.typo === 'insumo'
+                            ? ''
+                            : ` | Ganancia: ${prod.ganancia}%`}{' '}
+                          | Subtotal: {formatCurrency(prod.subtotal)}
                         </p>
                       </div>
                       <Button
