@@ -3,7 +3,7 @@ import { DataTable, Column } from '../../DataTable';
 import { Modal } from '../../Modal';
 import { Form, FormField, FormActions, FieldError, FieldSuccess } from '../../Form';
 import { Button } from '../../Button';
-import { Plus, Eye, Edit, Trash2 } from 'lucide-react';
+import { Plus, Eye, EyeOff, Edit, Trash2 } from 'lucide-react';
 import { AlertDialog } from '../../AlertDialog';
 import { api } from '../../../services/api';
 import type { Usuario } from '../../../services/types';
@@ -54,6 +54,7 @@ export function Usuarios() {
   const [telefonoValido, setTelefonoValido] = useState<boolean | null>(null);
   const [documentoValido, setDocumentoValido] = useState<boolean | null>(null);
   const [passwordValido, setPasswordValido] = useState<boolean | null>(null);
+  const [showFormPassword, setShowFormPassword] = useState(false);
 
   // Debounce de búsqueda para evitar saturar API
   useEffect(() => {
@@ -318,6 +319,7 @@ export function Usuarios() {
     setTelefonoValido(null);
     setDocumentoValido(null);
     setPasswordValido(null);
+    setShowFormPassword(false);
     setIsModalOpen(true);
   };
 
@@ -345,6 +347,7 @@ export function Usuarios() {
     setTelefonoValido(validarTelefono(usuario.telefono));
     setDocumentoValido(validarDocumento(usuario.numeroDocumento));
     setPasswordValido(null);
+    setShowFormPassword(false);
     setIsModalOpen(true);
   };
 
@@ -772,26 +775,37 @@ export function Usuarios() {
             <label className="block text-sm font-medium mb-2">
               {selectedUsuario ? 'Contraseña (dejar vacío para no cambiar)' : 'Contraseña *'}
             </label>
-            <input
-              type="password"
-              value={formData.password}
-              onChange={(e) => {
-                const value = e.target.value;
-                setFormData({ ...formData, password: value });
-                if (value) {
-                  setPasswordValido(validarPassword(value));
-                } else {
-                  setPasswordValido(null);
-                }
-              }}
-              placeholder="Mínimo 8 caracteres"
-              className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 transition-all ${
-                passwordValido === null ? 'border-border focus:ring-primary' :
-                passwordValido ? 'border-green-500 ring-1 ring-green-500/20 focus:ring-green-500'
-                               : 'border-destructive ring-1 ring-destructive/20 focus:ring-destructive'
-              }`}
-              required={!selectedUsuario}
-            />
+            <div className="relative">
+              <input
+                type={showFormPassword ? 'text' : 'password'}
+                value={formData.password}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setFormData({ ...formData, password: value });
+                  if (value) {
+                    setPasswordValido(validarPassword(value));
+                  } else {
+                    setPasswordValido(null);
+                  }
+                }}
+                placeholder="Mínimo 8 caracteres"
+                className={`w-full px-3 py-2 pr-11 border rounded-lg focus:outline-none focus:ring-2 transition-all ${
+                  passwordValido === null ? 'border-border focus:ring-primary' :
+                  passwordValido ? 'border-green-500 ring-1 ring-green-500/20 focus:ring-green-500'
+                                 : 'border-destructive ring-1 ring-destructive/20 focus:ring-destructive'
+                }`}
+                required={!selectedUsuario}
+              />
+              <button
+                type="button"
+                tabIndex={-1}
+                onClick={() => setShowFormPassword((v) => !v)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                aria-label={showFormPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+              >
+                {showFormPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
             <div className="mt-1.5">
               {passwordValido === false && (
                 <FieldError>

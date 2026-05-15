@@ -24,7 +24,7 @@ export const ROUTE_VIEW_PERMISSIONS: Record<string, string[] | ((permisos: strin
     'Ver Productos',
     'Ver Categorías',
     'Crear Proveedores',
-    'Registrar Compras',
+    'Crear Compras',
   ]),
   'compras/proveedores': ['Ver Proveedores'],
   'compras/compras': ['Ver Compras'],
@@ -39,18 +39,18 @@ export const ROUTE_VIEW_PERMISSIONS: Record<string, string[] | ((permisos: strin
     'Ver Ventas',
     'Ver Abonos',
     'Ver Pedidos',
-    'Ver Domicilios',
     'Crear Clientes',
-    'Registrar Ventas',
+    'Crear Ventas',
   ]),
   'ventas/clientes': ['Ver Clientes'],
   'ventas/ventas': ['Ver Ventas'],
   'ventas/abonos': ['Ver Abonos'],
   'ventas/pedidos': ['Ver Pedidos'],
-  'ventas/domicilios': ['Ver Domicilios', 'Gestionar Domicilios'],
+  domicilios: ANY(['Ver Domicilios', 'Editar Domicilios']),
+  'ventas/domicilios': ['Ver Domicilios', 'Editar Domicilios'],
   cliente: (permisos) =>
     permisos.some((p) =>
-      ['Ver Tienda', 'Ver Mis Pedidos', 'Ver Mis Lista de Compras', 'Ver Mis Domicilios'].includes(p)
+      ['Ver Tienda', 'Ver Mis Pedidos', 'Ver Mis Abonos', 'Ver Mis Domicilios'].includes(p)
     ),
   'cliente/tienda': ['Ver Tienda'],
   'cliente/pedidos': ['Ver Mis Pedidos'],

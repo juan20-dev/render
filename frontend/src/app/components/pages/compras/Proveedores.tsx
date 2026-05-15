@@ -484,6 +484,8 @@ export function Proveedores() {
       <DataTable
         columns={columns}
         data={proveedoresFiltrados}
+        pageSize={10}
+        getRowKey={(row) => row.id}
         actions={[
           {
             label: 'Ver',

@@ -174,14 +174,18 @@ export function Sidebar({ currentPath, onNavigate }: SidebarProps) {
       }
 
       // Filtro real por permisos (respeta roles personalizados creados en BD).
+      if (item.subItems && item.subItems.length > 0) {
+        // Si hay sub-items, filtrarlos por permiso
+        item.subItems = item.subItems.filter((subItem) => hasPermission(subItem.module));
+        // Si quedan sub-items, mostrar el padre aunque no tenga permiso directo
+        return item.subItems.length > 0;
+      }
+
+      // Si no hay sub-items, verificar permiso del módulo padre
       if (item.module && !hasPermission(item.module)) {
         return false;
       }
 
-      if (item.subItems) {
-        item.subItems = item.subItems.filter((subItem) => hasPermission(subItem.module));
-        return item.subItems.length > 0;
-      }
       return true;
     });
 

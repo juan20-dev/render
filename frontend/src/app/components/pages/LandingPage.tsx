@@ -88,6 +88,7 @@ export function LandingPage({ onNavigateToLogin, onNavigateToRegister, onNavigat
     confirmPassword: ''
   });
   const [currentPwdOk, setCurrentPwdOk] = useState<boolean | null>(null);
+  const [isLogoutDialogOpen, setIsLogoutDialogOpen] = useState(false);
   const [alertState, setAlertState] = useState({
     isOpen: false,
     title: '',
@@ -346,6 +347,17 @@ export function LandingPage({ onNavigateToLogin, onNavigateToRegister, onNavigat
     }
   };
 
+  const handleLogoutClick = () => {
+    setIsLogoutDialogOpen(true);
+  };
+
+  const handleConfirmLogout = () => {
+    setIsLogoutDialogOpen(false);
+    if (onLogout) {
+      onLogout();
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background">
       {/* Navbar */}
@@ -414,7 +426,7 @@ export function LandingPage({ onNavigateToLogin, onNavigateToRegister, onNavigat
 
                   {/* Botón Cerrar Sesión */}
                   <button
-                    onClick={onLogout}
+                    onClick={handleLogoutClick}
                     className="hidden sm:flex items-center gap-2 px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg bg-white/10 hover:bg-white/20 transition-all duration-300 group overflow-hidden"
                   >
                     <LogOut className="w-4 h-4 sm:w-5 sm:h-5 flex-shrink-0" />
@@ -672,7 +684,7 @@ export function LandingPage({ onNavigateToLogin, onNavigateToRegister, onNavigat
                       <button
                         onClick={() => {
                           setIsSideMenuOpen(false);
-                          onLogout?.();
+                          handleLogoutClick();
                         }}
                         className="w-full px-4 py-3 rounded-lg bg-white/10 hover:bg-white/20 transition-colors text-left"
                       >
@@ -1758,6 +1770,19 @@ export function LandingPage({ onNavigateToLogin, onNavigateToRegister, onNavigat
           </div>
         </div>
       )}
+
+      {/* AlertDialog para confirmar cierre de sesión */}
+      <AlertDialog
+        isOpen={isLogoutDialogOpen}
+        onClose={() => setIsLogoutDialogOpen(false)}
+        onConfirm={handleConfirmLogout}
+        title="Cerrar Sesión"
+        description="¿Está seguro que desea cerrar sesión?"
+        type="warning"
+        confirmText="Sí, cerrar sesión"
+        cancelText="Cancelar"
+        showCancel={true}
+      />
     </div>
   );
 }

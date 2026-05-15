@@ -13,6 +13,7 @@ const { normalizeClientePayload } = require('./normalizador-http');
 const { isClienteUser, assertOwnClienteParam } = require('../utils/selfServiceAccess');
 const { generateTempPassword, isStrongPassword } = require('../utils/credentials');
 const { sendTemporaryPasswordEmail, sendWelcomeEmail } = require('../services/email.service');
+const Usuarios = require('../models/usuarios/usuarios');
 
 module.exports = {
   getAll: async (req, res) => {
@@ -310,6 +311,15 @@ module.exports = {
         clienteId = inserted.rows[0].id;
       }
 
+      const welcomePassword = useManualPassword ? rawPassword : tempPassword;
+      if (welcomePassword) {
+        await Usuarios.ensurePasswordEmailExpiryColumn();
+        await client.query(
+          `UPDATE usuarios SET password_email_expires_at = CURRENT_TIMESTAMP + INTERVAL '2 hours' WHERE id = $1`,
+          [usuarioId]
+        );
+      }
+
       await client.query('COMMIT');
 
       void models.Auditoria.registerClienteAudit({
@@ -335,13 +345,13 @@ module.exports = {
       // recien creado desde Gestion Clientes. La contrasena puede haber sido
       // generada de forma segura por el backend o haber sido digitada por el
       // administrador.
-      const welcomePassword = useManualPassword ? rawPassword : tempPassword;
       if (welcomePassword) {
         void sendWelcomeEmail({
           to: normalizedEmail,
           name: `${normalizedNombre} ${normalizedApellido}`.trim(),
           email: normalizedEmail,
           password: welcomePassword,
+          emailCredentialExpiresHours: 2,
         }).catch((error) => {
           console.error('Error enviando correo de bienvenida al cliente:', error);
         });

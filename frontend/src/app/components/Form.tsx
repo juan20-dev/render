@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { AlertCircle, Info, CheckCircle2 } from 'lucide-react';
+import { AlertCircle, Info, CheckCircle2, Eye, EyeOff } from 'lucide-react';
 
 /* ------------------------------------------------------------------
  * Primitivas estandarizadas para validación inline.
@@ -123,6 +123,7 @@ export function FormField({
 }: FormFieldProps) {
   const [internalError, setInternalError] = useState<string>('');
   const [touched, setTouched] = useState(false);
+  const [showPasswordPlain, setShowPasswordPlain] = useState(false);
   const error = externalError !== undefined && externalError !== '' ? externalError : internalError;
   const setError = setInternalError;
   const digitStr = inputDigitRule ? String(value ?? '').replace(/\D/g, '') : '';
@@ -344,6 +345,35 @@ export function FormField({
           disabled={disabled}
           className={baseInputClasses}
         />
+      ) : type === 'password' ? (
+        <div className="relative">
+          <input
+            id={name}
+            name={name}
+            type={showPasswordPlain ? 'text' : 'password'}
+            value={value}
+            onChange={(e) => handleChange(e.target.value)}
+            onBlur={handleBlur}
+            placeholder={placeholder}
+            required={required}
+            disabled={disabled}
+            maxLength={maxLength}
+            minLength={minLength}
+            pattern={pattern}
+            autoComplete={name === 'password' || String(name || '').includes('Password') ? 'current-password' : undefined}
+            className={`${baseInputClasses} pr-11`}
+          />
+          <button
+            type="button"
+            tabIndex={-1}
+            onClick={() => setShowPasswordPlain((v) => !v)}
+            disabled={disabled}
+            className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors disabled:opacity-40"
+            aria-label={showPasswordPlain ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+          >
+            {showPasswordPlain ? <EyeOff className="h-4 w-4" aria-hidden /> : <Eye className="h-4 w-4" aria-hidden />}
+          </button>
+        </div>
       ) : (
         <input
           id={name}

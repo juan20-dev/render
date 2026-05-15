@@ -86,8 +86,8 @@ const corsOptions = {
 // Middleware
 app.use(cors(corsOptions));
 app.use(cookieParser());
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ limit: '50mb', extended: true }));
+app.use(express.json({ limit: '2mb' }));
+app.use(express.urlencoded({ limit: '2mb', extended: true }));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // ===== RUTAS =====
@@ -112,13 +112,37 @@ app.use((req, res) => {
   });
 });
 
-// Manejador de errores global
+// Manejador de errores global (mejorado)
 app.use((err, req, res, next) => {
-  console.error('Error:', err);
-  res.status(err.status || 500).json({
+  const isDevelopment = config.server.env === 'development';
+  
+  // Log del error
+  console.error('❌ Error:', {
+    message: err.message,
+    status: err.status || 500,
+    code: err.code,
+    path: req.path,
+    method: req.method,
+    timestamp: new Date().toISOString(),
+    ...(isDevelopment && { stack: err.stack })
+  });
+
+  // Determinar status code
+  let statusCode = err.status || err.statusCode || 500;
+  if (statusCode < 100 || statusCode > 599) statusCode = 500;
+
+  // Mensaje de error seguro
+  let message = err.message || 'Error interno del servidor';
+  if (statusCode === 500 && !isDevelopment) {
+    message = 'Error interno del servidor. Contacte al administrador.';
+  }
+
+  // Respuesta de error consistente
+  return res.status(statusCode).json({
     success: false,
-    message: err.message || 'Error interno del servidor',
-    error: config.server.env === 'development' ? err : {}
+    code: err.code || 'INTERNAL_ERROR',
+    message,
+    ...(isDevelopment && { details: err.details, stack: err.stack.split('\n').slice(0, 5) })
   });
 });
 

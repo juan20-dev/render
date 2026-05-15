@@ -118,3 +118,68 @@ exports.getStaffResumen = async (_req, res) => {
     res.status(500).json({ success: false, message: err.message || 'Error al cargar el dashboard' });
   }
 };
+
+/**
+ * Devuelve qué módulos/gestiones puede ver el usuario basado en sus permisos
+ * Esto permite al frontend mostrar solo las opciones de menú disponibles
+ */
+exports.getAvailableModules = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ success: false, message: 'No autenticado' });
+    }
+
+    const usuario = await pool.query(
+      `SELECT u.id, u.rol_id, r.nombre AS rol_nombre, r.permisos
+       FROM usuarios u
+       LEFT JOIN roles r ON u.rol_id = r.id
+       WHERE u.id = $1`,
+      [userId]
+    );
+
+    if (!usuario.rows.length) {
+      return res.status(404).json({ success: false, message: 'Usuario no encontrado' });
+    }
+
+    const user = usuario.rows[0];
+    const permisos = Array.isArray(user.permisos) ? user.permisos : [];
+    const roleName = user.rol_nombre || 'Cliente';
+
+    // Mapeo de módulos a los permisos requeridos (solo uno debe coincidir)
+    const modulosMap = {
+      dashboard: ['Ver Dashboard'],
+      usuarios: ['Ver Usuarios', 'Ver Roles', 'Asignar Permisos'],
+      configuracion: ['Ver Roles', 'Asignar Permisos'],
+      compras: ['Ver Proveedores', 'Ver Compras', 'Ver Productos', 'Ver Categorías', 'Crear Proveedores', 'Crear Compras'],
+      produccion: ['Ver Insumos', 'Entregar Insumos', 'Ver Producción', 'Registrar Producción'],
+      ventas: ['Ver Clientes', 'Ver Ventas', 'Ver Abonos', 'Ver Pedidos', 'Crear Clientes', 'Crear Ventas'],
+      domicilios: ['Ver Domicilios', 'Editar Domicilios'],
+      cliente: ['Ver Tienda', 'Ver Mis Pedidos', 'Ver Mis Abonos', 'Ver Mis Domicilios', 'Cliente'],
+    };
+
+    // Calcular módulos disponibles
+    const modulosDisponibles = {};
+    for (const [modulo, permisosRequeridos] of Object.entries(modulosMap)) {
+      // Admin (rol_id = 1) tiene acceso a todo excepto "cliente"
+      if (roleName === 'Administrador' && modulo !== 'cliente') {
+        modulosDisponibles[modulo] = true;
+      } else {
+        // Para otros roles, verificar si tiene al menos un permiso requerido
+        modulosDisponibles[modulo] = permisosRequeridos.some((p) => permisos.includes(p));
+      }
+    }
+
+    res.json({
+      success: true,
+      data: {
+        rol: roleName,
+        permisos,
+        modulos: modulosDisponibles,
+      },
+    });
+  } catch (err) {
+    console.error('dashboard.getAvailableModules', err);
+    res.status(500).json({ success: false, message: err.message || 'Error al cargar módulos disponibles' });
+  }
+};

@@ -116,7 +116,14 @@ function AppContent() {
     if (hasPermission(path.substring(1))) { // Quitar el '/' inicial
       setCurrentPath(path);
     } else {
-      alert('No tienes permisos para acceder a esta sección');
+      // En lugar de mostrar alerta, silenciosamente redirigir a la primera ruta permitida
+      // Esto evita que el usuario vea un mensaje de error al intentar acceder sin permisos
+      if (user?.rol === 'Cliente') {
+        setCurrentPath('/cliente/tienda');
+      } else {
+        const firstAllowed = firstPermittedStaffPath(user?.permisos || [], user?.rol || 'Administrador');
+        setCurrentPath(firstAllowed);
+      }
     }
   };
 

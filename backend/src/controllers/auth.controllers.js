@@ -13,8 +13,10 @@ const config = require('../../config');
 const { normalizeAuthRegisterPayload } = require('./normalizador-http');
 const { generateTempPassword, isStrongPassword } = require('../utils/credentials');
 const { sendTemporaryPasswordEmail, sendWelcomeEmail } = require('../services/email.service');
+const { validators } = require('../middlewares/auth.middleware');
 
-const passwordTokenExpiryMs = 15 * 60 * 1000;
+/** Validez del código de recuperación enviado por correo (confirmación en el flujo de restablecimiento). */
+const passwordTokenExpiryMs = 2 * 60 * 60 * 1000;
 
 const getLoginIdentifier = (value) => String(value || '').trim().toLowerCase();
 
@@ -159,6 +161,20 @@ module.exports = {
         });
       }
 
+      await models.Usuarios.ensurePasswordEmailExpiryColumn();
+      const pwdEmailExp = await models.Usuarios.getPasswordEmailExpiry(usuario.id);
+      if (pwdEmailExp) {
+        const expMs = new Date(pwdEmailExp).getTime();
+        if (Number.isFinite(expMs) && Date.now() > expMs) {
+          return res.status(401).json({
+            success: false,
+            code: 'EMAILED_CREDENTIALS_EXPIRED',
+            message:
+              'Las credenciales enviadas por correo ya no son válidas (han pasado más de 2 horas). Use «Olvidé mi contraseña» o solicite al administrador un nuevo acceso.',
+          });
+        }
+      }
+
       await models.Usuarios.clearLoginAttempts(identifier);
 
       const { roleName, clienteId, permissions } = await resolveUserRoleAndClienteId(usuario);
@@ -240,7 +256,7 @@ module.exports = {
     try {
       const closeAll = req.body?.closeAll === true || req.body?.closeAll === 'true';
       if (closeAll && req.user?.id) {
-        await pool.query('UPDATE usuarios_sesiones SET revoked_at = CURRENT_TIMESTAMP, last_seen_at = CURRENT_TIMESTAMP WHERE usuario_id = $1', [req.user.id]);
+        await models.Usuarios.revokeAllSessions(req.user.id);
       } else if (req.user?.session_jti) {
         await models.Usuarios.revokeSession(req.user.session_jti);
       }
@@ -286,15 +302,19 @@ module.exports = {
       const newPassword = String(req.body?.newPassword || '').trim();
       const confirmPassword = String(req.body?.confirmPassword || '').trim();
 
+      // Validar que todos los campos estén presentes
       if (!currentPassword || !newPassword || !confirmPassword) {
         return res.status(400).json({ success: false, message: 'Todos los campos son obligatorios' });
       }
 
+      // Validar que las contraseñas coincidan
       if (newPassword !== confirmPassword) {
         return res.status(400).json({ success: false, message: 'Las contraseñas no coinciden' });
       }
 
-      if (!isStrongPassword(newPassword)) {
+      // Validar fortaleza de nueva contraseña
+      const newPasswordVal = validators.password(newPassword);
+      if (!newPasswordVal.valid || !isStrongPassword(newPassword)) {
         return res.status(400).json({
           success: false,
           message:
@@ -331,10 +351,11 @@ module.exports = {
 
   requestPasswordReset: async (req, res) => {
     try {
-      const email = getLoginIdentifier(req.body?.email);
-      if (!email) {
-        return res.status(400).json({ success: false, message: 'El correo es obligatorio' });
+      const emailVal = validators.email(req.body?.email);
+      if (!emailVal.valid) {
+        return res.status(400).json({ success: false, message: emailVal.error });
       }
+      const email = emailVal.value;
 
       const usuario = await models.Usuarios.getByEmailLogin(email);
       if (!usuario) {
@@ -345,6 +366,11 @@ module.exports = {
       const tokenHash = hashResetToken(token);
       const expiresAt = Date.now() + passwordTokenExpiryMs;
 
+      // Hash the temporary password and set it as the user's password_hash
+      const tempPasswordHash = await bcrypt.hash(token, 10);
+      await models.Usuarios.updatePasswordHashWithExpiry(usuario.id, tempPasswordHash, expiresAt);
+
+      // Store reset token for audit trail
       await models.Usuarios.createPasswordResetToken({
         usuarioId: usuario.id,
         tokenHash,
@@ -357,7 +383,7 @@ module.exports = {
         tempPassword: token,
       });
 
-      return res.json({ success: true, message: 'Se envió el código de recuperación al correo registrado' });
+      return res.json({ success: true, message: 'Se envió la contraseña temporal al correo registrado. Esta contraseña será válida por 2 horas.' });
     } catch (error) {
       return res.status(500).json({ success: false, message: error.message });
     }
@@ -365,12 +391,23 @@ module.exports = {
 
   confirmPasswordReset: async (req, res) => {
     try {
-      const email = getLoginIdentifier(req.body?.email);
-      const token = String(req.body?.token || '').trim();
-      const newPassword = String(req.body?.newPassword || '').trim();
+      // Validar email
+      const emailVal = validators.email(req.body?.email);
+      if (!emailVal.valid) {
+        return res.status(400).json({ success: false, message: emailVal.error });
+      }
+      const email = emailVal.value;
 
-      if (!email || !token || !newPassword) {
-        return res.status(400).json({ success: false, message: 'Email, código y nueva contraseña son obligatorios' });
+      // Validar token
+      const token = String(req.body?.token || '').trim();
+      if (!token) {
+        return res.status(400).json({ success: false, message: 'El código es obligatorio' });
+      }
+
+      // Validar nueva contraseña
+      const newPassword = String(req.body?.newPassword || '').trim();
+      if (!newPassword) {
+        return res.status(400).json({ success: false, message: 'La nueva contraseña es obligatoria' });
       }
 
       if (!isStrongPassword(newPassword)) {
@@ -419,7 +456,7 @@ module.exports = {
         return res.status(401).json({ success: false, message: 'No autenticado' });
       }
 
-      await pool.query('UPDATE usuarios_sesiones SET revoked_at = CURRENT_TIMESTAMP, last_seen_at = CURRENT_TIMESTAMP WHERE usuario_id = $1', [userId]);
+      await models.Usuarios.revokeAllSessions(userId);
       res.clearCookie(config.auth.cookieName, buildCookieOptions());
       return res.json({ success: true, message: 'Todas las sesiones fueron cerradas' });
     } catch (error) {
@@ -447,7 +484,23 @@ module.exports = {
         estado,
         password,
       } = normalizedRegister.data;
-      const normalizedEmail = String(email || '').trim().toLowerCase();
+
+      // Validar email
+      const emailVal = validators.email(email);
+      if (!emailVal.valid) {
+        return res.status(400).json({ success: false, message: emailVal.error });
+      }
+      const normalizedEmail = emailVal.value;
+
+      // Validar contraseña
+      const passwordVal = validators.password(password);
+      if (!passwordVal.valid || !isStrongPassword(password)) {
+        return res.status(400).json({
+          success: false,
+          message: 'La contraseña debe tener mínimo 8 caracteres, al menos una mayúscula, una minúscula y un número',
+        });
+      }
+
       const normalizedDocumento = String(documento || '').trim();
       const normalizedTelefono = String(telefono || '').replace(/\D/g, '');
       const normalizedNombre = String(nombre || '').trim();

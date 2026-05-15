@@ -1,4 +1,6 @@
 const nodemailer = require('nodemailer');
+const path = require('path');
+const fs = require('fs');
 const config = require('../../config');
 
 let cachedTransporter = null;
@@ -6,6 +8,31 @@ let cachedTransporterMode = null;
 
 const hasSmtpConfig = () =>
   Boolean(config.mail.host && config.mail.user && config.mail.password);
+
+const LOGO_ABS_PATH = path.join(__dirname, '../../../frontend/public/favicon/android-chrome-192x192.png');
+
+const buildLogoParts = () => {
+  try {
+    if (fs.existsSync(LOGO_ABS_PATH)) {
+      return {
+        attachments: [
+          {
+            filename: 'logo.png',
+            path: LOGO_ABS_PATH,
+            cid: 'grandmas_logo',
+          },
+        ],
+        headerHtml:
+          '<div style="margin:0 0 20px 0">' +
+          '<img src="cid:grandmas_logo" alt="Grandma\'s Liquors" width="56" height="56" style="display:block;border-radius:10px" />' +
+          '</div>',
+      };
+    }
+  } catch (_e) {
+    /* noop */
+  }
+  return { attachments: [], headerHtml: '' };
+};
 
 const createTransporter = () => {
   if (cachedTransporter) return cachedTransporter;
@@ -66,57 +93,88 @@ const sendWithLogging = async (message, label) => {
   }
 };
 
+const wrapBrandedHtml = (title, innerBodyHtml) => {
+  const { headerHtml } = buildLogoParts();
+  return `
+    <div style="font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.55; color: #1e293b; max-width: 560px; margin: 0 auto;">
+      <div style="border:1px solid #e2e8f0;border-radius:12px;padding:24px 28px;background:#ffffff">
+        ${headerHtml}
+        <h1 style="margin:0 0 12px 0;font-size:20px;color:#0f172a;font-weight:600">${title}</h1>
+        ${innerBodyHtml}
+        <p style="margin:28px 0 0 0;padding-top:16px;border-top:1px solid #e2e8f0;font-size:12px;color:#64748b">
+          Este mensaje fue generado de forma automática. Si no solicitó esta acción, ignore este correo o comuníquese con soporte.
+        </p>
+        <p style="margin:8px 0 0 0;font-size:12px;color:#94a3b8">Grandma's Liquors · Medellín</p>
+      </div>
+    </div>
+  `;
+};
+
 const sendTemporaryPasswordEmail = async ({ to, name, tempPassword }) => {
+  const safeName = String(name || '').trim() || 'estimado cliente';
+  const { attachments } = buildLogoParts();
+  const inner = `
+    <p style="margin:0 0 12px 0">Hola <strong>${safeName}</strong>,</p>
+    <p style="margin:0 0 12px 0">
+      Hemos recibido una solicitud para restablecer el acceso a su cuenta en <strong>Grandma's Liquors</strong>.
+      Utilice el siguiente <strong>código de verificación</strong> únicamente en el formulario de restablecimiento de contraseña de la aplicación:
+    </p>
+    <div style="margin:18px 0;padding:14px 18px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;text-align:center">
+      <span style="font-size:22px;letter-spacing:3px;font-weight:700;color:#0f172a">${String(tempPassword)}</span>
+    </div>
+    <p style="margin:0 0 8px 0;color:#475569;font-size:14px">
+      <strong>Vigencia:</strong> este código expira a las <strong>2 horas</strong> desde el envío de este correo. Pasado ese plazo deberá solicitar uno nuevo.
+    </p>
+    <p style="margin:0;color:#475569;font-size:14px">
+      Por seguridad, no comparta este código. Nuestro equipo nunca le pedirá su contraseña ni este código por teléfono o mensaje.
+    </p>
+  `;
   const message = {
     from: config.mail.from,
     to,
-    subject: 'Acceso temporal a Grandma\'s Liquors',
+    subject: "Grandma's Liquors — Código para restablecer su acceso",
     text: [
-      `Hola ${name || ''}`.trim(),
+      `Hola ${safeName},`,
       '',
-      `Tu contraseña temporal es: ${tempPassword}`,
+      'Ha solicitado restablecer su acceso a Grandma\'s Liquors.',
+      `Su código de verificación (válido 2 horas): ${tempPassword}`,
       '',
-      'Debes cambiar la contraseña al ingresar por primera vez.',
+      'Ingrese este código en el formulario de restablecimiento de contraseña de la aplicación.',
+      'Si usted no realizó esta solicitud, puede ignorar este mensaje.',
     ].join('\n'),
-    html: `
-      <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #1f2937;">
-        <h2 style="margin-bottom: 16px;">Acceso temporal a Grandma's Liquors</h2>
-        <p>Hola ${name || ''}</p>
-        <p>Tu contraseña temporal es: <strong>${tempPassword}</strong></p>
-        <p>Debes cambiar la contraseña al ingresar por primera vez.</p>
-      </div>
-    `,
+    html: wrapBrandedHtml('Restablecimiento de acceso', inner),
+    attachments,
   };
 
   return sendWithLogging(message, 'temporaryPassword');
 };
 
 const sendEmailChangeNotification = async ({ to, name, previousEmail, currentEmail }) => {
+  const { attachments } = buildLogoParts();
+  const inner = `
+    <p style="margin:0 0 12px 0">Hola <strong>${String(name || '').trim() || 'usuario'}</strong>,</p>
+    <p style="margin:0 0 12px 0">Le informamos que el correo electrónico asociado a su cuenta en <strong>Grandma's Liquors</strong> fue actualizado.</p>
+    <ul style="margin:0;padding-left:20px;color:#334155">
+      <li style="margin:6px 0"><strong>Correo anterior:</strong> ${previousEmail || 'No disponible'}</li>
+      <li style="margin:6px 0"><strong>Correo actual:</strong> ${currentEmail || to}</li>
+    </ul>
+    <p style="margin:16px 0 0 0">Si usted no autorizó este cambio, contacte de inmediato al administrador del sistema.</p>
+  `;
   const message = {
     from: config.mail.from,
     to,
-    subject: 'Tu correo de acceso fue actualizado',
+    subject: "Grandma's Liquors — Actualización de correo de acceso",
     text: [
       `Hola ${name || ''}`.trim(),
       '',
-      'Te informamos que el correo asociado a tu cuenta fue actualizado.',
+      'El correo asociado a su cuenta fue actualizado.',
       `Correo anterior: ${previousEmail || 'No disponible'}`,
       `Correo actual: ${currentEmail || to}`,
       '',
-      'Si no realizaste este cambio, contacta al administrador de inmediato.',
+      'Si no realizó este cambio, contacte al administrador.',
     ].join('\n'),
-    html: `
-      <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #1f2937;">
-        <h2 style="margin-bottom: 16px;">Tu correo de acceso fue actualizado</h2>
-        <p>Hola ${name || ''}</p>
-        <p>Te informamos que el correo asociado a tu cuenta fue actualizado.</p>
-        <ul>
-          <li><strong>Correo anterior:</strong> ${previousEmail || 'No disponible'}</li>
-          <li><strong>Correo actual:</strong> ${currentEmail || to}</li>
-        </ul>
-        <p>Si no realizaste este cambio, contacta al administrador de inmediato.</p>
-      </div>
-    `,
+    html: wrapBrandedHtml('Correo de acceso actualizado', inner),
+    attachments,
   };
 
   return sendWithLogging(message, 'emailChange');
@@ -140,76 +198,88 @@ const escapeHtml = (value) =>
  *   informacion del registro. Caso de uso: cliente que se auto-registra y ya
  *   conoce su contrasena.
  */
-const sendWelcomeEmail = async ({ to, name, email, password = null }) => {
+const sendWelcomeEmail = async ({ to, name, email, password = null, emailCredentialExpiresHours = null }) => {
+  const { attachments } = buildLogoParts();
   const safeName = String(name || '').trim() || 'usuario';
   const loginEmail = String(email || to || '').trim();
   const includesCreds = Boolean(password);
 
+  const expiryNoteText =
+    includesCreds && Number(emailCredentialExpiresHours) > 0
+      ? `\nPor política de seguridad, debe usar estas credenciales para iniciar sesión dentro de las ${Number(
+          emailCredentialExpiresHours
+        )} horas posteriores a este correo.`
+      : '';
+
   const subject = includesCreds
-    ? "Bienvenido(a) a Grandma's Liquors - Datos de acceso"
-    : "Bienvenido(a) a Grandma's Liquors";
+    ? "Grandma's Liquors — Bienvenido(a) y datos de acceso"
+    : "Grandma's Liquors — Registro confirmado";
 
   const credentialsTextBlock = includesCreds
     ? [
         '',
-        'Estas son tus credenciales para iniciar sesion:',
-        `  - Correo (login): ${loginEmail}`,
-        `  - Contrasena: ${password}`,
+        'Datos de acceso:',
+        `  Correo (inicio de sesión): ${loginEmail}`,
+        `  Contraseña: ${password}`,
         '',
-        'Te recomendamos cambiar la contrasena despues del primer ingreso.',
-      ].join('\n')
+        'Le recomendamos iniciar sesión a la brevedad y cambiar su contraseña desde su perfil.',
+        expiryNoteText.trim(),
+      ]
+        .filter(Boolean)
+        .join('\n')
     : [
         '',
-        `Tu correo registrado para iniciar sesion es: ${loginEmail}`,
-        'Recuerda usar la contrasena que definiste durante el registro.',
+        `Correo registrado: ${loginEmail}`,
+        'Utilice la contraseña que definió al completar su registro.',
       ].join('\n');
 
   const text = [
     `Hola ${safeName},`,
     '',
-    "Te damos la bienvenida a Grandma's Liquors.",
-    'Tu registro en la plataforma se completo correctamente.',
+    'Gracias por registrarse en Grandma\'s Liquors.',
+    'Le confirmamos que su cuenta fue creada correctamente.',
     credentialsTextBlock,
     '',
-    'Si no reconoces este registro, contacta al administrador de la plataforma.',
+    'Si no reconoce esta actividad, responda a este correo o contacte a soporte.',
     '',
-    "El equipo de Grandma's Liquors",
+    'Atentamente,',
+    'Grandma\'s Liquors',
   ].join('\n');
 
   const credentialsHtmlBlock = includesCreds
     ? `
-      <div style="margin-top:16px;padding:14px 16px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px">
-        <p style="margin:0 0 8px 0;color:#0f172a"><strong>Datos de acceso</strong></p>
-        <p style="margin:4px 0;color:#0f172a"><strong>Correo (login):</strong> ${escapeHtml(loginEmail)}</p>
-        <p style="margin:4px 0;color:#0f172a"><strong>Contrase&ntilde;a:</strong> ${escapeHtml(password)}</p>
-        <p style="margin:10px 0 0 0;color:#475569;font-size:13px">
-          Te recomendamos cambiar la contrase&ntilde;a despu&eacute;s del primer ingreso.
+      <div style="margin-top:16px;padding:16px 18px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px">
+        <p style="margin:0 0 10px 0;color:#0f172a;font-weight:600">Datos de acceso</p>
+        <p style="margin:6px 0;color:#334155"><strong>Correo:</strong> ${escapeHtml(loginEmail)}</p>
+        <p style="margin:6px 0;color:#334155"><strong>Contraseña:</strong> ${escapeHtml(password)}</p>
+        <p style="margin:12px 0 0 0;color:#475569;font-size:13px">
+          Por seguridad, inicie sesión lo antes posible y actualice su contraseña desde el apartado correspondiente en la plataforma.
         </p>
+        ${
+          Number(emailCredentialExpiresHours) > 0
+            ? `<p style="margin:10px 0 0 0;color:#b45309;font-size:13px"><strong>Vigencia del primer acceso:</strong> ${Number(
+                emailCredentialExpiresHours
+              )} horas desde el envío de este correo.</p>`
+            : ''
+        }
       </div>
     `
     : `
-      <div style="margin-top:16px;padding:14px 16px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px">
-        <p style="margin:0 0 4px 0;color:#0f172a">
-          Tu correo registrado para iniciar sesi&oacute;n es:
-          <strong>${escapeHtml(loginEmail)}</strong>
-        </p>
-        <p style="margin:6px 0 0 0;color:#475569;font-size:13px">
-          Recuerda usar la contrase&ntilde;a que definiste durante el registro.
-        </p>
+      <div style="margin-top:16px;padding:16px 18px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px">
+        <p style="margin:0;color:#334155">Correo registrado: <strong>${escapeHtml(loginEmail)}</strong></p>
+        <p style="margin:10px 0 0 0;color:#475569;font-size:13px">Inicie sesión con la contraseña que definió en el formulario de registro.</p>
       </div>
     `;
 
-  const html = `
-    <div style="font-family: Arial, sans-serif; line-height: 1.6; color:#1f2937; max-width:560px; margin:0 auto;">
-      <h2 style="margin-bottom:12px; color:#0f172a;">Bienvenido(a) a Grandma's Liquors</h2>
-      <p>Hola <strong>${escapeHtml(safeName)}</strong>,</p>
-      <p>Te damos la bienvenida a la plataforma. Tu registro se complet&oacute; correctamente.</p>
-      ${credentialsHtmlBlock}
-      <p style="margin-top:18px; color:#475569; font-size:13px;">
-        Si no reconoces este registro, contacta al administrador de la plataforma.
-      </p>
-      <p style="margin-top:18px; color:#0f172a;">El equipo de Grandma's Liquors</p>
-    </div>
+  const innerBody = `
+    <p style="margin:0 0 12px 0">Hola <strong>${escapeHtml(safeName)}</strong>,</p>
+    <p style="margin:0 0 12px 0">
+      Es un gusto darle la bienvenida a <strong>Grandma's Liquors</strong>. Su registro quedó registrado en nuestro sistema.
+    </p>
+    ${credentialsHtmlBlock}
+    <p style="margin:18px 0 0 0;color:#475569;font-size:14px">
+      Ante cualquier duda, nuestro equipo está a su disposición.
+    </p>
   `;
 
   return sendWithLogging(
@@ -218,40 +288,42 @@ const sendWelcomeEmail = async ({ to, name, email, password = null }) => {
       to,
       subject,
       text,
-      html,
+      html: wrapBrandedHtml('Bienvenido(a)', innerBody),
+      attachments,
     },
     includesCreds ? 'welcome+credentials' : 'welcome'
   );
 };
 
 const sendUserStatusChangeNotification = async ({ to, name, estado, motivo, changedBy }) => {
+  const { attachments } = buildLogoParts();
+  const inner = `
+    <p style="margin:0 0 12px 0">Hola <strong>${String(name || '').trim() || 'usuario'}</strong>,</p>
+    <p style="margin:0 0 12px 0">El estado de su cuenta en <strong>Grandma's Liquors</strong> fue actualizado.</p>
+    <p style="margin:0 0 8px 0"><strong>Nuevo estado:</strong> ${escapeHtml(estado)}</p>
+    <ul style="margin:0;padding-left:20px;color:#334155">
+      ${changedBy ? `<li style="margin:6px 0"><strong>Registrado por:</strong> ${escapeHtml(changedBy)}</li>` : ''}
+      ${motivo ? `<li style="margin:6px 0"><strong>Observación:</strong> ${escapeHtml(motivo)}</li>` : ''}
+    </ul>
+    <p style="margin:16px 0 0 0">Si no reconoce este cambio, contacte de inmediato al administrador.</p>
+  `;
   const message = {
     from: config.mail.from,
     to,
-    subject: 'Cambio de estado de tu cuenta',
+    subject: "Grandma's Liquors — Notificación de cuenta",
     text: [
       `Hola ${name || ''}`.trim(),
       '',
-      `El estado de tu cuenta fue actualizado a: ${estado}`,
+      `El estado de su cuenta fue actualizado a: ${estado}`,
       changedBy ? `Realizado por: ${changedBy}` : null,
       motivo ? `Motivo: ${motivo}` : null,
       '',
-      'Si no reconoces este cambio, contacta inmediatamente al administrador.',
+      'Si no reconoce este cambio, contacte al administrador.',
     ]
       .filter(Boolean)
       .join('\n'),
-    html: `
-      <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #1f2937;">
-        <h2 style="margin-bottom: 16px;">Cambio de estado de tu cuenta</h2>
-        <p>Hola ${name || ''}</p>
-        <p>El estado de tu cuenta fue actualizado a: <strong>${estado}</strong></p>
-        <ul>
-          ${changedBy ? `<li><strong>Realizado por:</strong> ${changedBy}</li>` : ''}
-          ${motivo ? `<li><strong>Motivo:</strong> ${motivo}</li>` : ''}
-        </ul>
-        <p>Si no reconoces este cambio, contacta inmediatamente al administrador.</p>
-      </div>
-    `,
+    html: wrapBrandedHtml('Estado de cuenta', inner),
+    attachments,
   };
 
   return sendWithLogging(message, 'statusChange');

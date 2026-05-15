@@ -21,14 +21,14 @@ export function Button({
   disabled = false,
   className = ''
 }: ButtonProps) {
-  const baseClasses = "inline-flex items-center justify-center gap-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed";
+  const baseClasses = "inline-flex items-center justify-center gap-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed border-2";
   
   const variantClasses = {
-    primary: 'bg-primary text-primary-foreground hover:bg-primary/90',
-    secondary: 'bg-secondary text-secondary-foreground hover:bg-secondary/80',
-    destructive: 'bg-destructive text-destructive-foreground hover:bg-destructive/90',
-    outline: 'border border-border bg-white hover:bg-accent',
-    ghost: 'hover:bg-accent'
+    primary: 'border-primary bg-primary text-primary-foreground ring-2 ring-transparent hover:bg-primary/90 hover:ring-primary/35',
+    secondary: 'border-secondary bg-secondary text-secondary-foreground ring-2 ring-transparent hover:bg-secondary/80 hover:ring-ring/35',
+    destructive: 'border-destructive bg-destructive text-destructive-foreground ring-2 ring-transparent hover:bg-destructive/90 hover:ring-destructive/40',
+    outline: 'border border-border bg-white ring-2 ring-transparent hover:bg-accent hover:border-primary/40 hover:ring-primary/20',
+    ghost: 'border-2 border-transparent ring-2 ring-transparent hover:bg-accent hover:ring-ring/25 hover:border-ring/25',
   };
   
   const sizeClasses = {

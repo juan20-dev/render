@@ -32,21 +32,44 @@ interface DataTableProps {
   getRowKey?: (row: any) => React.Key;
   /** Clases extra por fila (p. ej. inactivos) sin cambiar la estructura de la tabla */
   rowClassName?: (row: any) => string | undefined;
+  /** Paginación local: cantidad máxima de filas por página (p. ej. 10). */
+  pageSize?: number;
 }
 
-export function DataTable({ 
-  columns, 
-  data, 
-  actions = [], 
+export function DataTable({
+  columns,
+  data,
+  actions = [],
   onSearch,
   searchPlaceholder = "Buscar...",
   getRowKey,
   rowClassName,
+  pageSize,
 }: DataTableProps) {
   const [searchQuery, setSearchQuery] = React.useState('');
+  const [page, setPage] = React.useState(1);
+
+  const total = data.length;
+  const usePagination = typeof pageSize === 'number' && pageSize > 0;
+  const totalPages = usePagination ? Math.max(1, Math.ceil(total / pageSize!)) : 1;
+  const safePage = usePagination ? Math.min(page, totalPages) : 1;
+
+  React.useEffect(() => {
+    setPage(1);
+  }, [total, pageSize]);
+
+  React.useEffect(() => {
+    if (usePagination && page > totalPages) {
+      setPage(totalPages);
+    }
+  }, [page, totalPages, usePagination]);
+
+  const sliceStart = usePagination ? (safePage - 1) * pageSize! : 0;
+  const pageRows = usePagination ? data.slice(sliceStart, sliceStart + pageSize!) : data;
 
   const handleSearch = (value: string) => {
     setSearchQuery(value);
+    setPage(1);
     onSearch?.(value);
   };
 
@@ -86,14 +109,14 @@ export function DataTable({
             </tr>
           </thead>
           <tbody>
-            {data.length === 0 ? (
+            {pageRows.length === 0 ? (
               <tr>
                 <td colSpan={columns.length + (actions.length > 0 ? 1 : 0)} className="px-4 py-8 text-center text-muted-foreground">
                   No hay datos disponibles
                 </td>
               </tr>
             ) : (
-              data.map((row, index) => (
+              pageRows.map((row, index) => (
                 <tr
                   key={getRowKey ? getRowKey(row) : index}
                   className={`border-t border-border hover:bg-accent/50 transition-colors ${rowClassName?.(row) ?? ''}`.trim()}
@@ -140,20 +163,60 @@ export function DataTable({
         </table>
       </div>
 
-      {/* Pagination - Placeholder */}
-      {data.length > 0 && (
-        <div className="p-4 border-t border-border flex items-center justify-between">
+      {total > 0 && (
+        <div className="p-4 border-t border-border flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-sm text-muted-foreground">
-            Mostrando {data.length} registro{data.length !== 1 ? 's' : ''}
+            {usePagination ? (
+              <>
+                Mostrando {total === 0 ? 0 : sliceStart + 1}-{Math.min(sliceStart + pageSize!, total)} de {total}{' '}
+                registro{total !== 1 ? 's' : ''}
+                {' · '}Página {safePage} de {totalPages}
+              </>
+            ) : (
+              <>
+                Mostrando {total} registro{total !== 1 ? 's' : ''}
+              </>
+            )}
           </p>
-          <div className="flex gap-2">
-            <button className="px-4 py-2 border border-border rounded-lg hover:bg-accent transition-colors disabled:opacity-50" disabled>
-              Anterior
-            </button>
-            <button className="px-4 py-2 border border-border rounded-lg hover:bg-accent transition-colors disabled:opacity-50" disabled>
-              Siguiente
-            </button>
-          </div>
+          {usePagination && totalPages > 1 ? (
+            <div className="flex gap-2">
+              <button
+                type="button"
+                className="px-4 py-2 border border-border rounded-lg hover:bg-accent hover:border-primary/35 transition-colors disabled:opacity-50"
+                disabled={safePage <= 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+              >
+                Anterior
+              </button>
+              <button
+                type="button"
+                className="px-4 py-2 border border-border rounded-lg hover:bg-accent hover:border-primary/35 transition-colors disabled:opacity-50"
+                disabled={safePage >= totalPages}
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              >
+                Siguiente
+              </button>
+            </div>
+          ) : (
+            !usePagination && (
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  className="px-4 py-2 border border-border rounded-lg hover:bg-accent hover:border-primary/35 transition-colors disabled:opacity-50"
+                  disabled
+                >
+                  Anterior
+                </button>
+                <button
+                  type="button"
+                  className="px-4 py-2 border border-border rounded-lg hover:bg-accent hover:border-primary/35 transition-colors disabled:opacity-50"
+                  disabled
+                >
+                  Siguiente
+                </button>
+              </div>
+            )
+          )}
         </div>
       )}
     </div>

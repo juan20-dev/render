@@ -184,16 +184,22 @@ const getInsumosEntregadosByProductor = async (productorId) => {
 
 const Produccion = {
   getInsumosEntregadosByProductor,
-  getAll: async () => {
+  getAll: async (options = {}) => {
     await ensureProduccionDetallePreparacion();
+    const prodId = Number(options.productorUserId);
+    const filterProductor = Number.isFinite(prodId) && prodId > 0;
+    const params = filterProductor ? [prodId] : [];
+    const whereProductor = filterProductor ? ' WHERE p.productor_id = $1 ' : '';
+    
     const result = await pool.query(`
       SELECT p.*, pr.nombre as producto_nombre, p.responsable as productor_nombre,
              pe.numero_pedido as pedido_numero
       FROM produccion p
       JOIN productos pr ON p.producto_id = pr.id
       LEFT JOIN pedidos pe ON pe.id = p.pedido_id
+      ${whereProductor}
       ORDER BY p.fecha DESC
-    `);
+    `, params);
     return result.rows;
   },
   getById: async (id) => {

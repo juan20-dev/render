@@ -504,6 +504,21 @@ const ensureUserLoginAttemptsTable = async () => {
   await userLoginAttemptsTableReady;
 };
 
+let usuariosPasswordEmailExpiresReady = null;
+/** Caducidad opcional para credenciales comunicadas solo por correo (p. ej. alta desde gestión de clientes). */
+const ensureUsuariosPasswordEmailExpiresColumn = async () => {
+  if (!usuariosPasswordEmailExpiresReady) {
+    usuariosPasswordEmailExpiresReady = pool.query(
+      `ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS password_email_expires_at TIMESTAMP NULL`
+    );
+  }
+  try {
+    await usuariosPasswordEmailExpiresReady;
+  } catch (_e) {
+    usuariosPasswordEmailExpiresReady = null;
+  }
+};
+
 // ------- Helpers Usuarios (sesiones, password history, reset, login attempts) -------
 const registerUserSession = async ({ usuarioId, jti, expiresAt, ipAddress = null, userAgent = null }) => {
   await ensureUserSessionTable();
@@ -1008,6 +1023,7 @@ module.exports = {
   ensureUserPasswordHistoryTable,
   ensureUserPasswordResetTable,
   ensureUserLoginAttemptsTable,
+  ensureUsuariosPasswordEmailExpiresColumn,
   // helpers usuarios
   registerUserSession,
   getPasswordHistory,

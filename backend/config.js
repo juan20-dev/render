@@ -44,7 +44,8 @@ const config = {
     cookieDomain: process.env.AUTH_COOKIE_DOMAIN || undefined,
     cookieSameSite: process.env.AUTH_COOKIE_SAME_SITE || 'lax',
     cookieSecure: isProduction,
-    clienteTokenTtlMs: parseInt(process.env.JWT_CLIENTE_TTL_MS || `${60 * 60 * 1000}`, 10),
+    // Sesión JWT rol Cliente: por defecto 30 min (sobreescribible con JWT_CLIENTE_TTL_MS).
+    clienteTokenTtlMs: parseInt(process.env.JWT_CLIENTE_TTL_MS || `${30 * 60 * 1000}`, 10),
     staffTokenTtlMs: parseInt(process.env.JWT_STAFF_TTL_MS || `${3 * 60 * 60 * 1000}`, 10),
     corsOrigins: configuredCorsOrigins.length > 0 ? configuredCorsOrigins : defaultCorsOrigins,
   },

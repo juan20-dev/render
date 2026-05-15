@@ -17,6 +17,7 @@ const {
   ensureUserPasswordHistoryTable,
   ensureUserPasswordResetTable,
   ensureUserLoginAttemptsTable,
+  ensureUsuariosPasswordEmailExpiresColumn,
   registerUserSession,
   getPasswordHistory,
   storePasswordHistory,
@@ -215,11 +216,23 @@ const Usuarios = {
     return true;
   },
   updatePasswordHash: async (id, passwordHash) => {
+    await ensureUsuariosPasswordEmailExpiresColumn();
     await pool.query(
-      'UPDATE usuarios SET password_hash = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
+      'UPDATE usuarios SET password_hash = $1, password_email_expires_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
       [passwordHash, id]
     );
     return true;
+  },
+  updatePasswordHashWithExpiry: async (id, passwordHash, expiresAtMs) => {
+    await ensureUsuariosPasswordEmailExpiresColumn();
+    await pool.query(
+      'UPDATE usuarios SET password_hash = $1, password_email_expires_at = to_timestamp($2 / 1000.0), updated_at = CURRENT_TIMESTAMP WHERE id = $3',
+      [passwordHash, expiresAtMs, id]
+    );
+    return true;
+  },
+  ensurePasswordEmailExpiryColumn: async () => {
+    await ensureUsuariosPasswordEmailExpiresColumn();
   },
   getPasswordHistory: getPasswordHistory,
   storePasswordHistory: storePasswordHistory,
@@ -469,6 +482,31 @@ const Usuarios = {
       user,
       tempPassword,
     };
+  },
+
+  // Obtener expiración de contraseña temporal enviada por correo
+  getPasswordEmailExpiry: async (usuarioId) => {
+    const result = await pool.query(
+      'SELECT password_email_expires_at FROM usuarios WHERE id = $1',
+      [usuarioId]
+    );
+    return result.rows[0]?.password_email_expires_at || null;
+  },
+
+  // Limpiar expiración de contraseña temporal
+  clearPasswordEmailExpiry: async (usuarioId) => {
+    await pool.query(
+      'UPDATE usuarios SET password_email_expires_at = NULL WHERE id = $1',
+      [usuarioId]
+    );
+  },
+
+  // Revocar todas las sesiones de un usuario
+  revokeAllSessions: async (usuarioId) => {
+    await pool.query(
+      'UPDATE usuarios_sesiones SET revoked_at = CURRENT_TIMESTAMP, last_seen_at = CURRENT_TIMESTAMP WHERE usuario_id = $1',
+      [usuarioId]
+    );
   }
 };
 

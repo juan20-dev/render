@@ -126,6 +126,7 @@ CREATE TABLE usuarios (
     password_hash VARCHAR(255) NOT NULL,
     rol_id INTEGER REFERENCES roles(id) ON DELETE SET NULL,
     estado VARCHAR(20) DEFAULT 'Activo',
+    password_email_expires_at TIMESTAMP NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -368,6 +369,7 @@ CREATE TABLE produccion (
     cantidad INTEGER NOT NULL CHECK (cantidad > 0),
     fecha DATE NOT NULL,
     responsable VARCHAR(150),
+    productor_id INTEGER REFERENCES usuarios(id) ON DELETE SET NULL,
     tiempo_preparacion_minutos INTEGER DEFAULT 1 CHECK (tiempo_preparacion_minutos > 0),
     estado VARCHAR(40) DEFAULT 'Orden Recibida'
         CHECK (estado IN ('Orden Recibida','Orden en preparacion','Orden Lista','Cancelada')),
@@ -506,34 +508,33 @@ INSERT INTO roles (nombre, descripcion, permisos, estado) VALUES
 ('Administrador', 'Acceso total a todas las funcionalidades', '{}', 'Activo'),
 ('Asesor', 'Puede gestionar clientes, ventas, pedidos, abonos, domicilios y consultar inventario', ARRAY[
   'Ver Dashboard',
-  'Ver Clientes', 'Crear Clientes',
-  'Ver Ventas', 'Registrar Ventas',
-  'Ver Pedidos',
-  'Ver Abonos',
-  'Ver Domicilios', 'Gestionar Domicilios',
+  'Ver Clientes', 'Crear Clientes', 'Editar Clientes',
+  'Ver Ventas', 'Crear Ventas', 'Editar Ventas',
+  'Ver Pedidos', 'Crear Pedidos', 'Editar Pedidos',
+  'Ver Abonos', 'Crear Abonos', 'Editar Abonos',
+  'Ver Domicilios', 'Crear Domicilios', 'Editar Domicilios',
   'Ver Productos',
   'Ver Categorías',
-  'Ver Proveedores', 'Crear Proveedores',
-  'Ver Compras', 'Registrar Compras'
+  'Ver Proveedores', 'Crear Proveedores', 'Editar Proveedores',
+  'Ver Compras', 'Crear Compras', 'Editar Compras'
 ], 'Activo'),
 ('Productor', 'Acceso al modulo de produccion e insumos', ARRAY[
   'Ver Dashboard',
-  'Ver Insumos',
+  'Ver Insumos', 'Crear Insumos', 'Editar Insumos',
   'Entregar Insumos',
-  'Ver Producción',
-  'Registrar Producción'
+  'Ver Producción', 'Registrar Producción',
+  'Ver Producto-Insumos', 'Crear Producto-Insumos', 'Editar Producto-Insumos'
 ], 'Activo'),
 ('Repartidor', 'Puede gestionar domicilios y entregas', ARRAY[
   'Ver Dashboard',
-  'Ver Domicilios',
-  'Gestionar Domicilios'
+  'Ver Domicilios', 'Editar Domicilios'
 ], 'Activo'),
 ('Cliente', 'Acceso a tienda y pedidos personales', ARRAY[
+  'Cliente',
   'Ver Dashboard',
   'Ver Tienda',
   'Ver Mis Pedidos',
-  'Ver Mis Lista de Compras',
-  'Ver Mis Compras',
+  'Ver Mis Abonos',
   'Ver Mis Domicilios'
 ], 'Activo');
 

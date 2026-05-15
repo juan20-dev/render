@@ -603,6 +603,14 @@ export const api = {
         })),
       };
     },
+    getAvailableModules: async () => {
+      const d = await apiFetchData<{
+        rol: string;
+        permisos: string[];
+        modulos: Record<string, boolean>;
+      }>('/api/dashboard/modules');
+      return d;
+    },
   },
 
   roles: {
