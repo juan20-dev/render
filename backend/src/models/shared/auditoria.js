@@ -650,6 +650,35 @@ const revokeUserSession = async (jti) => {
   );
 };
 
+const isUserSessionActive = async (usuarioId, jti) => {
+  if (!jti || !Number.isFinite(Number(usuarioId))) return false;
+  await ensureUserSessionTable();
+  const result = await pool.query(
+    `SELECT 1
+     FROM usuarios_sesiones
+     WHERE usuario_id = $1
+       AND jti = $2
+       AND revoked_at IS NULL
+       AND expires_at > CURRENT_TIMESTAMP
+     LIMIT 1`,
+    [Number(usuarioId), jti]
+  );
+  return result.rows.length > 0;
+};
+
+const touchUserSession = async (jti) => {
+  if (!jti) return;
+  await ensureUserSessionTable();
+  await pool.query(
+    `UPDATE usuarios_sesiones
+     SET last_seen_at = CURRENT_TIMESTAMP
+     WHERE jti = $1
+       AND revoked_at IS NULL
+       AND expires_at > CURRENT_TIMESTAMP`,
+    [jti]
+  );
+};
+
 const getActiveUserSessionCount = async (usuarioId) => {
   await ensureUserSessionTable();
   const result = await pool.query(
@@ -894,12 +923,10 @@ const getRoleChanges = (before, after) => {
 
 const CLIENT_ROLE_NAME = 'cliente';
 const CLIENT_ALLOWED_PERMISSIONS = [
+  'Cliente',
   'Ver Dashboard',
   'Ver Tienda',
   'Ver Mis Pedidos',
-  'Ver Mis Lista de Compras',
-  'Ver Mis Compras',
-  'Ver Mis Domicilios',
 ];
 
 const normalizePermissions = (permissions) => {
@@ -1036,6 +1063,8 @@ module.exports = {
   isLoginBlocked,
   getLoginBlockInfo,
   revokeUserSession,
+  isUserSessionActive,
+  touchUserSession,
   getActiveUserSessionCount,
   getLinkedClienteForUsuario,
   getUserDeletionBlockers,

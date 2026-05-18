@@ -5,7 +5,6 @@ const models = {
   Usuarios: require('../models/usuarios/usuarios'),
 };
 const bcrypt = require('bcryptjs');
-const pool = require('../../db');
 const { normalizeUsuarioPayload } = require('./normalizador-http');
 const { generateTempPassword, isStrongPassword } = require('../utils/credentials');
 const {
@@ -224,31 +223,28 @@ module.exports = {
         normalized.data.email.trim().toLowerCase() !== String(previousEmail || '').trim().toLowerCase();
 
       if (normalizedEmail) {
-        const existingEmail = await pool.query(
-          'SELECT id FROM usuarios WHERE LOWER(email) = LOWER($1) AND id <> $2 LIMIT 1',
-          [normalizedEmail, Number(req.params.id)]
-        );
-        if (existingEmail.rows.length > 0) {
+        const emailTaken = await models.Usuarios.existsEmailExcept(normalizedEmail, Number(req.params.id));
+        if (emailTaken) {
           return res.status(409).json({ success: false, message: 'El correo ya esta registrado' });
         }
       }
 
       if (typeof normalized.data.documento === 'string' && normalized.data.documento.trim()) {
-        const existingDoc = await pool.query(
-          'SELECT id FROM usuarios WHERE documento = $1 AND id <> $2 LIMIT 1',
-          [normalized.data.documento.trim(), Number(req.params.id)]
+        const docTaken = await models.Usuarios.existsDocumentoExcept(
+          normalized.data.documento.trim(),
+          Number(req.params.id)
         );
-        if (existingDoc.rows.length > 0) {
+        if (docTaken) {
           return res.status(409).json({ success: false, message: 'El documento ya esta registrado' });
         }
       }
 
       if (typeof normalized.data.telefono === 'string' && normalized.data.telefono.trim()) {
-        const existingPhone = await pool.query(
-          'SELECT id FROM usuarios WHERE telefono = $1 AND id <> $2 LIMIT 1',
-          [normalized.data.telefono.trim(), Number(req.params.id)]
+        const phoneTaken = await models.Usuarios.existsTelefonoExcept(
+          normalized.data.telefono.trim(),
+          Number(req.params.id)
         );
-        if (existingPhone.rows.length > 0) {
+        if (phoneTaken) {
           return res.status(409).json({ success: false, message: 'El telefono ya esta registrado' });
         }
       }

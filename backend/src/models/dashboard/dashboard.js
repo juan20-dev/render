@@ -1,0 +1,157 @@
+const pool = require('../../../db');
+const Usuarios = require('../usuarios/usuarios');
+
+const Dashboard = {
+  getStaffResumen: async () => {
+    const today = new Date().toISOString().split('T')[0];
+    const y = new Date().getFullYear();
+    const m = new Date().getMonth() + 1;
+
+    const [
+      ventasMes,
+      ventasHoy,
+      pedidosActivos,
+      clientesActivos,
+      ventasMensuales,
+      categoriaDistribucion,
+      productosMasVendidos,
+      pedidosRecientes,
+    ] = await Promise.all([
+      pool.query(
+        `SELECT COALESCE(SUM(total), 0)::numeric AS total
+         FROM ventas
+         WHERE TRIM(LOWER(estado)) IN ('completada', 'completado')
+           AND EXTRACT(YEAR FROM fecha::date) = $1
+           AND EXTRACT(MONTH FROM fecha::date) = $2`,
+        [y, m]
+      ),
+      pool.query(
+        `SELECT COALESCE(SUM(total), 0)::numeric AS total
+         FROM ventas
+         WHERE TRIM(LOWER(estado)) IN ('completada', 'completado')
+           AND fecha::date = $1::date`,
+        [today]
+      ),
+      pool.query(
+        `SELECT COUNT(*)::int AS c
+         FROM pedidos
+         WHERE TRIM(estado) NOT IN ('Completado', 'Cancelado')`
+      ),
+      pool.query(`SELECT COUNT(*)::int AS c FROM clientes WHERE TRIM(estado) = 'Activo'`),
+      pool.query(
+        `SELECT TO_CHAR(fecha::date, 'Mon YYYY') AS label,
+                TO_CHAR(fecha::date, 'YYYY-MM') AS orden,
+                COALESCE(SUM(total), 0)::numeric AS ventas
+         FROM ventas
+         WHERE TRIM(LOWER(estado)) IN ('completada', 'completado')
+           AND fecha::date >= (CURRENT_DATE - INTERVAL '6 months')
+         GROUP BY TO_CHAR(fecha::date, 'Mon YYYY'), TO_CHAR(fecha::date, 'YYYY-MM')
+         ORDER BY orden ASC`
+      ),
+      pool.query(
+        `SELECT c.nombre AS name, COALESCE(SUM(dv.subtotal), 0)::numeric AS value
+         FROM detalle_ventas dv
+         JOIN ventas v ON v.id = dv.venta_id
+         JOIN productos p ON p.id = dv.producto_id
+         JOIN categorias c ON c.id = p.categoria_id
+         WHERE TRIM(LOWER(v.estado)) IN ('completada', 'completado')
+           AND v.fecha::date >= (CURRENT_DATE - INTERVAL '12 months')
+         GROUP BY c.id, c.nombre
+         ORDER BY value DESC`
+      ),
+      pool.query(
+        `SELECT p.nombre AS name,
+                SUM(dv.cantidad)::int AS quantity,
+                COALESCE(SUM(dv.subtotal), 0)::numeric AS sales
+         FROM detalle_ventas dv
+         JOIN ventas v ON v.id = dv.venta_id
+         JOIN productos p ON p.id = dv.producto_id
+         WHERE TRIM(LOWER(v.estado)) IN ('completada', 'completado')
+         GROUP BY p.id, p.nombre
+         ORDER BY quantity DESC
+         LIMIT 10`
+      ),
+      pool.query(
+        `SELECT p.id,
+                p.numero_pedido,
+                TRIM(CONCAT(COALESCE(c.nombre, ''), ' ', COALESCE(c.apellido, ''))) AS cliente,
+                p.total,
+                p.estado,
+                p.fecha
+         FROM pedidos p
+         JOIN clientes c ON c.id = p.cliente_id
+         ORDER BY p.id DESC
+         LIMIT 8`
+      ),
+    ]);
+
+    return {
+      ventasMes: Number(ventasMes.rows[0]?.total ?? 0),
+      ventasHoy: Number(ventasHoy.rows[0]?.total ?? 0),
+      pedidosActivos: pedidosActivos.rows[0]?.c ?? 0,
+      clientesActivos: clientesActivos.rows[0]?.c ?? 0,
+      ventasMensuales: ventasMensuales.rows.map((r) => ({
+        month: r.label,
+        orden: r.orden,
+        ventas: Number(r.ventas),
+      })),
+      categoriaDistribucion: categoriaDistribucion.rows.map((r) => ({
+        name: r.name,
+        value: Number(r.value),
+      })),
+      productosMasVendidos: productosMasVendidos.rows.map((r) => ({
+        name: r.name,
+        quantity: r.quantity,
+        sales: Number(r.sales),
+      })),
+      pedidosRecientes: pedidosRecientes.rows.map((r) => ({
+        id: String(r.id),
+        numero_pedido: r.numero_pedido,
+        client: r.cliente?.trim() || '—',
+        total: Number(r.total ?? 0),
+        status: String(r.estado ?? ''),
+        date: r.fecha != null ? String(r.fecha).split('T')[0] : '',
+      })),
+    };
+  },
+
+  getAvailableModulesForUser: async (userId) => {
+    const usuario = await Usuarios.getById(userId);
+    if (!usuario) return null;
+
+    const roleRow = await pool.query('SELECT nombre, permisos FROM roles WHERE id = $1', [usuario.rol_id]);
+    const rol = roleRow.rows[0];
+    const permisos = Array.isArray(rol?.permisos) ? rol.permisos : [];
+    const roleName = rol?.nombre || 'Cliente';
+
+    const modulosMap = {
+      dashboard: ['Ver Dashboard'],
+      usuarios: ['Ver Usuarios', 'Ver Roles', 'Asignar Permisos'],
+      configuracion: ['Ver Roles', 'Asignar Permisos'],
+      compras: ['Ver Proveedores', 'Ver Compras', 'Ver Productos', 'Ver Categorías', 'Crear Proveedores', 'Crear Compras'],
+      produccion: ['Ver Insumos', 'Entregar Insumos', 'Ver Producción', 'Registrar Producción'],
+      ventas: ['Ver Clientes', 'Ver Ventas', 'Ver Abonos', 'Ver Pedidos', 'Crear Clientes', 'Crear Ventas'],
+      domicilios: ['Ver Domicilios', 'Editar Domicilios'],
+      cliente: ['Ver Tienda', 'Ver Mis Pedidos', 'Cliente'],
+    };
+
+    const modulosDisponibles = {};
+    for (const [modulo, permisosRequeridos] of Object.entries(modulosMap)) {
+      if (roleName === 'Administrador' && modulo !== 'cliente') {
+        modulosDisponibles[modulo] = true;
+      } else if (roleName === 'Asesor' && !['usuarios', 'configuracion'].includes(modulo)) {
+        modulosDisponibles[modulo] = true;
+      } else if (roleName === 'Repartidor') {
+        modulosDisponibles[modulo] = modulo === 'dashboard' || modulo === 'domicilios';
+      } else if (roleName === 'Productor') {
+        modulosDisponibles[modulo] = modulo === 'dashboard' || modulo === 'produccion';
+      } else {
+        modulosDisponibles[modulo] = permisosRequeridos.some((p) => permisos.includes(p));
+      }
+    }
+
+    return { rol: roleName, permisos, modulos: modulosDisponibles };
+  },
+};
+
+module.exports = Dashboard;

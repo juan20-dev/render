@@ -5,8 +5,8 @@ const models = {
   Roles: require('../models/usuarios/roles'),
   Usuarios: require('../models/usuarios/usuarios'),
 };
-const pool = require('../../db');
 const bcrypt = require('bcryptjs');
+const ClienteCuenta = require('../models/ventas/cliente-cuenta');
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const config = require('../../config');
@@ -57,11 +57,14 @@ const mapUserForResponse = (usuario, roleName, clienteId, permissions = []) => (
 });
 
 const buildSessionMetadata = (sessionExpiresAtMs) => {
-  if (!sessionExpiresAtMs) return {};
+  if (!sessionExpiresAtMs) {
+    return { idle_timeout_ms: config.auth.idleTimeoutMs };
+  }
 
   return {
     session_expires_at: new Date(sessionExpiresAtMs).toISOString(),
     session_remaining_ms: Math.max(0, sessionExpiresAtMs - Date.now()),
+    idle_timeout_ms: config.auth.idleTimeoutMs,
   };
 };
 
@@ -465,8 +468,6 @@ module.exports = {
   },
 
   registerCliente: async (req, res) => {
-    const client = await pool.connect();
-
     try {
       const normalizedRegister = normalizeAuthRegisterPayload(req.body);
       if (normalizedRegister.error) {
@@ -524,180 +525,33 @@ module.exports = {
         return res.status(400).json({ success: false, message: `El campo "${missing.label}" es obligatorio.` });
       }
 
-      await client.query('BEGIN');
-
-      const emailInUsuarios = await client.query(
-        'SELECT id FROM usuarios WHERE LOWER(email) = LOWER($1) LIMIT 1',
-        [normalizedEmail]
-      );
-      if (emailInUsuarios.rows.length > 0) {
-        await client.query('ROLLBACK');
-        return res.status(409).json({ success: false, message: 'El correo ya esta registrado' });
-      }
-
-      const documentoInUsuarios = await client.query(
-        'SELECT id FROM usuarios WHERE documento = $1 LIMIT 1',
-        [normalizedDocumento]
-      );
-      if (documentoInUsuarios.rows.length > 0) {
-        await client.query('ROLLBACK');
-        return res.status(409).json({ success: false, message: 'El documento ya esta registrado' });
-      }
-
-      const emailInClientes = await client.query(
-        'SELECT id, usuario_id FROM clientes WHERE LOWER(email) = LOWER($1) LIMIT 1',
-        [normalizedEmail]
-      );
-      const documentoInClientes = await client.query(
-        'SELECT id, usuario_id FROM clientes WHERE documento = $1 LIMIT 1',
-        [normalizedDocumento]
-      );
-
-      const clienteByEmail = emailInClientes.rows[0] || null;
-      const clienteByDocumento = documentoInClientes.rows[0] || null;
-
-      if (clienteByEmail && clienteByDocumento && Number(clienteByEmail.id) !== Number(clienteByDocumento.id)) {
-        await client.query('ROLLBACK');
-        return res.status(409).json({
-          success: false,
-          message: 'El correo y el documento ya existen en clientes, pero corresponden a registros distintos.',
-        });
-      }
-
-      if (clienteByEmail?.usuario_id) {
-        await client.query('ROLLBACK');
-        return res.status(409).json({ success: false, message: 'El correo ya está asociado a una cuenta existente.' });
-      }
-      if (clienteByDocumento?.usuario_id) {
-        await client.query('ROLLBACK');
-        return res.status(409).json({ success: false, message: 'El documento ya está asociado a una cuenta existente.' });
-      }
-
-      const clienteRole = await client.query('SELECT id FROM roles WHERE nombre = $1', ['Cliente']);
-      if (clienteRole.rows.length === 0) {
-        await client.query('ROLLBACK');
-        return res.status(500).json({ success: false, message: 'No existe el rol Cliente en la base de datos' });
-      }
-
       const passwordHash = await bcrypt.hash(password, 10);
-      const userResult = await client.query(
-        `INSERT INTO usuarios
-        (nombre, apellido, tipo_documento, documento, direccion, email, telefono, password_hash, rol_id, estado)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'Activo')
-        RETURNING id`,
-        [
-          normalizedNombre,
-          normalizedApellido,
+      let clienteId;
+      let usuarioId;
+      try {
+        const registered = await ClienteCuenta.registerWithUsuario({
+          nombre: normalizedNombre,
+          apellido: normalizedApellido,
           tipoDocumento,
-          normalizedDocumento,
-          normalizedDireccion,
-          normalizedEmail,
-          normalizedTelefono,
+          documento: normalizedDocumento,
+          telefono: normalizedTelefono,
+          email: normalizedEmail,
+          direccion: normalizedDireccion,
+          estado: estado || 'Activo',
           passwordHash,
-          clienteRole.rows[0].id,
-        ]
-      );
-
-      let clienteResult;
-      const existingClienteForNewUser = await client.query(
-        'SELECT id FROM clientes WHERE usuario_id = $1 LIMIT 1',
-        [userResult.rows[0].id]
-      );
-
-      // Si existe un trigger/proceso que crea el cliente al insertar usuario, actualizamos ese registro.
-      if (existingClienteForNewUser.rows.length > 0) {
-        clienteResult = await client.query(
-          `UPDATE clientes
-           SET nombre = $1,
-               apellido = $2,
-               tipo_documento = $3,
-               documento = $4,
-               telefono = $5,
-               email = $6,
-               direccion = $7,
-               estado = $8,
-               updated_at = CURRENT_TIMESTAMP
-           WHERE id = $9
-           RETURNING id`,
-          [
-            normalizedNombre,
-            normalizedApellido,
-            tipoDocumento,
-            normalizedDocumento,
-            normalizedTelefono,
-            normalizedEmail,
-            normalizedDireccion,
-            estado || 'Activo',
-            existingClienteForNewUser.rows[0].id,
-          ]
-        );
-      } else if (clienteByEmail && !clienteByDocumento) {
-        clienteResult = await client.query(
-          `UPDATE clientes
-           SET usuario_id = $1,
-               nombre = $2,
-               apellido = $3,
-               tipo_documento = $4,
-               documento = $5,
-               telefono = $6,
-               email = $7,
-               direccion = $8,
-               estado = $9,
-               updated_at = CURRENT_TIMESTAMP
-           WHERE id = $10
-           RETURNING id`,
-          [
-            userResult.rows[0].id,
-            normalizedNombre,
-            normalizedApellido,
-            tipoDocumento,
-            normalizedDocumento,
-            normalizedTelefono,
-            normalizedEmail,
-            normalizedDireccion,
-            estado || 'Activo',
-            clienteByEmail.id,
-          ]
-        );
-      } else {
-        clienteResult = await client.query(
-          `INSERT INTO clientes
-           (usuario_id, nombre, apellido, tipo_documento, documento, telefono, email, direccion, estado)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-           ON CONFLICT (documento) DO UPDATE
-           SET usuario_id = EXCLUDED.usuario_id,
-               nombre = EXCLUDED.nombre,
-               apellido = EXCLUDED.apellido,
-               tipo_documento = EXCLUDED.tipo_documento,
-               telefono = EXCLUDED.telefono,
-               email = EXCLUDED.email,
-               direccion = EXCLUDED.direccion,
-               estado = EXCLUDED.estado,
-               updated_at = CURRENT_TIMESTAMP
-           WHERE clientes.usuario_id IS NULL
-           RETURNING id`,
-          [
-            userResult.rows[0].id,
-            normalizedNombre,
-            normalizedApellido,
-            tipoDocumento,
-            normalizedDocumento,
-            normalizedTelefono,
-            normalizedEmail,
-            normalizedDireccion,
-            estado || 'Activo',
-          ]
-        );
-        if (!clienteResult.rows.length) {
-          await client.query('ROLLBACK');
-          return res.status(409).json({
-            success: false,
-            message: 'El documento ya está asociado a una cuenta existente.',
-          });
+        });
+        clienteId = registered.clienteId;
+        usuarioId = registered.usuarioId;
+      } catch (error) {
+        const mapped = ClienteCuenta.mapRegisterPgUniqueError(error);
+        if (mapped) {
+          return res.status(mapped.statusCode).json({ success: false, message: mapped.message });
         }
+        if (error?.statusCode) {
+          return res.status(error.statusCode).json({ success: false, message: error.message });
+        }
+        throw error;
       }
-
-      await client.query('COMMIT');
 
       // Auto-registro del cliente: enviar SOLO correo de bienvenida con la
       // informacion del registro (sin credenciales, ya que el cliente eligio
@@ -714,27 +568,16 @@ module.exports = {
         success: true,
         message: 'Cliente registrado exitosamente',
         data: {
-          cliente_id: clienteResult.rows[0].id,
-          usuario_id: userResult.rows[0].id,
+          cliente_id: clienteId,
+          usuario_id: usuarioId,
         },
       });
     } catch (error) {
-      await client.query('ROLLBACK');
       if (error?.code === '23505') {
-        const constraint = String(error?.constraint || '').toLowerCase();
-        if (constraint.includes('usuarios_documento') || constraint.includes('documento')) {
-          return res.status(409).json({ success: false, message: 'El documento ya se encuentra registrado.' });
+        const mapped = ClienteCuenta.mapRegisterPgUniqueError(error);
+        if (mapped) {
+          return res.status(mapped.statusCode).json({ success: false, message: mapped.message });
         }
-        if (constraint.includes('usuarios_email') || constraint.includes('clientes_email') || constraint.includes('email')) {
-          return res.status(409).json({ success: false, message: 'El correo ya se encuentra registrado.' });
-        }
-        if (constraint.includes('clientes_usuario_id')) {
-          return res.status(409).json({ success: false, message: 'Este cliente ya está vinculado a un usuario.' });
-        }
-        return res.status(409).json({
-          success: false,
-          message: 'El correo o documento ya se encuentra registrado.',
-        });
       }
       if (error?.code === '22001') {
         return res.status(400).json({
@@ -746,8 +589,6 @@ module.exports = {
         success: false,
         message: 'No se pudo completar el registro en este momento.',
       });
-    } finally {
-      client.release();
     }
   },
 };

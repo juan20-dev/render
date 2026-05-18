@@ -14,16 +14,24 @@ const {
   assertOwnDomicilioId,
   assertOwnPedidoId,
 } = require('../utils/selfServiceAccess');
+const { asyncHandler } = require('../utils/asyncHandler');
+const { AppError } = require('../utils/AppError');
 
 const isRepartidorUser = (req) => String(req.user?.rol || '').trim().toLowerCase() === 'repartidor';
 
 /** Repartidor solo accede a domicilios donde es repartidor_id asignado. */
-const repartidorDomicilioForbidden = (req, domicilio) => {
-  if (!isRepartidorUser(req)) return null;
+const assertRepartidorOwnsDomicilio = (req, domicilio) => {
+  if (!isRepartidorUser(req)) return;
   if (!domicilio || Number(domicilio.repartidor_id) !== Number(req.user.id)) {
-    return { code: 403, payload: { success: false, message: 'No autorizado' } };
+    throw AppError.forbidden();
   }
-  return null;
+};
+
+const throwIfModelError = (error) => {
+  if (error?.statusCode) {
+    throw new AppError(error.message, error.statusCode, 'BUSINESS_RULE', error.details);
+  }
+  throw error;
 };
 
 const normalizeEstado = (value) => String(value || '').trim().toLowerCase();
@@ -171,62 +179,43 @@ const ensureVentaForDeliveredDomicilio = async (domicilioId) => {
   }
 };
 
-module.exports = {
-  getAll: async (req, res) => {
-    try {
-      if (isClienteUser(req)) {
-        return res.status(403).json({ success: false, message: 'No autorizado' });
-      }
-      const rid = isRepartidorUser(req) ? req.user.id : null;
-      const domicilios = await models.Domicilios.getAll(rid ? { repartidorUserId: rid } : {});
-      return res.json({ success: true, data: domicilios });
-    } catch (error) {
-      return res.status(500).json({ success: false, message: error.message });
-    }
-  },
-  getByCliente: async (req, res) => {
-    try {
-      const denied = assertOwnClienteParam(req, res, req.params.clienteId);
-      if (denied) return denied;
+exports.getAll = asyncHandler(async (req, res) => {
+  if (isClienteUser(req)) throw AppError.forbidden();
+  const rid = isRepartidorUser(req) ? req.user.id : null;
+  const domicilios = await models.Domicilios.getAll(rid ? { repartidorUserId: rid } : {});
+  res.json({ success: true, data: domicilios });
+});
 
-      const domicilios = await models.Domicilios.getByCliente(req.params.clienteId);
-      return res.json({ success: true, data: domicilios });
-    } catch (error) {
-      return res.status(500).json({ success: false, message: error.message });
-    }
-  },
-  getById: async (req, res) => {
-    try {
-      const denied = await assertOwnDomicilioId(req, res, req.params.id);
-      if (denied) return denied;
+exports.getByCliente = asyncHandler(async (req, res) => {
+  const denied = assertOwnClienteParam(req, res, req.params.clienteId);
+  if (denied) return denied;
+  const domicilios = await models.Domicilios.getByCliente(req.params.clienteId);
+  res.json({ success: true, data: domicilios });
+});
 
-      const domicilio = await models.Domicilios.getById(req.params.id);
-      if (!domicilio) return res.status(404).json({ success: false, message: 'Domicilio no encontrado' });
-      const deniedRep = repartidorDomicilioForbidden(req, domicilio);
-      if (deniedRep) return res.status(deniedRep.code).json(deniedRep.payload);
-      return res.json({ success: true, data: domicilio });
-    } catch (error) {
-      return res.status(500).json({ success: false, message: error.message });
-    }
-  },
-  getByPedido: async (req, res) => {
-    try {
-      if (isClienteUser(req)) {
-        const denied = await assertOwnPedidoId(req, res, req.params.pedidoId);
-        if (denied) return denied;
-      }
-      const domicilio = await models.Domicilios.getByPedido(req.params.pedidoId);
-      return res.json({ success: true, data: domicilio });
-    } catch (error) {
-      return res.status(500).json({ success: false, message: error.message });
-    }
-  },
-  create: async (req, res) => {
-    try {
-      if (isClienteUser(req) || isRepartidorUser(req)) {
-        return res.status(403).json({ success: false, message: 'No autorizado' });
-      }
-      const b = req.body || {};
+exports.getById = asyncHandler(async (req, res) => {
+  const denied = await assertOwnDomicilioId(req, res, req.params.id);
+  if (denied) return denied;
+
+  const domicilio = await models.Domicilios.getById(req.params.id);
+  if (!domicilio) throw AppError.notFound('Domicilio no encontrado');
+  assertRepartidorOwnsDomicilio(req, domicilio);
+  res.json({ success: true, data: domicilio });
+});
+
+exports.getByPedido = asyncHandler(async (req, res) => {
+  if (isClienteUser(req)) {
+    const denied = await assertOwnPedidoId(req, res, req.params.pedidoId);
+    if (denied) return denied;
+  }
+  const domicilio = await models.Domicilios.getByPedido(req.params.pedidoId);
+  res.json({ success: true, data: domicilio });
+});
+
+exports.create = asyncHandler(async (req, res) => {
+  if (isClienteUser(req) || isRepartidorUser(req)) throw AppError.forbidden();
+
+  const b = req.body || {};
 
       let direccionFromBody = b.direccion;
       if (direccionFromBody !== undefined && direccionFromBody !== null && typeof direccionFromBody === 'object') {
@@ -249,39 +238,20 @@ module.exports = {
         fechaFromBody = null;
       }
 
-      const pedido_id = Number(b.pedido_id ?? b.pedidoId);
-      if (!Number.isFinite(pedido_id) || pedido_id <= 0) {
-        return res.status(400).json({ success: false, message: 'pedido_id es requerido y debe ser válido' });
-      }
+  const pedido_id = Number(b.pedido_id ?? b.pedidoId);
+  const repartidor_id = Number(b.repartidor_id ?? b.repartidorId);
 
-      const repIdRaw = b.repartidor_id ?? b.repartidorId;
-      const repartidor_id =
-        repIdRaw !== undefined && repIdRaw !== null && String(repIdRaw).trim() !== ''
-          ? Number(repIdRaw)
-          : null;
-      if (repartidor_id === null || !Number.isFinite(repartidor_id) || repartidor_id <= 0) {
-        return res.status(400).json({ success: false, message: 'repartidor_id es requerido' });
-      }
+  const [repartidorUsuario, pedidoRow] = await Promise.all([
+    models.Usuarios.getById(repartidor_id),
+    models.Pedidos.getById(pedido_id),
+  ]);
+  if (!repartidorUsuario) throw AppError.badRequest('Repartidor no encontrado');
+  if (!pedidoRow) throw AppError.notFound('Pedido no encontrado');
 
-      const [repartidorUsuario, pedidoRow] = await Promise.all([
-        models.Usuarios.getById(repartidor_id),
-        models.Pedidos.getById(pedido_id),
-      ]);
-      if (!repartidorUsuario) {
-        return res.status(400).json({ success: false, message: 'Repartidor no encontrado' });
-      }
-      if (!pedidoRow) {
-        return res.status(404).json({ success: false, message: 'Pedido no encontrado' });
-      }
-
-      // Siempre tomar cliente del pedido en BD (evita desajustes con la lista del frontend)
-      const cliente_id = Number(pedidoRow.cliente_id);
-      if (!Number.isFinite(cliente_id) || cliente_id <= 0) {
-        return res.status(400).json({
-          success: false,
-          message: 'El pedido no tiene un cliente válido asociado',
-        });
-      }
+  const cliente_id = Number(pedidoRow.cliente_id);
+  if (!Number.isFinite(cliente_id) || cliente_id <= 0) {
+    throw AppError.badRequest('El pedido no tiene un cliente válido asociado');
+  }
 
       let direccion = direccionFromBody;
       if (!direccion) {
@@ -350,75 +320,52 @@ module.exports = {
         detalle: b.detalle != null && String(b.detalle).trim() !== '' ? String(b.detalle).trim() : null,
       };
 
-      const id = await models.Domicilios.create(payload);
-      return res.status(201).json({ success: true, id, message: 'Domicilio creado exitosamente' });
-    } catch (error) {
-      return res.status(error.statusCode || 500).json({ success: false, message: error.message });
-    }
-  },
-  update: async (req, res) => {
-    try {
-      if (isClienteUser(req)) {
-        return res.status(403).json({ success: false, message: 'No autorizado' });
-      }
-      const dom = await models.Domicilios.getById(req.params.id);
-      const deniedRep = repartidorDomicilioForbidden(req, dom);
-      if (deniedRep) return res.status(deniedRep.code).json(deniedRep.payload);
-      await models.Domicilios.update(req.params.id, req.body);
-      await ensureVentaForDeliveredDomicilio(req.params.id);
-      return res.json({ success: true, message: 'Domicilio actualizado exitosamente' });
-    } catch (error) {
-      return res.status(error.statusCode || 500).json({ success: false, message: error.message });
-    }
-  },
-  updateStatus: async (req, res) => {
-    try {
-      if (isClienteUser(req)) {
-        return res.status(403).json({ success: false, message: 'No autorizado' });
-      }
+  try {
+    const id = await models.Domicilios.create(payload);
+    res.status(201).json({ success: true, id, message: 'Domicilio creado exitosamente' });
+  } catch (error) {
+    throwIfModelError(error);
+  }
+});
 
-      const dom = await models.Domicilios.getById(req.params.id);
-      const deniedRep = repartidorDomicilioForbidden(req, dom);
-      if (deniedRep) return res.status(deniedRep.code).json(deniedRep.payload);
+exports.update = asyncHandler(async (req, res) => {
+  if (isClienteUser(req)) throw AppError.forbidden();
+  const dom = await models.Domicilios.getById(req.params.id);
+  assertRepartidorOwnsDomicilio(req, dom);
+  try {
+    await models.Domicilios.update(req.params.id, req.body);
+    await ensureVentaForDeliveredDomicilio(req.params.id);
+    res.json({ success: true, message: 'Domicilio actualizado exitosamente' });
+  } catch (error) {
+    throwIfModelError(error);
+  }
+});
 
-      const estado = typeof req.body?.estado === 'string' ? req.body.estado.trim() : '';
-      const motivo = typeof req.body?.motivo_cancelacion === 'string' ? req.body.motivo_cancelacion.trim() : '';
-      if (!['Pendiente', 'En Camino', 'Entregado', 'Cancelado'].includes(estado)) {
-        return res.status(400).json({
-          success: false,
-          message: 'Estado invalido. Valores permitidos: Pendiente, En Camino, Entregado, Cancelado',
-        });
-      }
+exports.updateStatus = asyncHandler(async (req, res) => {
+  if (isClienteUser(req)) throw AppError.forbidden();
 
-      if (estado === 'Cancelado' && (!motivo || motivo.length < 10 || motivo.length > 50)) {
-        return res.status(400).json({
-          success: false,
-          message: 'El motivo de cancelación es obligatorio y debe tener entre 10 y 50 caracteres',
-        });
-      }
+  const dom = await models.Domicilios.getById(req.params.id);
+  assertRepartidorOwnsDomicilio(req, dom);
 
-      await models.Domicilios.update(req.params.id, {
-        estado,
-        motivo_cancelacion: estado === 'Cancelado' ? motivo : undefined,
-      });
-      await ensureVentaForDeliveredDomicilio(req.params.id);
-      return res.json({ success: true, message: 'Estado del domicilio actualizado correctamente' });
-    } catch (error) {
-      return res.status(error.statusCode || 500).json({ success: false, message: error.message });
-    }
-  },
-  delete: async (req, res) => {
-    try {
-      if (isClienteUser(req)) {
-        return res.status(403).json({ success: false, message: 'No autorizado' });
-      }
-      const dom = await models.Domicilios.getById(req.params.id);
-      const deniedRep = repartidorDomicilioForbidden(req, dom);
-      if (deniedRep) return res.status(deniedRep.code).json(deniedRep.payload);
-      await models.Domicilios.delete(req.params.id);
-      return res.json({ success: true, message: 'Domicilio eliminado exitosamente' });
-    } catch (error) {
-      return res.status(500).json({ success: false, message: error.message });
-    }
-  },
-};
+  const { estado } = req.body;
+  const motivo = String(req.body.motivo_cancelacion ?? req.body.motivoCancelacion ?? '').trim();
+
+  try {
+    await models.Domicilios.update(req.params.id, {
+      estado,
+      motivo_cancelacion: estado === 'Cancelado' ? motivo : undefined,
+    });
+    await ensureVentaForDeliveredDomicilio(req.params.id);
+    res.json({ success: true, message: 'Estado del domicilio actualizado correctamente' });
+  } catch (error) {
+    throwIfModelError(error);
+  }
+});
+
+exports.delete = asyncHandler(async (req, res) => {
+  if (isClienteUser(req)) throw AppError.forbidden();
+  const dom = await models.Domicilios.getById(req.params.id);
+  assertRepartidorOwnsDomicilio(req, dom);
+  await models.Domicilios.delete(req.params.id);
+  res.json({ success: true, message: 'Domicilio eliminado exitosamente' });
+});

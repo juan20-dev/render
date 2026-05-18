@@ -374,6 +374,7 @@ CREATE TABLE produccion (
     estado VARCHAR(40) DEFAULT 'Orden Recibida'
         CHECK (estado IN ('Orden Recibida','Orden en preparacion','Orden Lista','Cancelada')),
     notes TEXT,
+    -- insumos_gastados: descuento solo en entregas_insumos (FIFO); no modifica productos.stock del inventario central
     insumos_gastados JSONB DEFAULT '[]'::jsonb,
     detalle_preparacion JSONB DEFAULT '[]'::jsonb,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -506,36 +507,35 @@ CREATE TABLE usuarios_login_intentos (
 --    coincidir con CLIENT_ALLOWED_PERMISSIONS en src/models/entities.models.js.
 INSERT INTO roles (nombre, descripcion, permisos, estado) VALUES
 ('Administrador', 'Acceso total a todas las funcionalidades', '{}', 'Activo'),
-('Asesor', 'Puede gestionar clientes, ventas, pedidos, abonos, domicilios y consultar inventario', ARRAY[
+('Asesor', 'Operación completa excepto configuración y usuarios (solo Administrador)', ARRAY[
   'Ver Dashboard',
-  'Ver Clientes', 'Crear Clientes', 'Editar Clientes',
-  'Ver Ventas', 'Crear Ventas', 'Editar Ventas',
-  'Ver Pedidos', 'Crear Pedidos', 'Editar Pedidos',
-  'Ver Abonos', 'Crear Abonos', 'Editar Abonos',
-  'Ver Domicilios', 'Crear Domicilios', 'Editar Domicilios',
-  'Ver Productos',
-  'Ver Categorías',
-  'Ver Proveedores', 'Crear Proveedores', 'Editar Proveedores',
-  'Ver Compras', 'Crear Compras', 'Editar Compras'
-], 'Activo'),
-('Productor', 'Acceso al modulo de produccion e insumos', ARRAY[
-  'Ver Dashboard',
-  'Ver Insumos', 'Crear Insumos', 'Editar Insumos',
+  'Ver Clientes', 'Crear Clientes', 'Editar Clientes', 'Eliminar Clientes',
+  'Ver Ventas', 'Crear Ventas', 'Editar Ventas', 'Eliminar Ventas',
+  'Ver Pedidos', 'Crear Pedidos', 'Editar Pedidos', 'Eliminar Pedidos',
+  'Ver Abonos', 'Crear Abonos', 'Editar Abonos', 'Eliminar Abonos',
+  'Ver Domicilios', 'Crear Domicilios', 'Editar Domicilios', 'Eliminar Domicilios',
+  'Ver Productos', 'Crear Productos', 'Editar Productos', 'Eliminar Productos',
+  'Ver Categorías', 'Crear Categorías', 'Editar Categorías', 'Eliminar Categorías',
+  'Ver Proveedores', 'Crear Proveedores', 'Editar Proveedores', 'Eliminar Proveedores',
+  'Ver Compras', 'Crear Compras', 'Editar Compras', 'Eliminar Compras',
+  'Ver Insumos', 'Crear Insumos', 'Editar Insumos', 'Eliminar Insumos',
   'Entregar Insumos',
   'Ver Producción', 'Registrar Producción',
-  'Ver Producto-Insumos', 'Crear Producto-Insumos', 'Editar Producto-Insumos'
+  'Ver Producto-Insumos', 'Crear Producto-Insumos', 'Editar Producto-Insumos', 'Eliminar Producto-Insumos'
+], 'Activo'),
+('Productor', 'Solo órdenes de producción asignadas: consulta y cambio de estado', ARRAY[
+  'Ver Dashboard',
+  'Ver Producción'
 ], 'Activo'),
 ('Repartidor', 'Puede gestionar domicilios y entregas', ARRAY[
   'Ver Dashboard',
   'Ver Domicilios', 'Editar Domicilios'
 ], 'Activo'),
-('Cliente', 'Acceso a tienda y pedidos personales', ARRAY[
+('Cliente', 'Tienda y mis pedidos (estado de domicilio incluido en el pedido)', ARRAY[
   'Cliente',
   'Ver Dashboard',
   'Ver Tienda',
-  'Ver Mis Pedidos',
-  'Ver Mis Abonos',
-  'Ver Mis Domicilios'
+  'Ver Mis Pedidos'
 ], 'Activo');
 
 -- Insertar usuarios de ejemplo

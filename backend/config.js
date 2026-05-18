@@ -20,24 +20,24 @@ if (isProduction && !process.env.JWT_SECRET) {
 
 const defaultCorsOrigins = isProduction
   ? []
-  : ['http://localhost:5173', 'http://localhost:3000'];
+  : ['http://localhost:3000'];
 
 const configuredCorsOrigins = parseCsv(process.env.CORS_ORIGINS);
 
 const config = {
   db: {
-    host: process.env.DB_HOST || 'localhost',
-    port: parseInt(process.env.DB_PORT || '5432'),
-    user: process.env.DB_USER || 'postgres',
-    password: process.env.DB_PASSWORD || '',
-    database: process.env.DB_DATABASE || process.env.DB_NAME,
+    host: process.env.DB_HOST ,
+    port: parseInt(process.env.DB_PORT),
+    user: process.env.DB_USER ,
+    password: process.env.DB_PASSWORD ,
+    database: process.env.DB_DATABASE,
   },
   server: {
     port: process.env.PORT || 3002,
     env: process.env.NODE_ENV || 'development',
   },
   auth: {
-    jwtSecret: process.env.JWT_SECRET || 'dev_only_change_me',
+    jwtSecret: process.env.JWT_SECRET || (isProduction ? '' : 'dev_only_change_me'),
     jwtIssuer: process.env.JWT_ISSUER || 'grandmas-liquors-api',
     jwtAudience: process.env.JWT_AUDIENCE || 'grandmas-liquors-web',
     cookieName: process.env.AUTH_COOKIE_NAME || 'gl_session',
@@ -47,6 +47,8 @@ const config = {
     // Sesión JWT rol Cliente: por defecto 30 min (sobreescribible con JWT_CLIENTE_TTL_MS).
     clienteTokenTtlMs: parseInt(process.env.JWT_CLIENTE_TTL_MS || `${30 * 60 * 1000}`, 10),
     staffTokenTtlMs: parseInt(process.env.JWT_STAFF_TTL_MS || `${3 * 60 * 60 * 1000}`, 10),
+    longSessionTtlMs: parseInt(process.env.JWT_LONG_SESSION_TTL_MS || `${7 * 24 * 60 * 60 * 1000}`, 10),
+    idleTimeoutMs: parseInt(process.env.SESSION_IDLE_TIMEOUT_MS || `${30 * 60 * 1000}`, 10),
     corsOrigins: configuredCorsOrigins.length > 0 ? configuredCorsOrigins : defaultCorsOrigins,
   },
   mail: {
@@ -56,6 +58,10 @@ const config = {
     user: process.env.MAIL_USER || '',
     password: process.env.MAIL_PASSWORD || '',
     from: process.env.MAIL_FROM || process.env.MAIL_USER || 'no-reply@grandmas-liquors.local',
+  },
+  openai: {
+    apiKey: process.env.OPENAI_API_KEY,
+    model: process.env.OPENAI_MODEL ,
   },
 };
 

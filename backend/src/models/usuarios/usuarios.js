@@ -29,6 +29,8 @@ const {
   isLoginBlocked,
   getLoginBlockInfo,
   revokeUserSession,
+  isUserSessionActive,
+  touchUserSession,
   getActiveUserSessionCount,
   getLinkedClienteForUsuario,
   getUserDeletionBlockers,
@@ -93,6 +95,27 @@ const Usuarios = {
   getByTelefono: async (telefono) => {
     const result = await pool.query('SELECT * FROM usuarios WHERE telefono = $1', [telefono]);
     return result.rows[0];
+  },
+  existsEmailExcept: async (email, excludeUserId = 0) => {
+    const result = await pool.query(
+      'SELECT id FROM usuarios WHERE LOWER(email) = LOWER($1) AND id <> $2 LIMIT 1',
+      [email, Number(excludeUserId) || 0]
+    );
+    return result.rows.length > 0;
+  },
+  existsDocumentoExcept: async (documento, excludeUserId = 0) => {
+    const result = await pool.query(
+      'SELECT id FROM usuarios WHERE documento = $1 AND id <> $2 LIMIT 1',
+      [documento, Number(excludeUserId) || 0]
+    );
+    return result.rows.length > 0;
+  },
+  existsTelefonoExcept: async (telefono, excludeUserId = 0) => {
+    const result = await pool.query(
+      'SELECT id FROM usuarios WHERE telefono = $1 AND id <> $2 LIMIT 1',
+      [telefono, Number(excludeUserId) || 0]
+    );
+    return result.rows.length > 0;
   },
   getByEmailLogin: async (identifier) => {
     const result = await pool.query(
@@ -252,6 +275,8 @@ const Usuarios = {
     await revokeUserSession(jti);
     return true;
   },
+  isSessionActive: async (usuarioId, jti) => isUserSessionActive(usuarioId, jti),
+  touchSession: async (jti) => touchUserSession(jti),
   getActiveSessionCount: async (id) => {
     return getActiveUserSessionCount(id);
   },

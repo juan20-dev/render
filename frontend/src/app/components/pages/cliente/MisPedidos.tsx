@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { DataTable, Column } from '../../DataTable';
 import { Modal } from '../../Modal';
 import { Button } from '../../Button';
@@ -11,6 +11,7 @@ type PedidoView = {
   productos: string;
   total: number;
   estado: string;
+  domicilioEstado?: string | null;
   direccion: string;
   metodoPago: string;
   observaciones?: string;
@@ -36,12 +37,15 @@ export function MisPedidos() {
             const productsText = (detalle?.productos || [])
               .map((x: any) => `#${x.productoId} x${x.cantidad}`)
               .join(', ');
+            const dom = (detalle as { domicilio?: { estado?: string } } | null)?.domicilio;
+            const domEstado = dom?.estado ? String(dom.estado) : null;
             return {
               id: `PED-${p.id}`,
               fecha: p.fechaPedido,
               productos: productsText || `${(p.productos || []).length} productos`,
               total: Number(p.total || 0),
               estado: String(p.estado || ''),
+              domicilioEstado: domEstado,
               direccion: 'Dirección registrada en pedido',
               metodoPago: String(p.metodoPago || ''),
               observaciones: undefined,
@@ -66,8 +70,18 @@ export function MisPedidos() {
       render: (value: number) => `$${value.toLocaleString('es-CO')}`,
     },
     {
+      key: 'domicilioEstado',
+      label: 'Domicilio',
+      render: (v: string | null | undefined) =>
+        v ? (
+          <span className="text-xs px-2 py-1 rounded-full bg-slate-100 text-slate-700">{v}</span>
+        ) : (
+          <span className="text-xs text-muted-foreground">Sin domicilio</span>
+        ),
+    },
+    {
       key: 'estado',
-      label: 'Estado',
+      label: 'Estado pedido',
       render: (estado: string) => (
         <select
           value={estado}
@@ -169,7 +183,13 @@ export function MisPedidos() {
             </div>
 
             <div className="p-4 bg-accent/50 rounded-lg">
-              <label className="text-sm text-muted-foreground block mb-4">Estado del Pedido</label>
+              {selectedPedido.domicilioEstado ? (
+                <p className="text-sm mb-3">
+                  <span className="text-muted-foreground">Domicilio: </span>
+                  <span className="font-medium">{selectedPedido.domicilioEstado}</span>
+                </p>
+              ) : null}
+              <label className="text-sm text-muted-foreground block mb-4">Estado del pedido</label>
               <div className="space-y-3">
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 rounded-full flex items-center justify-center bg-primary text-white">

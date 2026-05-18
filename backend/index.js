@@ -2,6 +2,7 @@
 const express = require('express');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
+const rateLimit = require('express-rate-limit');
 const path = require('path');
 const config = require('./config');
 const db = require('./db');
@@ -86,6 +87,16 @@ const corsOptions = {
 // Middleware
 app.use(cors(corsOptions));
 app.use(cookieParser());
+
+const globalApiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 600,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: 'Demasiadas solicitudes. Intenta de nuevo más tarde.' },
+});
+app.use('/api', globalApiLimiter);
+
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ limit: '2mb', extended: true }));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
@@ -137,13 +148,19 @@ app.use((err, req, res, next) => {
     message = 'Error interno del servidor. Contacte al administrador.';
   }
 
-  // Respuesta de error consistente
-  return res.status(statusCode).json({
+  const payload = {
     success: false,
     code: err.code || 'INTERNAL_ERROR',
     message,
-    ...(isDevelopment && { details: err.details, stack: err.stack.split('\n').slice(0, 5) })
-  });
+  };
+  if (err.details !== undefined) {
+    payload.details = err.details;
+  }
+  if (isDevelopment && err.stack) {
+    payload.stack = err.stack.split('\n').slice(0, 8);
+  }
+
+  return res.status(statusCode).json(payload);
 });
 
 // ===== INICIAR SERVIDOR =====

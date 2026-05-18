@@ -18,7 +18,7 @@ const usuariosRoutes = require('./usuarios.routes');
 const authRoutes = require('./auth.routes');
 const publicRoutes = require('./public.routes');
 const dashboardRoutes = require('./dashboard.routes');
-const { authenticateJWT } = require('../middlewares/auth.middleware');
+const { authenticateJWT, authorizeAdministrador } = require('../middlewares/auth.middleware');
 
 const router = express.Router();
 
@@ -38,7 +38,7 @@ router.use('/api/insumos', authenticateJWT, insumosRoutes);
 router.use('/api/entregas-insumos', authenticateJWT, entregasInsumosRoutes);
 router.use('/api/produccion', authenticateJWT, produccionRoutes);
 router.use('/api/producto-insumos', authenticateJWT, productoInsumosRoutes);
-router.use('/api/roles', authenticateJWT, rolesRoutes);
-router.use('/api/usuarios', authenticateJWT, usuariosRoutes);
+router.use('/api/roles', authenticateJWT, authorizeAdministrador, rolesRoutes);
+router.use('/api/usuarios', authenticateJWT, authorizeAdministrador, usuariosRoutes);
 
 module.exports = router;

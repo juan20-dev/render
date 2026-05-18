@@ -53,12 +53,37 @@ export function Domicilios() {
 
   const cargarDatos = async () => {
     try {
-      const [domiciliosData, pedidosData, clientesData, usuariosData, productosData] = await Promise.all([
-        api.domicilios.getAll(),
+      const domiciliosData = await api.domicilios.getAll();
+
+      if (esRepartidor) {
+        const domiciliosConInfo = domiciliosData.map((domicilio) => ({
+          ...domicilio,
+          clienteNombre: domicilio.clienteNombre || 'Desconocido',
+          repartidorNombre: user ? `${user.nombre} ${user.apellido}`.trim() : 'Asignado a mí',
+          pedidoNumero:
+            domicilio.pedidoNumero ||
+            (domicilio.pedidoId ? `#${String(domicilio.pedidoId).padStart(4, '0')}` : 'Desconocido'),
+        }));
+        setDomicilios(domiciliosConInfo);
+        setPedidos([]);
+        setClientes([]);
+        setRepartidores([]);
+        setProductosCatalogo(
+          domiciliosConInfo.flatMap((d) =>
+            (d.productos || []).map((p) => ({
+              id: p.productoId,
+              nombre: p.nombre || `Producto #${p.productoId}`,
+            }))
+          )
+        );
+        return;
+      }
+
+      const [pedidosData, clientesData, usuariosData, productosData] = await Promise.all([
         api.pedidos.getAll(),
         api.clientes.getAll(),
         api.usuarios.getAll(),
-        api.productos.getAll()
+        api.productos.getAll(),
       ]);
 
       const repartidoresData = usuariosData.filter(
@@ -68,19 +93,27 @@ export function Domicilios() {
             .toLowerCase() === 'repartidor' && u.estado === 'activo'
       );
       setRepartidores(repartidoresData);
-      setPedidos(pedidosData.filter(p => p.estado === 'pendiente' || p.estado === 'en proceso' || p.estado === 'completado'));
+      setPedidos(
+        pedidosData.filter(
+          (p) => p.estado === 'pendiente' || p.estado === 'en proceso' || p.estado === 'completado'
+        )
+      );
       setClientes(clientesData);
       setProductosCatalogo(productosData.map((p) => ({ id: p.id, nombre: p.nombre })));
 
-      const domiciliosConInfo = domiciliosData.map(domicilio => {
-        const cliente = clientesData.find(c => c.id === domicilio.clienteId);
-        const repartidor = usuariosData.find(u => u.id === domicilio.repartidorId);
-        const pedido = pedidosData.find(p => p.id === domicilio.pedidoId);
+      const domiciliosConInfo = domiciliosData.map((domicilio) => {
+        const cliente = clientesData.find((c) => c.id === domicilio.clienteId);
+        const repartidor = usuariosData.find((u) => u.id === domicilio.repartidorId);
+        const pedido = pedidosData.find((p) => p.id === domicilio.pedidoId);
         return {
           ...domicilio,
-          clienteNombre: cliente ? `${cliente.nombre} ${cliente.apellido}` : 'Desconocido',
+          clienteNombre:
+            domicilio.clienteNombre ||
+            (cliente ? `${cliente.nombre} ${cliente.apellido}` : 'Desconocido'),
           repartidorNombre: repartidor ? `${repartidor.nombre} ${repartidor.apellido}` : 'Desconocido',
-          pedidoNumero: pedido ? `#${String(pedido.id).padStart(4, '0')}` : 'Desconocido'
+          pedidoNumero:
+            domicilio.pedidoNumero ||
+            (pedido ? `#${String(pedido.id).padStart(4, '0')}` : 'Desconocido'),
         };
       });
 

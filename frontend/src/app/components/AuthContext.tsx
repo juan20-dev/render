@@ -18,6 +18,7 @@ export interface User {
   telefono?: string;
   direccion?: string;
   estado?: 'activo' | 'inactivo';
+  idleTimeoutMs?: number;
 }
 
 interface AuthContextType {

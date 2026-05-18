@@ -1,19 +1,25 @@
 /**
- * Mapas rutas de la app (sin "/" inicial, como en App.tsx) a permisos del backend (strings en BD).
- * Si el usuario tiene el rol Administrador, AuthContext concede todo sin consultar esta tabla.
+ * Mapas rutas de la app a permisos del backend (strings en BD).
+ * Administrador: acceso total. Asesor: operación completa excepto usuarios/roles/config.
  */
 
 const ANY = (perms: string[]) => perms;
 
+/** Rutas reservadas solo para Administrador */
+export const ADMIN_ONLY_ROUTES = new Set([
+  'configuracion',
+  'configuracion/roles',
+  'usuarios',
+  'usuarios/roles',
+  'usuarios/usuarios',
+  'usuarios/accesos',
+]);
+
 export const ROUTE_VIEW_PERMISSIONS: Record<string, string[] | ((permisos: string[]) => boolean)> = {
   dashboard: ['Ver Dashboard'],
   medicion: ['Ver Dashboard'],
-  // Nodo padre del sidebar "Configuracion": basta con tener al menos un permiso
-  // para ver el menu desplegable.
   configuracion: ANY(['Ver Roles', 'Asignar Permisos']),
   'configuracion/roles': ['Ver Roles', 'Asignar Permisos'],
-  // Nodo padre del sidebar "Usuarios": basta con tener al menos un permiso
-  // sobre roles o usuarios para ver el menu desplegable.
   usuarios: ANY(['Ver Usuarios', 'Crear Usuarios', 'Editar Usuarios', 'Eliminar Usuarios', 'Ver Roles', 'Asignar Permisos']),
   'usuarios/roles': ['Ver Roles'],
   'usuarios/usuarios': ['Ver Usuarios'],
@@ -49,15 +55,12 @@ export const ROUTE_VIEW_PERMISSIONS: Record<string, string[] | ((permisos: strin
   domicilios: ANY(['Ver Domicilios', 'Editar Domicilios']),
   'ventas/domicilios': ['Ver Domicilios', 'Editar Domicilios'],
   cliente: (permisos) =>
-    permisos.some((p) =>
-      ['Ver Tienda', 'Ver Mis Pedidos', 'Ver Mis Abonos', 'Ver Mis Domicilios'].includes(p)
-    ),
+    permisos.some((p) => ['Ver Tienda', 'Ver Mis Pedidos', 'Cliente'].includes(p)),
   'cliente/tienda': ['Ver Tienda'],
   'cliente/pedidos': ['Ver Mis Pedidos'],
-  'cliente/perfil': ['Ver Tienda', 'Ver Mis Pedidos', 'Ver Mis Domicilios'],
+  'cliente/perfil': ['Ver Tienda', 'Ver Mis Pedidos'],
 };
 
-/** Orden alineado con el menú lateral: primera ruta permitida tras iniciar sesión (personal interno). */
 const STAFF_ROUTE_ORDER = [
   'dashboard',
   'configuracion/roles',
@@ -88,9 +91,32 @@ export function firstPermittedStaffPath(permisos: string[], roleName: string): s
 }
 
 export function routeAllowsAccess(route: string, permisos: string[], roleName: string): boolean {
+  const normalized = route.replace(/^\//, '');
+
   if (roleName === 'Administrador') return true;
 
-  const rule = ROUTE_VIEW_PERMISSIONS[route];
+  if (roleName === 'Asesor') {
+    if (ADMIN_ONLY_ROUTES.has(normalized)) return false;
+    return true;
+  }
+
+  if (roleName === 'Repartidor') {
+    return normalized === 'dashboard' || normalized === 'ventas/domicilios';
+  }
+
+  if (roleName === 'Productor') {
+    return normalized === 'dashboard' || normalized === 'produccion/produccion';
+  }
+
+  if (roleName === 'Cliente') {
+    return (
+      normalized === 'cliente/tienda' ||
+      normalized === 'cliente/pedidos' ||
+      normalized === 'cliente/perfil'
+    );
+  }
+
+  const rule = ROUTE_VIEW_PERMISSIONS[normalized];
   if (!rule) return false;
 
   if (typeof rule === 'function') {

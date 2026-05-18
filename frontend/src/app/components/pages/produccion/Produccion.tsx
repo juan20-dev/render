@@ -9,6 +9,7 @@ import { toast } from '../../AlertDialog';
 import type { OrdenProduccion, Producto, Usuario, Pedido } from '../../../services/types';
 import { MotivoModal } from '../../MotivoModal';
 import { AlertDialog } from '../../AlertDialog';
+import { useAuth } from '../../AuthContext';
 
 interface OrdenProduccionView extends OrdenProduccion {
   productoNombre?: string;
@@ -16,6 +17,9 @@ interface OrdenProduccionView extends OrdenProduccion {
 }
 
 export function Produccion() {
+  const { user } = useAuth();
+  const esProductor = String(user?.rol || '').trim().toLowerCase() === 'productor';
+
   const [ordenes, setOrdenes] = useState<OrdenProduccionView[]>([]);
   const [productos, setProductos] = useState<Producto[]>([]);
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
@@ -49,32 +53,40 @@ export function Produccion() {
   // Estados para validaciones en tiempo real
   const [fechaValida, setFechaValida] = useState<boolean | null>(null);
   const [tiempoValido, setTiempoValido] = useState<boolean | null>(null);
-  /** Entregas de insumo al productor elegido (IDs `entregas_insumos` disponibles para la orden). */
-  const [entregasDisponibles, setEntregasDisponibles] = useState<
-    { id: number; insumo_nombre?: string; cantidad?: number; unidad?: string; numero_entrega?: number | string }[]
+  /** Insumos agregados del productor (una fila por insumo, saldo total). */
+  const [insumosResumenProductor, setInsumosResumenProductor] = useState<
+    { clave: string; insumo_nombre?: string; disponible?: number; unidad?: string }[]
   >([]);
-  const [entregasSeleccionadas, setEntregasSeleccionadas] = useState<number[]>([]);
+  /** Consumo planificado para la orden (receta IA). */
+  const [consumoPlaneado, setConsumoPlaneado] = useState<
+    { clave: string; insumo_nombre: string; cantidad: number; unidad: string }[]
+  >([]);
+  const [sugerenciaCargando, setSugerenciaCargando] = useState(false);
 
   useEffect(() => {
     if (!isModalOpen || !formData.productorId) {
-      setEntregasDisponibles([]);
-      setEntregasSeleccionadas([]);
+      setInsumosResumenProductor([]);
+      setConsumoPlaneado([]);
       return;
     }
-    setEntregasSeleccionadas([]);
+    setConsumoPlaneado([]);
     let cancelled = false;
     void (async () => {
       try {
-        const rows = await api.produccion.getInsumosByProductor(formData.productorId);
-        if (!cancelled) setEntregasDisponibles(Array.isArray(rows) ? rows : []);
+        const rows = await api.produccion.getInsumosResumenProductor(formData.productorId);
+        if (!cancelled) setInsumosResumenProductor(Array.isArray(rows) ? rows : []);
       } catch {
-        if (!cancelled) setEntregasDisponibles([]);
+        if (!cancelled) setInsumosResumenProductor([]);
       }
     })();
     return () => {
       cancelled = true;
     };
   }, [isModalOpen, formData.productorId]);
+
+  useEffect(() => {
+    setConsumoPlaneado([]);
+  }, [formData.pedidoId]);
 
   // Cerrar listas desplegables al hacer clic fuera
   useEffect(() => {
@@ -94,8 +106,23 @@ export function Produccion() {
 
   const cargarDatos = async () => {
     try {
-      const [ordenesData, productosData, usuariosData, pedidosData] = await Promise.all([
-        api.produccion.getAll(),
+      const ordenesData = await api.produccion.getAll();
+
+      if (esProductor) {
+        const ordenesConInfo = ordenesData.map((orden) => ({
+          ...orden,
+          productoNombre: orden.productoNombre || 'Producto',
+          productorNombre:
+            orden.productorNombre || (user ? `${user.nombre} ${user.apellido}`.trim() : 'Asignado a mí'),
+        }));
+        setOrdenes(ordenesConInfo);
+        setProductos([]);
+        setPedidos([]);
+        setProductores([]);
+        return;
+      }
+
+      const [productosData, usuariosData, pedidosData] = await Promise.all([
         api.productos.getAll(),
         api.usuarios.getAll(),
         api.pedidos.getAll(),
@@ -107,9 +134,9 @@ export function Produccion() {
           .filter((id): id is number => id != null)
       );
 
-      const productoresData = usuariosData.filter(u => u.rol === 'Productor' && u.estado === 'activo');
+      const productoresData = usuariosData.filter((u) => u.rol === 'Productor' && u.estado === 'activo');
       setProductores(productoresData);
-      setProductos(productosData.filter(p => p.typo === 'de preparacion' && p.estado === 'activo'));
+      setProductos(productosData.filter((p) => p.typo === 'de preparacion' && p.estado === 'activo'));
       setPedidos(
         pedidosData.filter(
           (p) => p.estado === 'en proceso' && !pedidoIdsConProduccion.has(Number(p.id))
@@ -299,9 +326,42 @@ export function Produccion() {
     // Resetear validaciones
     setFechaValida(true); // Fecha de hoy es válida
     setTiempoValido(true); // 60 minutos es válido
-    setEntregasDisponibles([]);
-    setEntregasSeleccionadas([]);
+    setInsumosResumenProductor([]);
+    setConsumoPlaneado([]);
     setIsModalOpen(true);
+  };
+
+  const handleSeleccionarInsumosRapidos = async () => {
+    if (!formData.pedidoId || !formData.productorId) {
+      toast.error('Seleccione pedido y productor antes de calcular insumos');
+      return;
+    }
+    if (!pedidoSeleccionado || productosPedidoDisponibles.length === 0) {
+      toast.error('El pedido no tiene productos de preparación');
+      return;
+    }
+    setSugerenciaCargando(true);
+    try {
+      const res = await api.produccion.sugerirConsumo(formData.pedidoId, formData.productorId);
+      setConsumoPlaneado(Array.isArray(res.sugerido) ? res.sugerido : []);
+      if (res.faltantes?.length) {
+        const detalle = res.faltantes
+          .map((f) => `${f.insumo_nombre}: faltan ${f.falta} ${f.unidad}`)
+          .join('; ');
+        toast.error('Insumos insuficientes en el productor', {
+          description: `${detalle}. Registre una nueva entrega de insumos al productor.`,
+        });
+      } else {
+        toast.success('Receta de insumos calculada', {
+          description: 'Revise el consumo propuesto antes de crear la orden.',
+        });
+      }
+    } catch (error: any) {
+      toast.error(error.message || 'No se pudo calcular la receta de insumos');
+      setConsumoPlaneado([]);
+    } finally {
+      setSugerenciaCargando(false);
+    }
   };
 
   const handleViewDetail = (orden: OrdenProduccionView) => {
@@ -432,6 +492,11 @@ Fecha Impresión:    ${new Date().toLocaleString('es-CO')}
       return;
     }
 
+    if (!consumoPlaneado.length) {
+      toast.error('Defina el consumo de insumos con «Seleccionar insumos rápidos»');
+      return;
+    }
+
     try {
       const ordenCreada = await api.produccion.create({
         pedidoId: formData.pedidoId,
@@ -439,7 +504,7 @@ Fecha Impresión:    ${new Date().toLocaleString('es-CO')}
         fechaInicio: formData.fechaInicio,
         tiempoPreparacion: formData.tiempoPreparacion,
         estado: 'pendiente',
-        insumos: entregasSeleccionadas,
+        consumoInsumos: consumoPlaneado,
       });
 
       const productor = productores.find(p => p.id === formData.productorId);
@@ -476,9 +541,11 @@ Fecha Impresión:    ${new Date().toLocaleString('es-CO')}
           <h2>Gestión de Producción</h2>
           <p className="text-muted-foreground">Administra las órdenes de producción de bebidas</p>
         </div>
-        <Button icon={<Plus className="w-5 h-5" />} onClick={handleAdd}>
-          Nueva Orden
-        </Button>
+        {!esProductor ? (
+          <Button icon={<Plus className="w-5 h-5" />} onClick={handleAdd}>
+            Nueva Orden
+          </Button>
+        ) : null}
       </div>
 
       <div className="bg-white rounded-lg border border-border p-4">
@@ -702,45 +769,51 @@ Fecha Impresión:    ${new Date().toLocaleString('es-CO')}
             </div>
 
             <div className="col-span-2 rounded-lg border border-border p-4 space-y-3">
-              <label className="block text-sm font-medium">Insumos entregados al productor</label>
-              <p className="text-xs text-muted-foreground">
-                Opcional: marque las entregas de insumo que se descuentan de la entrega al asignar esta orden (saldo
-                restante del productor).
-              </p>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <label className="block text-sm font-medium">Insumos entregados al productor</label>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={sugerenciaCargando || !formData.pedidoId || !formData.productorId}
+                  onClick={() => void handleSeleccionarInsumosRapidos()}
+                >
+                  {sugerenciaCargando ? 'Calculando…' : 'Seleccionar insumos rápidos'}
+                </Button>
+              </div>
               {!formData.productorId ? (
-                <p className="text-sm text-muted-foreground">Seleccione un productor para ver entregas disponibles.</p>
-              ) : entregasDisponibles.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No hay entregas disponibles para este productor.</p>
+                <p className="text-sm text-muted-foreground">Asigne un productor para ver su inventario de insumos.</p>
+              ) : insumosResumenProductor.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  Este productor no tiene insumos con saldo. Registre una entrega de insumos antes de producir.
+                </p>
               ) : (
-                <div className="max-h-48 overflow-y-auto space-y-2 border border-border rounded-md p-2 bg-white">
-                  {entregasDisponibles.map((e) => {
-                    const id = Number(e.id);
-                    const labelEnt =
-                      e.numero_entrega != null && e.numero_entrega !== ''
-                        ? `Entrega #${e.numero_entrega}`
-                        : `Entrega id ${id}`;
-                    return (
-                      <label key={id} className="flex items-start gap-2 cursor-pointer text-sm">
-                        <input
-                          type="checkbox"
-                          className="mt-1"
-                          checked={entregasSeleccionadas.includes(id)}
-                          onChange={() =>
-                            setEntregasSeleccionadas((prev) =>
-                              prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
-                            )
-                          }
-                        />
-                        <span>
-                          <span className="font-medium">{labelEnt}</span>
-                          {' — '}
-                          {e.insumo_nombre || 'Insumo'}
-                          {' — '}
-                          {e.cantidad ?? '—'} {e.unidad || ''}
+                <div className="max-h-40 overflow-y-auto border border-border rounded-md p-2 bg-white space-y-1 text-sm">
+                  {insumosResumenProductor.map((row) => (
+                    <div
+                      key={row.clave}
+                      className="flex justify-between gap-2 py-1 border-b border-border/50 last:border-0"
+                    >
+                      <span className="font-medium">{row.insumo_nombre || 'Insumo'}</span>
+                      <span className="tabular-nums text-muted-foreground shrink-0">
+                        {row.disponible ?? 0} {row.unidad || ''}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {consumoPlaneado.length > 0 && (
+                <div className="space-y-2 pt-2 border-t border-border">
+                  <p className="text-xs font-medium text-foreground">Consumo para esta orden (receta IA)</p>
+                  <div className="max-h-36 overflow-y-auto border border-border rounded-md p-2 bg-muted/20 space-y-1 text-sm">
+                    {consumoPlaneado.map((c) => (
+                      <div key={c.clave} className="flex justify-between gap-2">
+                        <span>{c.insumo_nombre}</span>
+                        <span className="tabular-nums shrink-0">
+                          {c.cantidad} {c.unidad}
                         </span>
-                      </label>
-                    );
-                  })}
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>

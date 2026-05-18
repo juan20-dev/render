@@ -32,6 +32,7 @@ interface SubMenuItem {
   icon: React.ReactNode;
   path: string;
   module: string;
+  roles?: string[];
 }
 
 interface MenuItem {
@@ -49,7 +50,7 @@ const menuItems: MenuItem[] = [
     icon: <BarChart3 className="w-5 h-5" />,
     path: '/dashboard',
     module: 'dashboard',
-    roles: ['Administrador', 'Asesor', 'Productor', 'Repartidor']
+    roles: ['Administrador', 'Asesor']
   },
   {
     name: 'Configuración',
@@ -73,7 +74,7 @@ const menuItems: MenuItem[] = [
     name: 'Compras',
     icon: <ShoppingCart className="w-5 h-5" />,
     module: 'compras',
-    roles: ['Administrador', 'Asesor', 'Productor'],
+    roles: ['Administrador', 'Asesor'],
     subItems: [
       { name: 'Proveedores', icon: <Building2 className="w-4 h-4" />, path: '/compras/proveedores', module: 'compras' },
       { name: 'Compras', icon: <ShoppingCart className="w-4 h-4" />, path: '/compras/compras', module: 'compras' },
@@ -85,11 +86,11 @@ const menuItems: MenuItem[] = [
     name: 'Producción',
     icon: <Factory className="w-5 h-5" />,
     module: 'produccion',
-    roles: ['Administrador', 'Productor'],
+    roles: ['Administrador', 'Asesor', 'Productor'],
     subItems: [
-      { name: 'Producción', icon: <Boxes className="w-4 h-4" />, path: '/produccion/produccion', module: 'produccion' },
-      { name: 'Entrega de Insumos', icon: <Truck className="w-4 h-4" />, path: '/produccion/entrega-insumos', module: 'produccion' },
-      { name: 'Insumos', icon: <Package className="w-4 h-4" />, path: '/produccion/insumos', module: 'produccion' }
+      { name: 'Producción', icon: <Boxes className="w-4 h-4" />, path: '/produccion/produccion', module: 'produccion/produccion', roles: ['Administrador', 'Asesor', 'Productor'] },
+      { name: 'Entrega de Insumos', icon: <Truck className="w-4 h-4" />, path: '/produccion/entrega-insumos', module: 'produccion', roles: ['Administrador', 'Asesor'] },
+      { name: 'Insumos', icon: <Package className="w-4 h-4" />, path: '/produccion/insumos', module: 'produccion', roles: ['Administrador', 'Asesor'] }
     ]
   },
   {
@@ -98,11 +99,11 @@ const menuItems: MenuItem[] = [
     module: 'ventas',
     roles: ['Administrador', 'Asesor', 'Repartidor'],
     subItems: [
-      { name: 'Clientes', icon: <UserCircle className="w-4 h-4" />, path: '/ventas/clientes', module: 'ventas' },
-      { name: 'Ventas', icon: <Receipt className="w-4 h-4" />, path: '/ventas/ventas', module: 'ventas' },
-      { name: 'Abonos', icon: <CreditCard className="w-4 h-4" />, path: '/ventas/abonos', module: 'ventas' },
-      { name: 'Pedidos', icon: <ClipboardList className="w-4 h-4" />, path: '/ventas/pedidos', module: 'ventas/pedidos' },
-      { name: 'Domicilios', icon: <Truck className="w-4 h-4" />, path: '/ventas/domicilios', module: 'ventas/domicilios' }
+      { name: 'Clientes', icon: <UserCircle className="w-4 h-4" />, path: '/ventas/clientes', module: 'ventas', roles: ['Administrador', 'Asesor'] },
+      { name: 'Ventas', icon: <Receipt className="w-4 h-4" />, path: '/ventas/ventas', module: 'ventas', roles: ['Administrador', 'Asesor'] },
+      { name: 'Abonos', icon: <CreditCard className="w-4 h-4" />, path: '/ventas/abonos', module: 'ventas', roles: ['Administrador', 'Asesor'] },
+      { name: 'Pedidos', icon: <ClipboardList className="w-4 h-4" />, path: '/ventas/pedidos', module: 'ventas/pedidos', roles: ['Administrador', 'Asesor'] },
+      { name: 'Domicilios', icon: <Truck className="w-4 h-4" />, path: '/ventas/domicilios', module: 'ventas/domicilios', roles: ['Administrador', 'Asesor', 'Repartidor'] }
     ]
   },
   // Menú exclusivo para Cliente
@@ -176,7 +177,12 @@ export function Sidebar({ currentPath, onNavigate }: SidebarProps) {
       // Filtro real por permisos (respeta roles personalizados creados en BD).
       if (item.subItems && item.subItems.length > 0) {
         // Si hay sub-items, filtrarlos por permiso
-        item.subItems = item.subItems.filter((subItem) => hasPermission(subItem.module));
+        item.subItems = item.subItems.filter((subItem) => {
+          if (subItem.roles && user?.rol && !subItem.roles.includes(user.rol)) {
+            return false;
+          }
+          return hasPermission(subItem.module);
+        });
         // Si quedan sub-items, mostrar el padre aunque no tenga permiso directo
         return item.subItems.length > 0;
       }

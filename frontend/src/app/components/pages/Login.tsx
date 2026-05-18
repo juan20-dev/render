@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Card } from '../Card';
 import { Form, FormField, FormActions } from '../Form';
 import { Button } from '../Button';
-import { LogIn, UserPlus, KeyRound } from 'lucide-react';
+import { LogIn, UserPlus, KeyRound, ArrowLeft } from 'lucide-react';
 import { Modal } from '../Modal';
 import { AlertDialog } from '../AlertDialog';
 import { useAuth } from '../AuthContext';
@@ -157,28 +157,29 @@ export function Login({ onLogin, initialTab = 'login', onBackToLanding }: LoginP
   };
 
   return (
-    <div className="min-h-screen relative flex items-center justify-center p-6">
-      {/* Imagen de fondo */}
-      <div className="absolute inset-0 z-0">
+    <div className="relative min-h-dvh w-full">
+      {/* Fondo fijo: evita franja blanca al hacer scroll (min-h-screen + items-center en móvil) */}
+      <div className="fixed inset-0 z-0">
         <img
           src="https://images.unsplash.com/photo-1569529465841-dfecdab7503b?w=1920&h=1080&fit=crop"
           alt="Background"
-          className="w-full h-full object-cover"
+          className="h-full w-full object-cover"
         />
-        <div className="absolute inset-0 bg-gradient-to-br from-primary/90 via-primary/80 to-black/90"></div>
+        <div className="absolute inset-0 bg-gradient-to-br from-primary/90 via-primary/80 to-black/90" />
       </div>
 
-      <div className="w-full max-w-md relative z-10">
-        {/* Botón volver al inicio */}
+      <div className="relative z-10 flex min-h-dvh w-full flex-col items-center justify-start px-6 py-8 sm:justify-center sm:py-10">
+      <div
+        className={`w-full transition-[max-width] ${activeTab === 'register' ? 'max-w-2xl' : 'max-w-md'}`}
+      >
         {onBackToLanding && (
-          <div className="mb-6">
+          <div className="mb-4">
             <button
+              type="button"
               onClick={onBackToLanding}
               className="flex items-center gap-2 text-white hover:text-white/80 transition-colors bg-white/10 backdrop-blur-sm px-4 py-2 rounded-lg"
             >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-              </svg>
+              <ArrowLeft className="w-5 h-5" aria-hidden />
               <span>Volver al inicio</span>
             </button>
           </div>
@@ -290,7 +291,7 @@ export function Login({ onLogin, initialTab = 'login', onBackToLanding }: LoginP
             </div>
 
             <Form onSubmit={handleRegister}>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1">
                 <FormField
                   label="Tipo de Documento"
                   name="tipoDocumento"
@@ -304,7 +305,7 @@ export function Login({ onLogin, initialTab = 'login', onBackToLanding }: LoginP
                   ]}
                   required
                 />
-                
+
                 <FormField
                   label="Número de Documento"
                   name="numeroDocumento"
@@ -314,9 +315,7 @@ export function Login({ onLogin, initialTab = 'login', onBackToLanding }: LoginP
                   required
                   inputDigitRule="documento6to12"
                 />
-              </div>
 
-              <div className="grid grid-cols-2 gap-4">
                 <FormField
                   label="Nombre"
                   name="nombre"
@@ -334,62 +333,64 @@ export function Login({ onLogin, initialTab = 'login', onBackToLanding }: LoginP
                   placeholder="Pérez"
                   required
                 />
-              </div>
-              
-              <FormField
-                label="Dirección"
-                name="direccion"
-                value={registerData.direccion}
-                onChange={(value) => setRegisterData({ ...registerData, direccion: value as string })}
-                placeholder="Calle 104 # 79D - 65"
-                required
-              />
-              
-              <FormField
-                label="Teléfono"
-                name="telefono"
-                value={registerData.telefono}
-                onChange={(value) => setRegisterData({ ...registerData, telefono: value as string })}
-                placeholder="3001234567"
-                required
-                inputDigitRule="telefono10"
-              />
-              
-              <FormField
-                label="Correo Electrónico"
-                name="email"
-                type="email"
-                value={registerData.email}
-                onChange={(value) => setRegisterData({ ...registerData, email: value as string })}
-                placeholder="usuario@example.com"
-                required
-              />
-              
-              <FormField
-                label="Contraseña"
-                name="password"
-                type="password"
-                value={registerData.password}
-                onChange={(value) => setRegisterData({ ...registerData, password: value as string })}
-                placeholder="••••••••"
-                required
-              />
-              
-              <FormField
-                label="Confirmar Contraseña"
-                name="confirmPassword"
-                type="password"
-                value={registerData.confirmPassword}
-                onChange={(value) => setRegisterData({ ...registerData, confirmPassword: value as string })}
-                placeholder="••••••••"
-                required
-              />
 
-              <FormActions>
-                <Button type="submit" className="w-full" icon={<UserPlus className="w-5 h-5" />}>
-                  Crear Cuenta
-                </Button>
-              </FormActions>
+                <FormField
+                  label="Dirección"
+                  name="direccion"
+                  value={registerData.direccion}
+                  onChange={(value) => setRegisterData({ ...registerData, direccion: value as string })}
+                  placeholder="Calle 104 # 79D - 65"
+                  required
+                />
+
+                <FormField
+                  label="Teléfono"
+                  name="telefono"
+                  value={registerData.telefono}
+                  onChange={(value) => setRegisterData({ ...registerData, telefono: value as string })}
+                  placeholder="3001234567"
+                  required
+                  inputDigitRule="telefono10"
+                />
+
+                <FormField
+                  label="Correo Electrónico"
+                  name="email"
+                  type="email"
+                  value={registerData.email}
+                  onChange={(value) => setRegisterData({ ...registerData, email: value as string })}
+                  placeholder="usuario@example.com"
+                  required
+                />
+
+                <FormField
+                  label="Contraseña"
+                  name="password"
+                  type="password"
+                  value={registerData.password}
+                  onChange={(value) => setRegisterData({ ...registerData, password: value as string })}
+                  placeholder="••••••••"
+                  required
+                />
+
+                <FormField
+                  label="Confirmar Contraseña"
+                  name="confirmPassword"
+                  type="password"
+                  value={registerData.confirmPassword}
+                  onChange={(value) => setRegisterData({ ...registerData, confirmPassword: value as string })}
+                  placeholder="••••••••"
+                  required
+                />
+
+                <div className="sm:col-span-2 pt-2">
+                  <FormActions>
+                    <Button type="submit" className="w-full" icon={<UserPlus className="w-5 h-5" />}>
+                      Crear Cuenta
+                    </Button>
+                  </FormActions>
+                </div>
+              </div>
             </Form>
           </div>
         )}
@@ -398,6 +399,7 @@ export function Login({ onLogin, initialTab = 'login', onBackToLanding }: LoginP
           <p>Calle 104 # 79D – 65, Medellín, Laureles</p>
           <p>Tel: 324 610 2339</p>
         </div>
+      </div>
       </div>
 
       {/* Modal de Restablecer Contraseña */}

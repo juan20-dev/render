@@ -76,7 +76,7 @@ const getTokenFromRequest = (req) => {
   return null;
 };
 
-const authenticateJWT = (req, res, next) => {
+const authenticateJWT = async (req, res, next) => {
   try {
     const token = getTokenFromRequest(req);
     if (!token) {
@@ -94,13 +94,26 @@ const authenticateJWT = (req, res, next) => {
       return res.status(401).json({ success: false, message: 'Token invalido' });
     }
 
+    const sessionJti = payload.jti || null;
+    if (!sessionJti) {
+      return res.status(401).json({ success: false, message: 'Sesion invalida. Inicia sesion nuevamente.' });
+    }
+
+    const { isUserSessionActive, touchUserSession } = require('../models/shared/auditoria');
+    const sessionActive = await isUserSessionActive(userId, sessionJti);
+    if (!sessionActive) {
+      return res.status(401).json({ success: false, message: 'Sesion invalida o cerrada' });
+    }
+
+    void touchUserSession(sessionJti);
+
     req.user = {
       id: userId,
       rol: payload.rol,
       rol_id: payload.rol_id,
       cliente_id: payload.cliente_id || null,
       email: payload.email,
-      session_jti: payload.jti || null,
+      session_jti: sessionJti,
       session_expires_at_ms: typeof payload.exp === 'number' ? payload.exp * 1000 : null,
     };
 
@@ -123,6 +136,8 @@ const authorizeRoles = (...roles) => (req, res, next) => {
   return next();
 };
 
+const CLIENT_API_PERMISSIONS = ['Cliente', 'Ver Mis Pedidos', 'Ver Tienda'];
+
 // Middleware para validar permisos específicos basados en el rol del usuario
 const authorizePermissions = (...requiredPermissions) => async (req, res, next) => {
   try {
@@ -135,9 +150,15 @@ const authorizePermissions = (...requiredPermissions) => async (req, res, next) 
       return next();
     }
 
-    // Cliente solo puede acceder a endpoints de cliente
+    // Asesor: acceso operativo completo (no entra a rutas protegidas con authorizeAdministrador)
+    if (req.user.rol === 'Asesor') {
+      return next();
+    }
+
+    // Cliente: solo endpoints marcados para autoservicio / mis pedidos
     if (req.user.rol === 'Cliente') {
-      if (!requiredPermissions.includes('Cliente')) {
+      const allowed = requiredPermissions.some((p) => CLIENT_API_PERMISSIONS.includes(p));
+      if (!allowed) {
         return res.status(403).json({ success: false, message: 'No autorizado para acceder a este recurso' });
       }
       return next();
@@ -218,10 +239,13 @@ setInterval(() => {
   }
 }, 10 * 60 * 1000);
 
+const { authorizeAdministrador } = require('./scopeAccess');
+
 module.exports = {
   authenticateJWT,
   authorizeRoles,
   authorizePermissions,
+  authorizeAdministrador,
   simpleRateLimit,
   validators,
 };

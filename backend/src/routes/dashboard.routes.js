@@ -1,5 +1,6 @@
 const express = require('express');
-const controller = require('../controllers/dashboard.controllers');
+const { wrapController } = require('../utils/wrapController');
+const controller = wrapController(require('../controllers/dashboard.controllers'));
 const { authenticateJWT, authorizePermissions } = require('../middlewares/auth.middleware');
 
 const router = express.Router();

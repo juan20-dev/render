@@ -6,6 +6,7 @@
  * lo importa. La fuente activa es este archivo modular.
  */
 const pool = require('../../../db');
+const config = require('../../../config');
 const InsumosModel = require('./insumos');
 const {
   ensureMotivoEstado,
@@ -25,6 +26,416 @@ const entregaRecetaKey = (row) => {
   const ins = row.insumo_id != null && row.insumo_id !== '' ? Number(row.insumo_id) : NaN;
   if (Number.isFinite(ins) && ins > 0) return `l:${ins}`;
   return null;
+};
+
+const EPS = 1e-6;
+
+const parseConsumoClave = (clave) => {
+  const s = String(clave || '').trim();
+  const mC = s.match(/^c:(\d+)$/i);
+  if (mC) return { tipo: 'catalogo', producto_catalogo_id: Number(mC[1]) };
+  const mL = s.match(/^l:(\d+)$/i);
+  if (mL) return { tipo: 'legacy', insumo_id: Number(mL[1]) };
+  return null;
+};
+
+const extractJsonFromModelText = (text) => {
+  const t = String(text || '').trim();
+  if (!t) throw new Error('Respuesta vacía del modelo');
+  const fenced = t.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  const raw = fenced ? fenced[1].trim() : t;
+  return JSON.parse(raw);
+};
+
+/**
+ * Agrupa saldos de entregas al productor por insumo (sin repetir filas de historial).
+ */
+const aggregateEntregasByInsumo = (entregasRows) => {
+  const map = new Map();
+  for (const row of entregasRows) {
+    const clave = entregaRecetaKey(row);
+    if (!clave) continue;
+    const qty = Number(row.cantidad ?? 0);
+    if (!Number.isFinite(qty) || qty <= 0) continue;
+    const prev = map.get(clave);
+    if (prev) {
+      prev.disponible += qty;
+    } else {
+      map.set(clave, {
+        clave,
+        insumo_nombre: row.insumo_nombre,
+        unidad: row.unidad,
+        disponible: qty,
+        producto_catalogo_id: row.producto_catalogo_id ?? null,
+        insumo_id: row.insumo_id ?? null,
+      });
+    }
+  }
+  return [...map.values()].sort((a, b) =>
+    String(a.insumo_nombre || '').localeCompare(String(b.insumo_nombre || ''), 'es')
+  );
+};
+
+const getInsumosAgregadosByProductor = async (productorId) => {
+  const rows = await getInsumosEntregadosByProductor(productorId);
+  return aggregateEntregasByInsumo(rows);
+};
+
+const fetchDetallePreparacionPedido = async (clientOrPool, pedidoId) => {
+  const q = clientOrPool.query ? clientOrPool : pool;
+  const prepLinesRes = await q.query(
+    `SELECT dp.producto_id,
+            dp.cantidad,
+            pr.nombre AS producto_nombre,
+            COALESCE(pr.tipo_producto, 'terminado') AS tipo_producto
+     FROM detalle_pedidos dp
+     INNER JOIN productos pr ON pr.id = dp.producto_id
+     WHERE dp.pedido_id = $1
+       AND COALESCE(pr.tipo_producto, 'terminado') = 'preparacion'
+     ORDER BY dp.id ASC`,
+    [pedidoId]
+  );
+  const mergedByProducto = new Map();
+  for (const r of prepLinesRes.rows) {
+    const pid = Number(r.producto_id);
+    const qtyRaw = Number(r.cantidad);
+    const qty = Number.isFinite(qtyRaw) && qtyRaw > 0 ? Math.floor(qtyRaw) : 1;
+    const prev = mergedByProducto.get(pid);
+    if (prev) prev.cantidad += qty;
+    else {
+      mergedByProducto.set(pid, {
+        producto_id: pid,
+        cantidad: qty,
+        producto_nombre: r.producto_nombre,
+      });
+    }
+  }
+  return [...mergedByProducto.values()];
+};
+
+const buildCatalogoInsumosContext = async () => {
+  const rows = await InsumosModel.getResumenGestion();
+  return rows.map((r) => ({
+    clave: `c:${Number(r.producto_catalogo_id)}`,
+    producto_catalogo_id: Number(r.producto_catalogo_id),
+    nombre: String(r.nombre || '').trim(),
+    unidad: String(r.unidad || 'Unidades').trim(),
+    presentacion_cantidad: r.presentacion_cantidad != null ? Number(r.presentacion_cantidad) : null,
+    presentacion_unidad: r.presentacion_unidad != null ? String(r.presentacion_unidad) : null,
+  }));
+};
+
+const resolveClaveFromAiItem = (item, catalogo) => {
+  const parsed = parseConsumoClave(item?.clave);
+  if (parsed?.tipo === 'catalogo') {
+    const hit = catalogo.find((c) => c.producto_catalogo_id === parsed.producto_catalogo_id);
+    if (hit) return { clave: hit.clave, insumo_nombre: hit.nombre, unidad: item.unidad || hit.unidad };
+  }
+  const nombreAi = String(item?.insumo_nombre || item?.nombre || '').trim().toLowerCase();
+  if (nombreAi) {
+    const hit = catalogo.find((c) => c.nombre.toLowerCase() === nombreAi);
+    if (hit) return { clave: hit.clave, insumo_nombre: hit.nombre, unidad: item.unidad || hit.unidad };
+    const partial = catalogo.find(
+      (c) => c.nombre.toLowerCase().includes(nombreAi) || nombreAi.includes(c.nombre.toLowerCase())
+    );
+    if (partial) return { clave: partial.clave, insumo_nombre: partial.nombre, unidad: item.unidad || partial.unidad };
+  }
+  return null;
+};
+
+const mergeConsumoList = (items) => {
+  const map = new Map();
+  for (const raw of items) {
+    const cantidad = Number(raw.cantidad);
+    if (!Number.isFinite(cantidad) || cantidad <= 0) continue;
+    const clave = String(raw.clave || '').trim();
+    if (!clave) continue;
+    const prev = map.get(clave);
+    if (prev) {
+      prev.cantidad += cantidad;
+    } else {
+      map.set(clave, {
+        clave,
+        insumo_nombre: raw.insumo_nombre,
+        cantidad,
+        unidad: raw.unidad || 'Unidades',
+      });
+    }
+  }
+  return [...map.values()];
+};
+
+const computeFaltantes = (sugerido, disponibleAgregado) => {
+  const dispMap = new Map(disponibleAgregado.map((d) => [d.clave, Number(d.disponible ?? 0)]));
+  const faltantes = [];
+  for (const s of sugerido) {
+    const req = Number(s.cantidad);
+    const have = dispMap.get(s.clave) ?? 0;
+    if (req > have + EPS) {
+      faltantes.push({
+        clave: s.clave,
+        insumo_nombre: s.insumo_nombre,
+        requerido: req,
+        disponible: have,
+        falta: Number((req - have).toFixed(4)),
+        unidad: s.unidad,
+      });
+    }
+  }
+  return faltantes;
+};
+
+const callOpenAIRecetaInsumos = async ({ preparaciones, catalogo, stockProductor }) => {
+  const apiKey = String(config.openai?.apiKey || '').trim();
+  if (!apiKey) {
+    const err = new Error('OPENAI_API_KEY no está configurada en el servidor (.env)');
+    err.statusCode = 503;
+    throw err;
+  }
+
+  const systemPrompt = [
+    'Eres un bartender experto para Grandma\'s Liquors (Colombia).',
+    'Tu tarea: definir la RECETA de insumos (BOM) necesarios para preparar TODAS las bebidas del pedido.',
+    'Identifica cada preparación (ej. Margarita, Whisky en rocas, Mojito) y calcula insumos totales.',
+    'Responde ÚNICAMENTE con JSON válido, sin markdown, con esta forma:',
+    '{"insumos":[{"clave":"c:12","insumo_nombre":"Tequila","cantidad":150,"unidad":"Mililitros"}]}',
+    'Reglas estrictas:',
+    '- "clave" debe ser "c:" + producto_catalogo_id de la lista de catálogo.',
+    '- Solo usa insumos del catálogo proporcionado; no inventes IDs.',
+    '- "cantidad" es el total a consumir del productor para todo el pedido (número > 0).',
+    '- "unidad" debe ser "Unidades" o "Mililitros" (coherente con el insumo).',
+    '- Prioriza consumir insumos que el productor ya tiene en stock; no excedas lo disponible salvo que sea imprescindible.',
+  ].join('\n');
+
+  const userPayload = {
+    preparaciones_pedido: preparaciones.map((p) => ({
+      nombre: p.producto_nombre,
+      cantidad: p.cantidad,
+    })),
+    catalogo_insumos: catalogo,
+    stock_actual_productor: stockProductor.map((s) => ({
+      clave: s.clave,
+      nombre: s.insumo_nombre,
+      disponible: s.disponible,
+      unidad: s.unidad,
+    })),
+  };
+
+  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: config.openai?.model || 'gpt-4o-mini',
+      temperature: 0.2,
+      response_format: { type: 'json_object' },
+      messages: [
+        { role: 'system', content: systemPrompt },
+        {
+          role: 'user',
+          content: `Define la receta de insumos para este pedido:\n${JSON.stringify(userPayload, null, 2)}`,
+        },
+      ],
+    }),
+  });
+
+  if (!response.ok) {
+    const errText = await response.text().catch(() => '');
+    const err = new Error(`OpenAI no disponible (${response.status}): ${errText.slice(0, 200)}`);
+    err.statusCode = 502;
+    throw err;
+  }
+
+  const body = await response.json();
+  const content = body?.choices?.[0]?.message?.content;
+  const parsed = extractJsonFromModelText(content);
+  const list = Array.isArray(parsed?.insumos) ? parsed.insumos : Array.isArray(parsed) ? parsed : [];
+  return list;
+};
+
+const sugerirConsumoInsumosIA = async (pedidoId, productorId) => {
+  const pid = Number(pedidoId);
+  const prodId = Number(productorId);
+  if (!Number.isInteger(pid) || pid <= 0) {
+    const err = new Error('pedido_id inválido');
+    err.statusCode = 400;
+    throw err;
+  }
+  if (!Number.isInteger(prodId) || prodId <= 0) {
+    const err = new Error('productor_id inválido');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const preparaciones = await fetchDetallePreparacionPedido(pool, pid);
+  if (!preparaciones.length) {
+    const err = new Error('El pedido no tiene productos de tipo preparación');
+    err.statusCode = 409;
+    throw err;
+  }
+
+  const catalogo = await buildCatalogoInsumosContext();
+  if (!catalogo.length) {
+    const err = new Error('No hay insumos activos en el catálogo para calcular la receta');
+    err.statusCode = 409;
+    throw err;
+  }
+
+  const disponible = await getInsumosAgregadosByProductor(prodId);
+  const aiRaw = await callOpenAIRecetaInsumos({
+    preparaciones,
+    catalogo,
+    stockProductor: disponible,
+  });
+
+  const normalizados = [];
+  for (const item of aiRaw) {
+    const resolved = resolveClaveFromAiItem(item, catalogo);
+    if (!resolved) continue;
+    const cantidad = Number(item.cantidad);
+    if (!Number.isFinite(cantidad) || cantidad <= 0) continue;
+    normalizados.push({
+      clave: resolved.clave,
+      insumo_nombre: resolved.insumo_nombre,
+      cantidad,
+      unidad: String(item.unidad || resolved.unidad || 'Unidades').trim(),
+    });
+  }
+
+  if (!normalizados.length) {
+    const err = new Error(
+      'La IA no pudo asociar insumos del catálogo. Verifique nombres de insumos y el pedido.'
+    );
+    err.statusCode = 422;
+    throw err;
+  }
+
+  const sugerido = mergeConsumoList(normalizados);
+  const faltantes = computeFaltantes(sugerido, disponible);
+
+  return {
+    preparaciones,
+    disponible,
+    sugerido,
+    faltantes,
+    receta_origen: 'openai',
+  };
+};
+
+/**
+ * Descuenta consumo del saldo en entregas_insumos (FIFO). No modifica productos.stock.
+ */
+const applyConsumoFIFO = async (client, productorId, consumoList) => {
+  const productorIdNum = Number(productorId);
+  const entregasRes = await client.query(
+    `SELECT ei.id, ei.insumo_id, ei.producto_catalogo_id, ei.cantidad, ei.unidad, ei.operario_id,
+            ei.numero_entrega, ei.fecha, ei.hora,
+            COALESCE(i.nombre, pr.nombre) AS insumo_nombre
+     FROM entregas_insumos ei
+     LEFT JOIN insumos i ON i.id = ei.insumo_id
+     LEFT JOIN productos pr ON pr.id = ei.producto_catalogo_id
+     WHERE ei.operario_id = $1
+       AND COALESCE(ei.cantidad, 0) > 0
+       AND COALESCE(ei.anulada, FALSE) = FALSE
+     ORDER BY ei.fecha ASC, ei.hora ASC NULLS LAST, ei.id ASC
+     FOR UPDATE OF ei`,
+    [productorIdNum]
+  );
+
+  const byClave = new Map();
+  for (const e of entregasRes.rows) {
+    const k = entregaRecetaKey(e);
+    if (!k) continue;
+    if (!byClave.has(k)) byClave.set(k, []);
+    byClave.get(k).push(e);
+  }
+
+  const insumosGastados = [];
+
+  for (const item of consumoList) {
+    const clave = String(item.clave || '').trim();
+    const need = Number(item.cantidad);
+    if (!clave || !Number.isFinite(need) || need <= 0) continue;
+
+    let remaining = need;
+    const entregas = byClave.get(clave) || [];
+    for (const e of entregas) {
+      if (remaining <= EPS) break;
+      const disponible = Number(e.cantidad ?? 0);
+      if (!Number.isFinite(disponible) || disponible <= 0) continue;
+      const take = Math.min(disponible, remaining);
+      if (take <= 0) continue;
+
+      await client.query(
+        `UPDATE entregas_insumos
+         SET cantidad = GREATEST(0, COALESCE(cantidad, 0) - $1),
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = $2`,
+        [take, e.id]
+      );
+      e.cantidad = disponible - take;
+      remaining -= take;
+
+      insumosGastados.push({
+        entrega_id: Number(e.id),
+        clave,
+        insumo_id: Number(
+          e.insumo_id != null && e.insumo_id !== ''
+            ? e.insumo_id
+            : e.producto_catalogo_id != null && e.producto_catalogo_id !== ''
+              ? e.producto_catalogo_id
+              : 0
+        ),
+        insumo_nombre: e.insumo_nombre || item.insumo_nombre,
+        cantidad: take,
+        cantidad_descontada: take,
+        unidad: e.unidad || item.unidad,
+        numero_entrega: e.numero_entrega,
+      });
+    }
+
+    if (remaining > EPS) {
+      const err = new Error(
+        `Stock insuficiente del productor para «${item.insumo_nombre || clave}»: faltan ${Number(
+          remaining.toFixed(4)
+        )} ${item.unidad || 'unidades'}. Registre una nueva entrega de insumos al productor.`
+      );
+      err.statusCode = 409;
+      err.details = { clave, faltante: remaining };
+      throw err;
+    }
+  }
+
+  return insumosGastados;
+};
+
+const normalizeConsumoInput = (rawList, catalogo) => {
+  if (!Array.isArray(rawList) || !rawList.length) return [];
+  const items = [];
+  for (const row of rawList) {
+    const cantidad = Number(row.cantidad);
+    if (!Number.isFinite(cantidad) || cantidad <= 0) continue;
+    let clave = String(row.clave || '').trim();
+    let insumo_nombre = row.insumo_nombre || row.nombre;
+    let unidad = row.unidad;
+    if (!clave) {
+      const pid = Number(row.producto_catalogo_id);
+      if (Number.isFinite(pid) && pid > 0) clave = `c:${pid}`;
+    }
+    if (!clave) {
+      const resolved = resolveClaveFromAiItem(row, catalogo);
+      if (resolved) {
+        clave = resolved.clave;
+        insumo_nombre = insumo_nombre || resolved.insumo_nombre;
+        unidad = unidad || resolved.unidad;
+      }
+    }
+    if (!clave) continue;
+    items.push({ clave, insumo_nombre, cantidad, unidad: unidad || 'Unidades' });
+  }
+  return mergeConsumoList(items);
 };
 
 /**
@@ -136,6 +547,12 @@ const validateProduccionCreateFromPedido = (data = {}) => {
     error.statusCode = 400;
     throw error;
   }
+  const productorId = Number(data.productor_id);
+  if (!Number.isInteger(productorId) || productorId <= 0) {
+    const error = new Error('productor_id es obligatorio para crear la orden');
+    error.statusCode = 400;
+    throw error;
+  }
   const tiempoPreparacion = Number(data.tiempo_preparacion_minutos ?? 0);
   if (!Number.isFinite(tiempoPreparacion) || tiempoPreparacion <= 0) {
     const error = new Error('tiempo_preparacion_minutos debe ser mayor a 0');
@@ -144,6 +561,14 @@ const validateProduccionCreateFromPedido = (data = {}) => {
   }
   if (!data.fecha) {
     const error = new Error('fecha es obligatoria');
+    error.statusCode = 400;
+    throw error;
+  }
+  const consumo = data.consumo_insumos;
+  if (!Array.isArray(consumo) || consumo.length === 0) {
+    const error = new Error(
+      'Debe definir el consumo de insumos (use «Seleccionar insumos rápidos» antes de crear la orden)'
+    );
     error.statusCode = 400;
     throw error;
   }
@@ -184,6 +609,8 @@ const getInsumosEntregadosByProductor = async (productorId) => {
 
 const Produccion = {
   getInsumosEntregadosByProductor,
+  getInsumosAgregadosByProductor,
+  sugerirConsumoInsumos: sugerirConsumoInsumosIA,
   getAll: async (options = {}) => {
     await ensureProduccionDetallePreparacion();
     const prodId = Number(options.productorUserId);
@@ -338,120 +765,44 @@ const Produccion = {
 
       const productoIdPrincipal = detallePreparacion[0].producto_id;
       const cantidadTotal = detallePreparacion.reduce((sum, line) => sum + line.cantidad, 0);
+      const productorIdNum = Number(data.productor_id);
 
-      let insumosEntregadosUsados = [];
-      const insumosInput = Array.isArray(data.insumos) ? data.insumos : [];
-      const idsEntregas = [...new Set(insumosInput.map((v) => Number(v)).filter((v) => Number.isInteger(v) && v > 0))];
-
-      if (idsEntregas.length > 0) {
-        const productorIdNum = Number(data.productor_id);
-        if (!Number.isFinite(productorIdNum) || productorIdNum <= 0) {
-          const err = new Error('productor_id es obligatorio cuando se asignan insumos entregados');
-          err.statusCode = 400;
-          throw err;
-        }
-        const entregasRes = await client.query(
-          `SELECT ei.id, ei.insumo_id, ei.producto_catalogo_id, ei.cantidad, ei.unidad, ei.operario_id,
-                  ei.numero_entrega, COALESCE(i.nombre, pr.nombre) AS insumo_nombre
-           FROM entregas_insumos ei
-           LEFT JOIN insumos i ON i.id = ei.insumo_id
-           LEFT JOIN productos pr ON pr.id = ei.producto_catalogo_id
-           WHERE ei.id = ANY($1::int[])
-             AND COALESCE(ei.anulada, FALSE) = FALSE
-           FOR UPDATE OF ei`,
-          [idsEntregas]
+      const catalogo = await buildCatalogoInsumosContext();
+      const consumoList = normalizeConsumoInput(data.consumo_insumos, catalogo);
+      if (!consumoList.length) {
+        const err = new Error(
+          'El consumo de insumos no es válido. Use «Seleccionar insumos rápidos» antes de crear la orden.'
         );
-        if (entregasRes.rows.length !== idsEntregas.length) {
-          const err = new Error('Una o mas entregas de insumos no existen');
-          err.statusCode = 400;
-          throw err;
-        }
-        const rowsById = new Map(entregasRes.rows.map((r) => [Number(r.id), r]));
-        const needWorking = await buildPedidoInsumoNeedMap(client, detallePreparacion);
-
-        for (const entId of idsEntregas) {
-          const e = rowsById.get(entId);
-          if (!e) {
-            const err = new Error('Una o mas entregas de insumos no existen');
-            err.statusCode = 400;
-            throw err;
-          }
-          if (Number(e.operario_id) !== productorIdNum) {
-            const err = new Error(
-              `La entrega #${e.numero_entrega || e.id} no pertenece al productor seleccionado`
-            );
-            err.statusCode = 403;
-            throw err;
-          }
-          const kEnt = entregaRecetaKey(e);
-          if (!kEnt) {
-            const err = new Error(
-              `La entrega #${e.numero_entrega || e.id} no tiene un insumo de catálogo o legacy asociado`
-            );
-            err.statusCode = 400;
-            throw err;
-          }
-          const pendiente = needWorking.get(kEnt) || 0;
-          const disponible = Number(e.cantidad ?? 0);
-          if (pendiente > 0 && (!Number.isFinite(disponible) || disponible <= 0)) {
-            const err = new Error(
-              `La entrega #${e.numero_entrega || e.id} no tiene saldo suficiente para cubrir la receta (falta asignar ${pendiente} unidades de receta para ${kEnt})`
-            );
-            err.statusCode = 409;
-            throw err;
-          }
-          if (pendiente <= 0 || !Number.isFinite(disponible) || disponible <= 0) {
-            continue;
-          }
-
-          const take = Math.min(disponible, pendiente);
-          if (take <= 0) continue;
-
-          await client.query(
-            `UPDATE entregas_insumos
-             SET cantidad = GREATEST(0, COALESCE(cantidad, 0) - $1),
-                 updated_at = CURRENT_TIMESTAMP
-             WHERE id = $2`,
-            [take, e.id]
-          );
-          needWorking.set(kEnt, pendiente - take);
-          insumosEntregadosUsados.push({
-            entrega_id: Number(e.id),
-            insumo_id: Number(
-              e.insumo_id != null && e.insumo_id !== ''
-                ? e.insumo_id
-                : e.producto_catalogo_id != null && e.producto_catalogo_id !== ''
-                  ? e.producto_catalogo_id
-                  : 0
-            ),
-            insumo_nombre: e.insumo_nombre,
-            cantidad: take,
-            cantidad_descontada: take,
-            unidad: e.unidad,
-            numero_entrega: e.numero_entrega,
-          });
-        }
-
-        const EPS = 1e-6;
-        const faltas = [...needWorking.entries()].filter(([, v]) => v > EPS);
-        if (faltas.length > 0) {
-          const err = new Error(
-            `Las entregas al productor no cubren la receta del pedido. Pendiente (cantidad × receta): ${faltas
-              .map(([k, v]) => `${k}=${Number(v.toFixed(4))}`)
-              .join(', ')}`
-          );
-          err.statusCode = 409;
-          throw err;
-        }
+        err.statusCode = 400;
+        throw err;
       }
+
+      const disponibleAgregado = await getInsumosAgregadosByProductor(productorIdNum);
+      const faltantes = computeFaltantes(consumoList, disponibleAgregado);
+      if (faltantes.length > 0) {
+        const detalle = faltantes
+          .map(
+            (f) =>
+              `${f.insumo_nombre}: faltan ${f.falta} ${f.unidad} (requiere ${f.requerido}, tiene ${f.disponible})`
+          )
+          .join('; ');
+        const err = new Error(
+          `El productor no tiene insumos suficientes. ${detalle}. Registre una nueva entrega de insumos al productor.`
+        );
+        err.statusCode = 409;
+        err.details = { faltantes };
+        throw err;
+      }
+
+      const insumosEntregadosUsados = await applyConsumoFIFO(client, productorIdNum, consumoList);
 
       const detalleJson = JSON.stringify(detallePreparacion);
 
       const insResult = await client.query(
         `INSERT INTO produccion (
           numero_produccion, producto_id, pedido_id, cantidad, fecha, responsable,
-          tiempo_preparacion_minutos, estado, notes, insumos_gastados, detalle_preparacion
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb) RETURNING id`,
+          productor_id, tiempo_preparacion_minutos, estado, notes, insumos_gastados, detalle_preparacion
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb) RETURNING id`,
         [
           numeroProduccion,
           productoIdPrincipal,
@@ -459,14 +810,11 @@ const Produccion = {
           cantidadTotal,
           data.fecha,
           data.responsable,
+          productorIdNum,
           data.tiempo_preparacion_minutos ?? 0,
           estadoInicial,
           data.notes ?? null,
-          insumosEntregadosUsados.length > 0
-            ? JSON.stringify(insumosEntregadosUsados)
-            : Array.isArray(data.insumos_gastados)
-              ? JSON.stringify(data.insumos_gastados)
-              : '[]',
+          JSON.stringify(insumosEntregadosUsados),
           detalleJson,
         ]
       );

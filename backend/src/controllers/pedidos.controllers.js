@@ -3,6 +3,7 @@
 const models = {
   Abonos: require('../models/ventas/abonos'),
   Pedidos: require('../models/ventas/pedidos'),
+  Domicilios: require('../models/ventas/domicilios'),
 };
 const {
   isClienteUser,
@@ -43,9 +44,28 @@ module.exports = {
       if (!pedido) return res.status(404).json({ success: false, message: 'Pedido no encontrado' });
       const notasPedido = pedido.detalles;
       const detalles = await models.Pedidos.getDetalles(req.params.id);
+      let domicilio = null;
+      try {
+        domicilio = await models.Domicilios.getByPedido(req.params.id);
+      } catch {
+        domicilio = null;
+      }
       return res.json({
         success: true,
-        data: { ...pedido, detalles, detalles_texto: notasPedido },
+        data: {
+          ...pedido,
+          detalles,
+          detalles_texto: notasPedido,
+          domicilio: domicilio
+            ? {
+                id: domicilio.id,
+                estado: domicilio.estado,
+                fecha: domicilio.fecha,
+                hora: domicilio.hora,
+                repartidor: domicilio.repartidor,
+              }
+            : null,
+        },
       });
     } catch (error) {
       return res.status(error.statusCode || 500).json({ success: false, message: error.message });
@@ -213,23 +233,7 @@ module.exports = {
           });
         }
 
-        // ASESOR: Puede cambiar estado, pero sin editar otros campos
-        if (rol === 'Asesor') {
-          const merged = {
-            numero_pedido: pedido.numero_pedido,
-            fecha: pedido.fecha,
-            fecha_entrega: pedido.fecha_entrega,
-            detalles: pedido.detalles,
-            total: pedido.total,
-            estado: estadoNuevo, // Solo cambiar estado
-          };
-          await models.Pedidos.update(req.params.id, merged);
-          
-          return res.json({ success: true, message: 'Pedido actualizado exitosamente' });
-        }
-
-        // ADMIN: Puede cambiar todo
-        await models.Pedidos.update(req.params.id, req.body);
+        await models.Pedidos.update(req.params.id, { ...req.body, estado: estadoNuevo });
         return res.json({ success: true, message: 'Pedido actualizado exitosamente' });
       }
 
