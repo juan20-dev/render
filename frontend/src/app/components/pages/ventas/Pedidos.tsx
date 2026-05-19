@@ -6,7 +6,7 @@ import { Form, FormField, FormActions } from '../../Form';
 import { Plus, Minus, Trash2, Search, Package, ShoppingCart } from 'lucide-react';
 import { api } from '../../../services/api';
 import { toast } from '../../AlertDialog';
-import type { Pedido, Cliente, Producto, PedidoProducto } from '../../../services/types';
+import type { Pedido, Cliente, Producto, PedidoProducto, OrdenProduccion } from '../../../services/types';
 import { MotivoModal } from '../../MotivoModal';
 import { AlertDialog } from '../../AlertDialog';
 
@@ -26,6 +26,8 @@ export function Pedidos() {
   const [pedidos, setPedidos] = useState<PedidoView[]>([]);
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [productos, setProductos] = useState<Producto[]>([]);
+  /** Orden de producción por pedido_id (si existe). */
+  const [ordenPorPedidoId, setOrdenPorPedidoId] = useState<Map<number, OrdenProduccion>>(new Map());
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [pedidoPending, setPedidoPending] = useState<{
@@ -75,10 +77,11 @@ export function Pedidos() {
 
   const cargarDatos = async () => {
     try {
-      const [pedidosData, clientesData, productosData] = await Promise.all([
+      const [pedidosData, clientesData, productosData, ordenesProd] = await Promise.all([
         api.pedidos.getAll(),
         api.clientes.getAll(),
-        api.productos.getAll()
+        api.productos.getAll(),
+        api.produccion.getAll().catch(() => [] as OrdenProduccion[]),
       ]);
 
       setClientes(clientesData.filter(c => c.estado === 'activo'));
@@ -93,9 +96,22 @@ export function Pedidos() {
       });
 
       setPedidos(pedidosConInfo);
+
+      const mapOrden = new Map<number, OrdenProduccion>();
+      for (const o of ordenesProd) {
+        const pid = o.pedidoId != null ? Number(o.pedidoId) : 0;
+        if (pid > 0) mapOrden.set(pid, o);
+      }
+      setOrdenPorPedidoId(mapOrden);
     } catch (error) {
       toast.error('Error al cargar datos');
     }
+  };
+
+  const pedidoTieneOrdenPendiente = (pedidoId: number) => {
+    const orden = ordenPorPedidoId.get(pedidoId);
+    if (!orden) return false;
+    return orden.estado !== 'completada' && orden.estado !== 'cancelada';
   };
 
   const formatCurrency = (value: number) => {
@@ -107,7 +123,8 @@ export function Pedidos() {
   };
 
   const pedidoEstadoOpciones = (
-    estado: Pedido['estado']
+    estado: Pedido['estado'],
+    pedidoId: number
   ): { v: Pedido['estado']; l: string }[] => {
     if (estado === 'pendiente') {
       return [
@@ -117,11 +134,14 @@ export function Pedidos() {
       ];
     }
     if (estado === 'en proceso') {
-      return [
+      const opts: { v: Pedido['estado']; l: string }[] = [
         { v: 'en proceso', l: 'En Proceso' },
-        { v: 'completado', l: 'Completado' },
-        { v: 'cancelado', l: 'Cancelado' }
+        { v: 'cancelado', l: 'Cancelado' },
       ];
+      if (!pedidoTieneOrdenPendiente(pedidoId)) {
+        opts.splice(1, 0, { v: 'completado', l: 'Completado' });
+      }
+      return opts;
     }
     if (estado === 'completado') {
       return [{ v: 'completado', l: 'Completado' }];
@@ -163,6 +183,13 @@ export function Pedidos() {
       return;
     }
     if (to === 'completado') {
+      if (pedidoTieneOrdenPendiente(pedido.id)) {
+        toast.error('No puede completar el pedido', {
+          description:
+            'La orden de producción aún no está completada. Finalícela en Producción; el pedido pasará a Completado automáticamente.',
+        });
+        return;
+      }
       setPedidoPending({ pedido, to });
       return;
     }
@@ -220,7 +247,7 @@ export function Pedidos() {
       key: 'estado',
       label: 'Estado',
       render: (_: string, row: PedidoView) => {
-        const opts = pedidoEstadoOpciones(row.estado);
+        const opts = pedidoEstadoOpciones(row.estado, row.id);
         const locked = opts.length === 1;
         const bg =
           row.estado === 'completado'

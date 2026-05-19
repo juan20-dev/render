@@ -16,12 +16,76 @@ interface OrdenProduccionView extends OrdenProduccion {
   productorNombre?: string;
 }
 
+/** Extrae id de catálogo desde clave `c:123` (entregas / resumen productor). */
+function catalogoIdFromClave(clave: string): number | null {
+  const m = String(clave || '').match(/^c:(\d+)$/i);
+  return m ? Number(m[1]) : null;
+}
+
+type InsumoResumenRow = {
+  clave?: string;
+  unidad?: string;
+  disponible?: number;
+  disponible_unidades?: number;
+  ml_por_unidad?: number;
+};
+
+/** Unidad de medida del insumo según catálogo (Unidades | Mililitros) o entrega. */
+function etiquetaUnidadInsumo(row: InsumoResumenRow, insumosCatalogo: Producto[]): string {
+  if (/mililitro/i.test(String(row.unidad || ''))) return 'Mililitros';
+  const catId = catalogoIdFromClave(row.clave || '');
+  if (catId != null) {
+    const prod = insumosCatalogo.find((p) => p.id === catId);
+    const medida = prod?.insumoUnidadMedida?.trim();
+    if (medida === 'Mililitros' || medida === 'Unidades') return medida;
+    if (medida) return medida;
+  }
+  const u = String(row.unidad || '').trim();
+  if (/mililitro/i.test(u)) return 'Mililitros';
+  if (u) return u;
+  return 'Unidades';
+}
+
+/** ml por unidad de presentación (ej. 500 ml por botella). */
+function mlPorUnidadInsumo(row: InsumoResumenRow, insumosCatalogo: Producto[]): number | null {
+  if (row.ml_por_unidad != null && row.ml_por_unidad > 0) return row.ml_por_unidad;
+  const catId = catalogoIdFromClave(row.clave || '');
+  if (catId == null) return null;
+  const prod = insumosCatalogo.find((p) => p.id === catId);
+  if (prod?.insumoUnidadMedida !== 'Mililitros') return null;
+  const q = prod.insumoCantidadMedida;
+  return q != null && q > 0 ? q : null;
+}
+
+/** Saldo mostrado en UI: unidades o mililitros totales (10 u. × 500 ml = 5000 ml). */
+function disponibleMostrar(row: InsumoResumenRow, insumosCatalogo: Producto[]): number {
+  if (row.ml_por_unidad != null && row.disponible != null && /mililitro/i.test(String(row.unidad || ''))) {
+    return Number(row.disponible);
+  }
+  const ml = mlPorUnidadInsumo(row, insumosCatalogo);
+  if (ml) {
+    const unidades =
+      row.disponible_unidades != null ? Number(row.disponible_unidades) : Number(row.disponible ?? 0);
+    return Number((unidades * ml).toFixed(4));
+  }
+  return Number(row.disponible ?? 0);
+}
+
+function formatoCantidadInsumo(n: number, unidad: string): string {
+  if (/mililitro/i.test(unidad)) {
+    return Number.isInteger(n) ? String(n) : n.toFixed(2);
+  }
+  return Number.isInteger(n) ? String(n) : n.toFixed(2);
+}
+
 export function Produccion() {
   const { user } = useAuth();
   const esProductor = String(user?.rol || '').trim().toLowerCase() === 'productor';
 
   const [ordenes, setOrdenes] = useState<OrdenProduccionView[]>([]);
   const [productos, setProductos] = useState<Producto[]>([]);
+  /** Catálogo de insumos (para unidad Mililitros / Unidades en el formulario Nueva orden). */
+  const [insumosCatalogo, setInsumosCatalogo] = useState<Producto[]>([]);
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
   const [productores, setProductores] = useState<Usuario[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -55,7 +119,7 @@ export function Produccion() {
   const [tiempoValido, setTiempoValido] = useState<boolean | null>(null);
   /** Insumos agregados del productor (una fila por insumo, saldo total). */
   const [insumosResumenProductor, setInsumosResumenProductor] = useState<
-    { clave: string; insumo_nombre?: string; disponible?: number; unidad?: string }[]
+    (InsumoResumenRow & { clave: string; insumo_nombre?: string })[]
   >([]);
   /** Consumo planificado para la orden (receta IA). */
   const [consumoPlaneado, setConsumoPlaneado] = useState<
@@ -89,7 +153,7 @@ export function Produccion() {
           clave: insumo.clave,
           insumo_nombre: insumo.insumo_nombre || 'Insumo',
           cantidad,
-          unidad: insumo.unidad || ''
+          unidad: etiquetaUnidadInsumo(insumo, insumosCatalogo),
         }
       ]);
     } else if (cantidad === 0) {
@@ -100,7 +164,7 @@ export function Produccion() {
           clave: insumo.clave,
           insumo_nombre: insumo.insumo_nombre || 'Insumo',
           cantidad: 0,
-          unidad: insumo.unidad || ''
+          unidad: etiquetaUnidadInsumo(insumo, insumosCatalogo),
         }
       ]);
     }
@@ -130,7 +194,13 @@ export function Produccion() {
         console.log(`[Produccion] Fetching insumos para productorId=${formData.productorId}`);
         const rows = await api.produccion.getInsumosResumenProductor(formData.productorId);
         console.log(`[Produccion] Insumos obtenidos:`, rows);
-        if (!cancelled) setInsumosResumenProductor(Array.isArray(rows) ? rows : []);
+        if (!cancelled) {
+          const enriched = (Array.isArray(rows) ? rows : []).map((row) => ({
+            ...row,
+            unidad: etiquetaUnidadInsumo(row, insumosCatalogo),
+          }));
+          setInsumosResumenProductor(enriched);
+        }
       } catch (error) {
         console.error(`[Produccion] Error al obtener insumos:`, error);
         if (!cancelled) setInsumosResumenProductor([]);
@@ -139,7 +209,7 @@ export function Produccion() {
     return () => {
       cancelled = true;
     };
-  }, [isModalOpen, formData.productorId]);
+  }, [isModalOpen, formData.productorId, insumosCatalogo]);
 
   useEffect(() => {
     setConsumoPlaneado([]);
@@ -194,6 +264,7 @@ export function Produccion() {
       const productoresData = usuariosData.filter((u) => u.rol === 'Productor' && u.estado === 'activo');
       setProductores(productoresData);
       setProductos(productosData.filter((p) => p.typo === 'de preparacion' && p.estado === 'activo'));
+      setInsumosCatalogo(productosData.filter((p) => p.typo === 'insumo' && p.estado === 'activo'));
       setPedidos(
         pedidosData.filter(
           (p) => p.estado === 'en proceso' && !pedidoIdsConProduccion.has(Number(p.id))
@@ -549,21 +620,44 @@ Fecha Impresión:    ${new Date().toLocaleString('es-CO')}
       return;
     }
 
-    const insumosAUsar = consumoPlaneado.length > 0 ? consumoPlaneado : insumosSeleccionados;
+    const insumosBrutos =
+      consumoPlaneado.length > 0 ? consumoPlaneado : insumosSeleccionados;
+    const insumosAUsar = insumosBrutos.filter((i) => Number(i.cantidad) > 0);
     if (!insumosAUsar.length) {
       toast.error('Seleccione insumos para consumir en esta orden (manualmente o con «Seleccionar insumos rápidos»)');
       return;
     }
 
+    for (const item of insumosAUsar) {
+      const row = insumosResumenProductor.find((r) => r.clave === item.clave);
+      if (!row) continue;
+      const maxDisp = disponibleMostrar(row, insumosCatalogo);
+      if (Number(item.cantidad) > maxDisp + 1e-6) {
+        const unidad = etiquetaUnidadInsumo(row, insumosCatalogo);
+        toast.error(`Cantidad excede el disponible para «${item.insumo_nombre}»`, {
+          description: `Máximo ${formatoCantidadInsumo(maxDisp, unidad)} ${unidad}.`,
+        });
+        return;
+      }
+    }
+
     try {
-      const insumosAUsar = consumoPlaneado.length > 0 ? consumoPlaneado : insumosSeleccionados;
       const ordenCreada = await api.produccion.create({
         pedidoId: formData.pedidoId,
         productorId: formData.productorId,
         fechaInicio: formData.fechaInicio,
         tiempoPreparacion: formData.tiempoPreparacion,
         estado: 'pendiente',
-        consumoInsumos: insumosAUsar,
+        consumoInsumos: insumosAUsar.map((i) => {
+          const catId = catalogoIdFromClave(i.clave);
+          return {
+            clave: i.clave,
+            insumo_nombre: i.insumo_nombre,
+            cantidad: Number(i.cantidad),
+            unidad: etiquetaUnidadInsumo(i, insumosCatalogo),
+            ...(catId != null ? { producto_catalogo_id: catId } : {}),
+          };
+        }),
       });
 
       const productor = productores.find(p => p.id === formData.productorId);
@@ -576,7 +670,13 @@ Fecha Impresión:    ${new Date().toLocaleString('es-CO')}
       setIsModalOpen(false);
       cargarDatos();
     } catch (error: any) {
-      toast.error(error.message || 'Error al crear orden');
+      const detalle =
+        Array.isArray(error?.details) && error.details.length > 0
+          ? error.details.map((d: { message?: string }) => d.message).filter(Boolean).join('; ')
+          : '';
+      toast.error(error.message || 'Error al crear orden', {
+        description: detalle || undefined,
+      });
     }
   };
 
@@ -850,7 +950,8 @@ Fecha Impresión:    ${new Date().toLocaleString('es-CO')}
                   {insumosResumenProductor.map((row) => {
                     const seleccionado = insumosSeleccionados.find(i => i.clave === row.clave);
                     const cantidad = seleccionado?.cantidad || 0;
-                    const disponible = row.disponible || 0;
+                    const unidadLbl = etiquetaUnidadInsumo(row, insumosCatalogo);
+                    const disponible = disponibleMostrar(row, insumosCatalogo);
                     const quedaría = Math.max(0, disponible - cantidad);
                     return (
                       <div
@@ -869,15 +970,15 @@ Fecha Impresión:    ${new Date().toLocaleString('es-CO')}
                             <div className="grid grid-cols-3 gap-2 mt-2 text-xs">
                               <div className="bg-muted/30 p-2 rounded">
                                 <div className="text-muted-foreground">Disponible</div>
-                                <div className="font-mono font-semibold text-foreground">{disponible} {row.unidad || 'unidades'}</div>
+                                <div className="font-mono font-semibold text-foreground">{formatoCantidadInsumo(disponible, unidadLbl)} {unidadLbl}</div>
                               </div>
                               {seleccionado && (
                                 <>
                                   <div className="bg-blue-50 dark:bg-blue-950 p-2 rounded border border-blue-200 dark:border-blue-800">
-                                    <div className="text-muted-foreground">A Consumir</div>
+                                    <div className="text-muted-foreground">A Consumir ({unidadLbl})</div>
                                     <input
                                       type="number"
-                                      step="0.01"
+                                      step={/mililitro/i.test(unidadLbl) ? '1' : '0.01'}
                                       min="0"
                                       max={disponible}
                                       value={cantidad === 0 ? '' : cantidad}
@@ -907,7 +1008,9 @@ Fecha Impresión:    ${new Date().toLocaleString('es-CO')}
                                   </div>
                                   <div className="bg-green-50 dark:bg-green-950 p-2 rounded border border-green-200 dark:border-green-800">
                                     <div className="text-muted-foreground">Quedaría</div>
-                                    <div className="font-mono font-semibold text-foreground">{quedaría.toFixed(2)} {row.unidad || 'unidades'}</div>
+                                    <div className="font-mono font-semibold text-foreground">
+                                      {formatoCantidadInsumo(quedaría, unidadLbl)} {unidadLbl}
+                                    </div>
                                   </div>
                                 </>
                               )}
@@ -933,7 +1036,8 @@ Fecha Impresión:    ${new Date().toLocaleString('es-CO')}
                           <span className="font-medium">{c.insumo_nombre}</span>
                         </div>
                         <span className="font-mono bg-white dark:bg-slate-900 px-3 py-1 rounded border border-border">
-                          {c.cantidad.toFixed(2)} {c.unidad || 'unidades'}
+                          {formatoCantidadInsumo(c.cantidad, etiquetaUnidadInsumo(c, insumosCatalogo))}{' '}
+                          {etiquetaUnidadInsumo(c, insumosCatalogo)}
                         </span>
                       </div>
                     ))}

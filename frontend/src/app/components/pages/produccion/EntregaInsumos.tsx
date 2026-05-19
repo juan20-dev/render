@@ -21,10 +21,48 @@ interface EntregaInsumoView extends EntregaInsumo {
   productorNombre?: string;
 }
 
+type CatalogoInsumoEntrega = {
+  productoCatalogoId?: number;
+  presentacionCantidad?: number | null;
+  presentacionUnidad?: string | null;
+  unidad: string;
+};
+
+/** Cantidad mostrada en tabla: unidades de entrega o ml totales (u. × ml/u.). */
+function cantidadEntregaParaTabla(
+  cantidadUnidades: number,
+  entrega: Pick<EntregaInsumo, 'unidad' | 'productoCatalogoId'>,
+  catalogo: CatalogoInsumoEntrega[]
+): { cantidad: number; unidad: string } {
+  const cat =
+    entrega.productoCatalogoId != null
+      ? catalogo.find((c) => c.productoCatalogoId === entrega.productoCatalogoId)
+      : undefined;
+  const pu = String(cat?.presentacionUnidad || '').trim();
+  const pq = cat?.presentacionCantidad;
+  if (/mililitro/i.test(pu) && pq != null && pq > 0) {
+    return {
+      cantidad: Number((cantidadUnidades * pq).toFixed(4)),
+      unidad: 'Mililitros',
+    };
+  }
+  if (/mililitro/i.test(String(entrega.unidad || ''))) {
+    return { cantidad: cantidadUnidades, unidad: 'Mililitros' };
+  }
+  return {
+    cantidad: cantidadUnidades,
+    unidad: cat?.unidad || entrega.unidad || 'Unidades',
+  };
+}
+
 export function EntregaInsumos() {
   const [entregas, setEntregas] = useState<EntregaInsumoView[]>([]);
   const [catalogoInsumos, setCatalogoInsumos] = useState<
-    { id: number; nombre: string; unidad: string; estado: 'activo' | 'inactivo'; productoCatalogoId?: number }[]
+    (CatalogoInsumoEntrega & {
+      id: number;
+      nombre: string;
+      estado: 'activo' | 'inactivo';
+    })[]
   >([]);
   const [productores, setProductores] = useState<Usuario[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -77,16 +115,21 @@ export function EntregaInsumos() {
       ]);
 
       setCatalogoInsumos(
-        insumosInv.map((i) => ({
-          id: i.id,
-          nombre: i.nombre,
-          unidad: String(i.unidad || 'Unidades'),
-          estado: 'activo' as const,
-          productoCatalogoId:
-            i.productoRelacionadoId != null && i.productoRelacionadoId > 0
-              ? i.productoRelacionadoId
-              : undefined,
-        }))
+        insumosInv.map((i) => {
+          const esMl = i.presentacionUnidad === 'Mililitros';
+          return {
+            id: i.id,
+            nombre: i.nombre,
+            unidad: esMl ? 'Mililitros' : String(i.unidad || 'Unidades'),
+            presentacionCantidad: i.presentacionCantidad ?? null,
+            presentacionUnidad: i.presentacionUnidad ?? null,
+            estado: 'activo' as const,
+            productoCatalogoId:
+              i.productoRelacionadoId != null && i.productoRelacionadoId > 0
+                ? i.productoRelacionadoId
+                : undefined,
+          };
+        })
       );
 
       const listaProductores = usuariosData.filter(esRolProductor).sort((a, b) =>
@@ -121,8 +164,11 @@ export function EntregaInsumos() {
     {
       key: 'cantidad',
       label: 'Cantidad',
-      render: (cantidad: number, row: EntregaInsumoView) =>
-        row.unidad ? `${cantidad} ${row.unidad}` : `${cantidad} unidades`,
+      render: (cantidad: number, row: EntregaInsumoView) => {
+        const { cantidad: c, unidad } = cantidadEntregaParaTabla(cantidad, row, catalogoInsumos);
+        const n = Number.isInteger(c) ? String(c) : c.toFixed(2);
+        return `${n} ${unidad}`;
+      },
     },
     {
       key: 'productorNombre',

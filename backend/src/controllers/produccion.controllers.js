@@ -53,7 +53,18 @@ exports.getById = asyncHandler(async (req, res) => {
 exports.create = asyncHandler(async (req, res) => {
   throwIfProductorForbidden(req);
   try {
-    const id = await models.Produccion.create(req.body);
+    const b = req.body || {};
+    const payload = {
+      pedido_id: b.pedido_id ?? b.pedidoId,
+      productor_id: b.productor_id ?? b.productorId,
+      fecha: b.fecha ?? b.fechaInicio,
+      tiempo_preparacion_minutos: b.tiempo_preparacion_minutos ?? b.tiempoPreparacion,
+      estado: b.estado,
+      notes: b.notes ?? null,
+      responsable: b.responsable,
+      consumo_insumos: b.consumo_insumos ?? b.consumoInsumos,
+    };
+    const id = await models.Produccion.create(payload);
     res.status(201).json({ success: true, id, message: 'Produccion creada exitosamente' });
   } catch (error) {
     throwIfModelError(error);

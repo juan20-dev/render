@@ -30,6 +30,28 @@ const entregaRecetaKey = (row) => {
 
 const EPS = 1e-6;
 
+/** ml por unidad de presentación (ej. botella 500 ml → 500). */
+const mlPorUnidadFromCatalogHit = (hit) => {
+  if (!hit) return null;
+  const pu = String(hit.presentacion_unidad || '').trim();
+  const q = Number(hit.presentacion_cantidad);
+  if (/mililitro/i.test(pu) && Number.isFinite(q) && q > 0) return q;
+  return null;
+};
+
+const isConsumoEnMililitros = (item) => /mililitro/i.test(String(item?.unidad || ''));
+
+/** Convierte cantidad de consumo a unidades de entrega (FIFO en entregas_insumos). */
+const consumoCantidadAUnidadesAlmacen = (item, catalogo) => {
+  const cantidad = Number(item.cantidad);
+  if (!Number.isFinite(cantidad) || cantidad <= 0) return cantidad;
+  const clave = String(item.clave || '').trim();
+  const hit = catalogo.find((c) => c.clave === clave);
+  const ml = mlPorUnidadFromCatalogHit(hit);
+  if (ml && isConsumoEnMililitros(item)) return cantidad / ml;
+  return cantidad;
+};
+
 const parseConsumoClave = (clave) => {
   const s = String(clave || '').trim();
   const mC = s.match(/^c:(\d+)$/i);
@@ -80,7 +102,26 @@ const aggregateEntregasByInsumo = (entregasRows) => {
 
 const getInsumosAgregadosByProductor = async (productorId) => {
   const rows = await getInsumosEntregadosByProductor(productorId);
-  return aggregateEntregasByInsumo(rows);
+  const aggregated = aggregateEntregasByInsumo(rows);
+  const catalogo = await buildCatalogoInsumosContext();
+  return aggregated.map((a) => {
+    const hit = catalogo.find((c) => c.clave === a.clave);
+    const ml = mlPorUnidadFromCatalogHit(hit);
+    if (ml) {
+      const unidades = Number(a.disponible ?? 0);
+      return {
+        ...a,
+        unidad: 'Mililitros',
+        disponible_unidades: unidades,
+        ml_por_unidad: ml,
+        disponible: Number((unidades * ml).toFixed(4)),
+      };
+    }
+    return {
+      ...a,
+      unidad: String(a.unidad || 'Unidades').trim() || 'Unidades',
+    };
+  });
 };
 
 const fetchDetallePreparacionPedido = async (clientOrPool, pedidoId) => {
@@ -121,7 +162,11 @@ const buildCatalogoInsumosContext = async () => {
     clave: `c:${Number(r.producto_catalogo_id)}`,
     producto_catalogo_id: Number(r.producto_catalogo_id),
     nombre: String(r.nombre || '').trim(),
-    unidad: String(r.unidad || 'Unidades').trim(),
+    unidad: (() => {
+      const pu = String(r.presentacion_unidad || '').trim();
+      if (/mililitro/i.test(pu)) return 'Mililitros';
+      return String(r.unidad || 'Unidades').trim() || 'Unidades';
+    })(),
     presentacion_cantidad: r.presentacion_cantidad != null ? Number(r.presentacion_cantidad) : null,
     presentacion_unidad: r.presentacion_unidad != null ? String(r.presentacion_unidad) : null,
   }));
@@ -167,7 +212,7 @@ const mergeConsumoList = (items) => {
   return [...map.values()];
 };
 
-const computeFaltantes = (sugerido, disponibleAgregado) => {
+const computeFaltantes = (sugerido, disponibleAgregado, catalogo = []) => {
   const dispMap = new Map(disponibleAgregado.map((d) => [d.clave, Number(d.disponible ?? 0)]));
   const faltantes = [];
   for (const s of sugerido) {
@@ -180,7 +225,7 @@ const computeFaltantes = (sugerido, disponibleAgregado) => {
         requerido: req,
         disponible: have,
         falta: Number((req - have).toFixed(4)),
-        unidad: s.unidad,
+        unidad: s.unidad || 'Unidades',
       });
     }
   }
@@ -315,7 +360,7 @@ const sugerirConsumoInsumosIA = async (pedidoId, productorId) => {
   }
 
   const sugerido = mergeConsumoList(normalizados);
-  const faltantes = computeFaltantes(sugerido, disponible);
+  const faltantes = computeFaltantes(sugerido, disponible, catalogo);
 
   return {
     preparaciones,
@@ -417,8 +462,8 @@ const normalizeConsumoInput = (rawList, catalogo) => {
   if (!Array.isArray(rawList) || !rawList.length) return [];
   const items = [];
   for (const row of rawList) {
-    const cantidad = Number(row.cantidad);
-    if (!Number.isFinite(cantidad) || cantidad <= 0) continue;
+    const cantidadUi = Number(row.cantidad);
+    if (!Number.isFinite(cantidadUi) || cantidadUi <= 0) continue;
     let clave = String(row.clave || '').trim();
     let insumo_nombre = row.insumo_nombre || row.nombre;
     let unidad = row.unidad;
@@ -435,7 +480,14 @@ const normalizeConsumoInput = (rawList, catalogo) => {
       }
     }
     if (!clave) continue;
-    items.push({ clave, insumo_nombre, cantidad, unidad: unidad || 'Unidades' });
+    const itemUi = { clave, insumo_nombre, cantidad: cantidadUi, unidad: unidad || 'Unidades' };
+    const cantidadAlmacen = consumoCantidadAUnidadesAlmacen(itemUi, catalogo);
+    items.push({
+      clave,
+      insumo_nombre,
+      cantidad: cantidadAlmacen,
+      unidad: itemUi.unidad,
+    });
   }
   return mergeConsumoList(items);
 };
@@ -510,6 +562,31 @@ const normalizeProduccionStatus = (value) => {
   }
   if (normalized === 'cancelada' || normalized === 'cancelado') return 'Cancelada';
   return null;
+};
+
+/** Al completar la orden de producción, el pedido vinculado pasa a Completado (regla de negocio). */
+const syncPedidoCompletadoDesdeOrden = async (executor, pedidoId) => {
+  const pid = Number(pedidoId);
+  if (!Number.isInteger(pid) || pid <= 0) return;
+  await executor.query(
+    `UPDATE pedidos
+     SET estado = 'Completado', updated_at = CURRENT_TIMESTAMP
+     WHERE id = $1
+       AND LOWER(TRIM(COALESCE(estado, ''))) NOT IN ('completado', 'cancelado')`,
+    [pid]
+  );
+};
+
+/** Repara pedidos que quedaron desincronizados tras órdenes ya en Orden Lista. */
+const repairPedidosConOrdenProduccionCompletada = async (executor = pool) => {
+  await executor.query(
+    `UPDATE pedidos pe
+     SET estado = 'Completado', updated_at = CURRENT_TIMESTAMP
+     FROM produccion pr
+     WHERE pr.pedido_id = pe.id
+       AND TRIM(pr.estado) = 'Orden Lista'
+       AND LOWER(TRIM(COALESCE(pe.estado, ''))) NOT IN ('completado', 'cancelado')`
+  );
 };
 
 const validateProduccionPayload = (data = {}) => {
@@ -615,6 +692,7 @@ const Produccion = {
   sugerirConsumoInsumos: sugerirConsumoInsumosIA,
   getAll: async (options = {}) => {
     await ensureProduccionDetallePreparacion();
+    await repairPedidosConOrdenProduccionCompletada();
     const prodId = Number(options.productorUserId);
     const filterProductor = Number.isFinite(prodId) && prodId > 0;
     const params = filterProductor ? [prodId] : [];
@@ -677,10 +755,6 @@ const Produccion = {
   },
   create: async (data) => {
     validateProduccionCreateFromPedido(data);
-    await ensureProductoTipoColumn();
-    await ensureProductoInsumosTable();
-    await ensureProduccionDetallePreparacion();
-    await ensureEntregasInsumoProductoCatalogo();
 
     const estadoInicial = normalizeProduccionStatus(data.estado) || 'Orden Recibida';
     const numeroProduccion =
@@ -689,131 +763,136 @@ const Produccion = {
         : `ORD-${Date.now()}`;
 
     const pedidoId = Number(data.pedido_id);
+    const productorIdNum = Number(data.productor_id);
+    const tiempoPrep = Math.max(1, Math.floor(Number(data.tiempo_preparacion_minutos ?? 0)));
+
+    const dupPedido = await pool.query('SELECT id FROM produccion WHERE pedido_id = $1 LIMIT 1', [pedidoId]);
+    if (dupPedido.rows[0]) {
+      const err = new Error('Este pedido ya tiene una orden de producción registrada');
+      err.statusCode = 409;
+      throw err;
+    }
+
+    const detallePreparacion = await fetchDetallePreparacionPedido(pool, pedidoId);
+    if (!detallePreparacion.length) {
+      const err = new Error('El pedido no tiene productos de tipo preparación en el detalle');
+      err.statusCode = 409;
+      throw err;
+    }
+
+    const productoIds = [...new Set(detallePreparacion.map((d) => d.producto_id))];
+    const prodsRes = await pool.query(
+      `SELECT id, nombre, estado, COALESCE(tipo_producto, 'terminado') AS tipo_producto
+       FROM productos WHERE id = ANY($1::int[])`,
+      [productoIds]
+    );
+    const byId = new Map(prodsRes.rows.map((row) => [Number(row.id), row]));
+    for (const pid of productoIds) {
+      const prod = byId.get(pid);
+      if (!prod) {
+        const err = new Error(`Producto no encontrado (id ${pid})`);
+        err.statusCode = 404;
+        throw err;
+      }
+      if (String(prod.estado) !== 'Activo') {
+        const err = new Error(`El producto «${prod.nombre}» debe estar activo`);
+        err.statusCode = 409;
+        throw err;
+      }
+      if (String(prod.tipo_producto) !== 'preparacion') {
+        const err = new Error('Solo se programan órdenes para productos de tipo preparación');
+        err.statusCode = 400;
+        throw err;
+      }
+    }
+
+    const productoIdPrincipal = detallePreparacion[0].producto_id;
+    const cantidadTotal = detallePreparacion.reduce((sum, line) => sum + line.cantidad, 0);
+
+    const catalogo = await buildCatalogoInsumosContext();
+    const consumoList = normalizeConsumoInput(data.consumo_insumos, catalogo);
+    if (!consumoList.length) {
+      const err = new Error(
+        'El consumo de insumos no es válido. Seleccione insumos con cantidad mayor a cero antes de crear la orden.'
+      );
+      err.statusCode = 400;
+      throw err;
+    }
+
+    const disponibleAgregado = await getInsumosAgregadosByProductor(productorIdNum);
+    const consumoUi = mergeConsumoList(
+      (Array.isArray(data.consumo_insumos) ? data.consumo_insumos : [])
+        .map((row) => {
+          let clave = String(row.clave || '').trim();
+          if (!clave) {
+            const pidCat = Number(row.producto_catalogo_id);
+            if (Number.isFinite(pidCat) && pidCat > 0) clave = `c:${pidCat}`;
+          }
+          return {
+            clave,
+            insumo_nombre: row.insumo_nombre || row.nombre,
+            cantidad: Number(row.cantidad),
+            unidad: row.unidad,
+          };
+        })
+        .filter((r) => r.clave && Number.isFinite(r.cantidad) && r.cantidad > 0)
+    );
+    const faltantes = computeFaltantes(consumoUi, disponibleAgregado, catalogo);
+    if (faltantes.length > 0) {
+      const detalle = faltantes
+        .map(
+          (f) =>
+            `${f.insumo_nombre}: faltan ${f.falta} ${f.unidad} (requiere ${f.requerido}, tiene ${f.disponible})`
+        )
+        .join('; ');
+      const err = new Error(
+        `El productor no tiene insumos suficientes. ${detalle}. Registre una nueva entrega de insumos al productor.`
+      );
+      err.statusCode = 409;
+      err.details = { faltantes };
+      throw err;
+    }
+
+    let responsable = data.responsable != null ? String(data.responsable).trim() : '';
+    if (!responsable && productorIdNum > 0) {
+      const uRes = await pool.query(
+        `SELECT nombre, apellido FROM usuarios WHERE id = $1 LIMIT 1`,
+        [productorIdNum]
+      );
+      responsable = `${uRes.rows[0]?.nombre || ''} ${uRes.rows[0]?.apellido || ''}`.trim();
+    }
 
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
+      await client.query(`SET LOCAL lock_timeout = '8s'`);
 
-      const dupPedido = await client.query('SELECT id FROM produccion WHERE pedido_id = $1 LIMIT 1', [pedidoId]);
-      if (dupPedido.rows[0]) {
+      const dupTx = await client.query('SELECT id FROM produccion WHERE pedido_id = $1 LIMIT 1 FOR UPDATE', [
+        pedidoId,
+      ]);
+      if (dupTx.rows[0]) {
         const err = new Error('Este pedido ya tiene una orden de producción registrada');
         err.statusCode = 409;
         throw err;
       }
 
-      const prepLinesRes = await client.query(
-        `SELECT dp.producto_id,
-                dp.cantidad,
-                pr.nombre AS producto_nombre,
-                COALESCE(pr.tipo_producto, 'terminado') AS tipo_producto,
-                pr.estado
-         FROM detalle_pedidos dp
-         INNER JOIN productos pr ON pr.id = dp.producto_id
-         WHERE dp.pedido_id = $1
-           AND COALESCE(pr.tipo_producto, 'terminado') = 'preparacion'
-         ORDER BY dp.id ASC`,
-        [pedidoId]
-      );
-      if (!prepLinesRes.rows.length) {
-        const err = new Error('El pedido no tiene productos de tipo preparación en el detalle');
-        err.statusCode = 409;
-        throw err;
-      }
-
-      const mergedByProducto = new Map();
-      for (const r of prepLinesRes.rows) {
-        const pid = Number(r.producto_id);
-        const qtyRaw = Number(r.cantidad);
-        const qty = Number.isFinite(qtyRaw) && qtyRaw > 0 ? Math.floor(qtyRaw) : 1;
-        const prev = mergedByProducto.get(pid);
-        if (prev) {
-          prev.cantidad += qty;
-        } else {
-          mergedByProducto.set(pid, {
-            producto_id: pid,
-            cantidad: qty,
-            producto_nombre: r.producto_nombre,
-          });
-        }
-      }
-
-      const detallePreparacion = [...mergedByProducto.values()];
-
-      const productoIds = [...new Set(detallePreparacion.map((d) => d.producto_id))];
-      const prodsRes = await client.query(
-        `SELECT id, nombre, estado, COALESCE(tipo_producto, 'terminado') AS tipo_producto
-         FROM productos WHERE id = ANY($1::int[]) FOR UPDATE`,
-        [productoIds]
-      );
-      const byId = new Map(prodsRes.rows.map((row) => [Number(row.id), row]));
-      for (const pid of productoIds) {
-        const prod = byId.get(pid);
-        if (!prod) {
-          const err = new Error(`Producto no encontrado (id ${pid})`);
-          err.statusCode = 404;
-          throw err;
-        }
-        if (String(prod.estado) !== 'Activo') {
-          const err = new Error(`El producto «${prod.nombre}» debe estar activo`);
-          err.statusCode = 409;
-          throw err;
-        }
-        if (String(prod.tipo_producto) !== 'preparacion') {
-          const err = new Error('Solo se programan órdenes para productos de tipo preparación');
-          err.statusCode = 400;
-          throw err;
-        }
-      }
-
-      const productoIdPrincipal = detallePreparacion[0].producto_id;
-      const cantidadTotal = detallePreparacion.reduce((sum, line) => sum + line.cantidad, 0);
-      const productorIdNum = Number(data.productor_id);
-
-      const catalogo = await buildCatalogoInsumosContext();
-      const consumoList = normalizeConsumoInput(data.consumo_insumos, catalogo);
-      if (!consumoList.length) {
-        const err = new Error(
-          'El consumo de insumos no es válido. Use «Seleccionar insumos rápidos» antes de crear la orden.'
-        );
-        err.statusCode = 400;
-        throw err;
-      }
-
-      const disponibleAgregado = await getInsumosAgregadosByProductor(productorIdNum);
-      const faltantes = computeFaltantes(consumoList, disponibleAgregado);
-      if (faltantes.length > 0) {
-        const detalle = faltantes
-          .map(
-            (f) =>
-              `${f.insumo_nombre}: faltan ${f.falta} ${f.unidad} (requiere ${f.requerido}, tiene ${f.disponible})`
-          )
-          .join('; ');
-        const err = new Error(
-          `El productor no tiene insumos suficientes. ${detalle}. Registre una nueva entrega de insumos al productor.`
-        );
-        err.statusCode = 409;
-        err.details = { faltantes };
-        throw err;
-      }
-
       const insumosEntregadosUsados = await applyConsumoFIFO(client, productorIdNum, consumoList);
-
       const detalleJson = JSON.stringify(detallePreparacion);
 
       const insResult = await client.query(
         `INSERT INTO produccion (
           numero_produccion, producto_id, pedido_id, cantidad, fecha, responsable,
           productor_id, tiempo_preparacion_minutos, estado, notes, insumos_gastados, detalle_preparacion
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb) RETURNING id`,
+        ) VALUES ($1, $2, $3, $4, $5::date, $6, $7, $8, $9, $10, $11::jsonb, $12::jsonb) RETURNING id`,
         [
           numeroProduccion,
           productoIdPrincipal,
           pedidoId,
           cantidadTotal,
           data.fecha,
-          data.responsable,
+          responsable || null,
           productorIdNum,
-          data.tiempo_preparacion_minutos ?? 0,
+          tiempoPrep,
           estadoInicial,
           data.notes ?? null,
           JSON.stringify(insumosEntregadosUsados),
@@ -833,6 +912,13 @@ const Produccion = {
   update: async (id, data) => {
     validateProduccionPayload(data);
     const estadoActualizado = normalizeProduccionStatus(data.estado) || 'Orden Recibida';
+    const prev = await pool.query('SELECT pedido_id, estado FROM produccion WHERE id = $1', [id]);
+    const row = prev.rows[0];
+    if (!row) {
+      const error = new Error('Registro de produccion no encontrado');
+      error.statusCode = 404;
+      throw error;
+    }
     await pool.query(
       'UPDATE produccion SET producto_id = $1, pedido_id = $2, cantidad = $3, fecha = $4, responsable = $5, tiempo_preparacion_minutos = $6, estado = $7, notes = $8, insumos_gastados = $9, updated_at = CURRENT_TIMESTAMP WHERE id = $10',
       [
@@ -848,6 +934,13 @@ const Produccion = {
         id
       ]
     );
+    if (
+      estadoActualizado === 'Orden Lista' &&
+      normalizeProduccionStatus(row.estado) !== 'Orden Lista'
+    ) {
+      const pedidoId = data.pedido_id ?? row.pedido_id;
+      await syncPedidoCompletadoDesdeOrden(pool, pedidoId);
+    }
     return true;
   },
   delete: async (id) => {
@@ -860,6 +953,7 @@ const Produccion = {
     try {
       await client.query('BEGIN');
       await ensureEntregasInsumoProductoCatalogo();
+      await repairPedidosConOrdenProduccionCompletada(client);
 
       const currentResult = await client.query('SELECT * FROM produccion WHERE id = $1 FOR UPDATE', [id]);
       const current = currentResult.rows[0];
@@ -882,6 +976,9 @@ const Produccion = {
       }
 
       if (currentStatus === 'Orden Lista') {
+        if (current.pedido_id) {
+          await syncPedidoCompletadoDesdeOrden(client, current.pedido_id);
+        }
         const error = new Error('La orden ya esta en estado Orden Lista y no puede modificarse');
         error.statusCode = 409;
         throw error;
@@ -975,6 +1072,10 @@ const Produccion = {
         [nextStatus, nextNotes ?? null, id]
       );
 
+      if (nextStatus === 'Orden Lista' && current.pedido_id) {
+        await syncPedidoCompletadoDesdeOrden(client, current.pedido_id);
+      }
+
       const updatedResult = await client.query('SELECT * FROM produccion WHERE id = $1', [id]);
       await client.query('COMMIT');
       return updatedResult.rows[0];
@@ -986,5 +1087,7 @@ const Produccion = {
     }
   }
 };
+
+Produccion.repairPedidosConOrdenProduccionCompletada = repairPedidosConOrdenProduccionCompletada;
 
 module.exports = Produccion;

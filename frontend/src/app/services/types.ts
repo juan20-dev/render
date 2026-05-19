@@ -126,6 +126,8 @@ export interface EntregaInsumo {
   insumo: string;
   cantidad: number;
   unidad?: string;
+  /** Producto catálogo tipo insumo (entregas_insumos.producto_catalogo_id). */
+  productoCatalogoId?: number;
   /** ID del usuario con rol productor (columna operario_id en BD). */
   operarioId: number;
   fecha: string;

@@ -231,19 +231,51 @@ export const catalogApi = {
       const rows = await apiFetchData<any[]>('/api/produccion');
       return rows.map(mapProduccion);
     },
-    create: async (data: Partial<OrdenProduccion> & { insumos?: number[] }) => {
-      const u = await apiFetchData<any>(`/api/usuarios/${data.productorId}`);
-      const responsable = `${u.nombre || ''} ${u.apellido || ''}`.trim();
+    create: async (
+      data: Partial<OrdenProduccion> & {
+        consumoInsumos?: Array<{
+          clave: string;
+          insumo_nombre?: string;
+          cantidad: number;
+          unidad?: string;
+          producto_catalogo_id?: number;
+        }>;
+      }
+    ) => {
+      const consumoRaw = data.consumoInsumos ?? [];
+      const consumo_insumos = consumoRaw
+        .map((item) => {
+          let clave = String(item.clave || '').trim();
+          const m = clave.match(/^c:(\d+)$/i);
+          let producto_catalogo_id = m ? Number(m[1]) : item.producto_catalogo_id;
+          if ((!clave || clave.length === 0) && producto_catalogo_id) {
+            clave = `c:${producto_catalogo_id}`;
+          }
+          return {
+            clave,
+            insumo_nombre: item.insumo_nombre,
+            cantidad: Number(item.cantidad),
+            unidad: item.unidad || 'Unidades',
+            ...(producto_catalogo_id ? { producto_catalogo_id } : {}),
+          };
+        })
+        .filter(
+          (item) =>
+            item.clave &&
+            item.clave.length > 0 &&
+            Number.isFinite(item.cantidad) &&
+            item.cantidad > 0
+        );
+
       const env = await apiFetch<{ id: number }>('/api/produccion', {
         method: 'POST',
         json: {
           pedido_id: data.pedidoId,
           fecha: data.fechaInicio,
-          responsable,
           productor_id: data.productorId,
           tiempo_preparacion_minutos: data.tiempoPreparacion,
-          estado: 'pendiente',
-          consumo_insumos: Array.isArray(data.consumoInsumos) ? data.consumoInsumos : [],
+          estado: data.estado || 'pendiente',
+          consumo_insumos,
         },
       });
       return { id: env.id, idOrden: env.id } as OrdenProduccion;
@@ -303,6 +335,10 @@ export const catalogApi = {
             insumo: r.insumo_nombre || String(r.insumo_id),
             cantidad: Number(r.cantidad),
             unidad: r.unidad != null ? String(r.unidad) : undefined,
+            productoCatalogoId:
+              r.producto_catalogo_id != null && r.producto_catalogo_id !== ''
+                ? Number(r.producto_catalogo_id)
+                : undefined,
             operarioId: Number(r.operario_id),
             fecha: String(r.fecha || '').split('T')[0],
             hora: r.hora || '',

@@ -1,5 +1,6 @@
 // Rewire: el modelo Abonos, Pedidos viene de archivos modulares.
 // entities.models.js queda como archivo intacto pero desconectado (sin importadores).
+const pool = require('../../db');
 const models = {
   Abonos: require('../models/ventas/abonos'),
   Pedidos: require('../models/ventas/pedidos'),
@@ -233,6 +234,21 @@ module.exports = {
           });
         }
 
+        if (estadoNuevo === 'Completado') {
+          const prodOrdenPut = await pool.query(
+            `SELECT id, estado FROM produccion WHERE pedido_id = $1 LIMIT 1`,
+            [req.params.id]
+          );
+          const ordenPut = prodOrdenPut.rows[0];
+          if (ordenPut && String(ordenPut.estado || '').trim() !== 'Orden Lista') {
+            return res.status(409).json({
+              success: false,
+              message:
+                'No puede completar el pedido mientras la orden de producción no esté completada. Complete la orden de producción primero; el pedido pasará a Completado automáticamente.',
+            });
+          }
+        }
+
         await models.Pedidos.update(req.params.id, { ...req.body, estado: estadoNuevo });
         return res.json({ success: true, message: 'Pedido actualizado exitosamente' });
       }
@@ -296,6 +312,24 @@ module.exports = {
           success: false, 
           message: `No se puede cambiar de ${pedidoActual.estado} a ${estado}` 
         });
+      }
+
+      if (estado === 'Completado') {
+        const prodOrden = await pool.query(
+          `SELECT id, estado FROM produccion WHERE pedido_id = $1 LIMIT 1`,
+          [req.params.id]
+        );
+        const orden = prodOrden.rows[0];
+        if (orden) {
+          const estOrden = String(orden.estado || '').trim();
+          if (estOrden !== 'Orden Lista') {
+            return res.status(409).json({
+              success: false,
+              message:
+                'No puede completar el pedido mientras la orden de producción no esté completada. Complete la orden de producción primero; el pedido pasará a Completado automáticamente.',
+            });
+          }
+        }
       }
 
       // Si se cancela, motivo obligatorio (10-50)

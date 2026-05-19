@@ -8,10 +8,12 @@
 const pool = require('../../../db');
 const { parseMoneyCO } = require('../../controllers/normalizador-http');
 const { ensureMotivoEstado } = require('../shared/auditoria');
+const Produccion = require('../produccion/produccion');
 
 const Pedidos = {
   getAll: async (estado) => {
     try {
+      await Produccion.repairPedidosConOrdenProduccionCompletada();
       if (estado && String(estado).trim()) {
         const result = await pool.query(`
           SELECT p.*, 
