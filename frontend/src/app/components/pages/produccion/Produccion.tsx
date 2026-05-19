@@ -61,21 +61,54 @@ export function Produccion() {
   const [consumoPlaneado, setConsumoPlaneado] = useState<
     { clave: string; insumo_nombre: string; cantidad: number; unidad: string }[]
   >([]);
+  /** Insumos seleccionados manualmente con sus cantidades. */
+  const [insumosSeleccionados, setInsumosSeleccionados] = useState<
+    { clave: string; insumo_nombre: string; cantidad: number; unidad: string }[]
+  >([]);
   const [sugerenciaCargando, setSugerenciaCargando] = useState(false);
+
+  const toggleInsumoSeleccionado = (insumo: any, cantidad: number) => {
+    const existente = insumosSeleccionados.find(i => i.clave === insumo.clave);
+    if (existente) {
+      if (cantidad <= 0) {
+        setInsumosSeleccionados(insumosSeleccionados.filter(i => i.clave !== insumo.clave));
+      } else {
+        setInsumosSeleccionados(
+          insumosSeleccionados.map(i =>
+            i.clave === insumo.clave ? { ...i, cantidad } : i
+          )
+        );
+      }
+    } else if (cantidad > 0) {
+      setInsumosSeleccionados([
+        ...insumosSeleccionados,
+        {
+          clave: insumo.clave,
+          insumo_nombre: insumo.insumo_nombre || 'Insumo',
+          cantidad,
+          unidad: insumo.unidad || ''
+        }
+      ]);
+    }
+  };
 
   useEffect(() => {
     if (!isModalOpen || !formData.productorId) {
       setInsumosResumenProductor([]);
       setConsumoPlaneado([]);
+      setInsumosSeleccionados([]);
       return;
     }
     setConsumoPlaneado([]);
     let cancelled = false;
     void (async () => {
       try {
+        console.log(`[Produccion] Fetching insumos para productorId=${formData.productorId}`);
         const rows = await api.produccion.getInsumosResumenProductor(formData.productorId);
+        console.log(`[Produccion] Insumos obtenidos:`, rows);
         if (!cancelled) setInsumosResumenProductor(Array.isArray(rows) ? rows : []);
-      } catch {
+      } catch (error) {
+        console.error(`[Produccion] Error al obtener insumos:`, error);
         if (!cancelled) setInsumosResumenProductor([]);
       }
     })();
@@ -492,19 +525,21 @@ Fecha Impresión:    ${new Date().toLocaleString('es-CO')}
       return;
     }
 
-    if (!consumoPlaneado.length) {
-      toast.error('Defina el consumo de insumos con «Seleccionar insumos rápidos»');
+    const insumosAUsar = consumoPlaneado.length > 0 ? consumoPlaneado : insumosSeleccionados;
+    if (!insumosAUsar.length) {
+      toast.error('Seleccione insumos para consumir en esta orden (manualmente o con «Seleccionar insumos rápidos»)');
       return;
     }
 
     try {
+      const insumosAUsar = consumoPlaneado.length > 0 ? consumoPlaneado : insumosSeleccionados;
       const ordenCreada = await api.produccion.create({
         pedidoId: formData.pedidoId,
         productorId: formData.productorId,
         fechaInicio: formData.fechaInicio,
         tiempoPreparacion: formData.tiempoPreparacion,
         estado: 'pendiente',
-        consumoInsumos: consumoPlaneado,
+        consumoInsumos: insumosAUsar,
       });
 
       const productor = productores.find(p => p.id === formData.productorId);
@@ -787,18 +822,65 @@ Fecha Impresión:    ${new Date().toLocaleString('es-CO')}
                   Este productor no tiene insumos con saldo. Registre una entrega de insumos antes de producir.
                 </p>
               ) : (
-                <div className="max-h-40 overflow-y-auto border border-border rounded-md p-2 bg-white space-y-1 text-sm">
-                  {insumosResumenProductor.map((row) => (
-                    <div
-                      key={row.clave}
-                      className="flex justify-between gap-2 py-1 border-b border-border/50 last:border-0"
-                    >
-                      <span className="font-medium">{row.insumo_nombre || 'Insumo'}</span>
-                      <span className="tabular-nums text-muted-foreground shrink-0">
-                        {row.disponible ?? 0} {row.unidad || ''}
-                      </span>
-                    </div>
-                  ))}
+                <div className="max-h-80 overflow-y-auto border border-border rounded-md p-3 bg-white space-y-2 text-sm">
+                  {insumosResumenProductor.map((row) => {
+                    const seleccionado = insumosSeleccionados.find(i => i.clave === row.clave);
+                    const cantidad = seleccionado?.cantidad || 0;
+                    return (
+                      <div
+                        key={row.clave}
+                        className="flex items-center gap-3 py-2 px-2 border-b border-border/50 last:border-0 rounded hover:bg-muted/30"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={!!seleccionado}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              toggleInsumoSeleccionado(row, 1);
+                            } else {
+                              toggleInsumoSeleccionado(row, 0);
+                            }
+                          }}
+                          className="w-4 h-4 accent-primary"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <span className="font-medium block">{row.insumo_nombre || 'Insumo'}</span>
+                          <span className="text-xs text-muted-foreground">
+                            Disponible: {row.disponible} {row.unidad}
+                          </span>
+                        </div>
+                        {seleccionado && (
+                          <input
+                            type="number"
+                            min="0"
+                            max={row.disponible || 0}
+                            value={cantidad}
+                            onChange={(e) => {
+                              const newVal = Math.max(0, Math.min(Number(e.target.value) || 0, row.disponible || 0));
+                              toggleInsumoSeleccionado(row, newVal);
+                            }}
+                            placeholder="Cantidad"
+                            className="w-20 px-2 py-1 border border-border rounded text-xs text-center"
+                          />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              {insumosSeleccionados.length > 0 && (
+                <div className="space-y-2 pt-2 border-t border-border">
+                  <p className="text-xs font-medium text-foreground">Insumos seleccionados para esta orden</p>
+                  <div className="max-h-36 overflow-y-auto border border-border rounded-md p-2 bg-muted/20 space-y-1 text-sm">
+                    {insumosSeleccionados.map((c) => (
+                      <div key={c.clave} className="flex justify-between gap-2">
+                        <span>{c.insumo_nombre}</span>
+                        <span className="tabular-nums shrink-0 font-medium">
+                          {c.cantidad} {c.unidad}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
               {consumoPlaneado.length > 0 && (

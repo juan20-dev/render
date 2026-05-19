@@ -47,16 +47,17 @@ const extractJsonFromModelText = (text) => {
   return JSON.parse(raw);
 };
 
-/**
- * Agrupa saldos de entregas al productor por insumo (sin repetir filas de historial).
- */
 const aggregateEntregasByInsumo = (entregasRows) => {
   const map = new Map();
   for (const row of entregasRows) {
     const clave = entregaRecetaKey(row);
-    if (!clave) continue;
+    if (!clave) {
+      continue;
+    }
     const qty = Number(row.cantidad ?? 0);
-    if (!Number.isFinite(qty) || qty <= 0) continue;
+    if (!Number.isFinite(qty) || qty <= 0) {
+      continue;
+    }
     const prev = map.get(clave);
     if (prev) {
       prev.disponible += qty;
@@ -71,9 +72,10 @@ const aggregateEntregasByInsumo = (entregasRows) => {
       });
     }
   }
-  return [...map.values()].sort((a, b) =>
+  const result = [...map.values()].sort((a, b) =>
     String(a.insumo_nombre || '').localeCompare(String(b.insumo_nombre || ''), 'es')
   );
+  return result;
 };
 
 const getInsumosAgregadosByProductor = async (productorId) => {

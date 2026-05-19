@@ -12,6 +12,15 @@ const throwIfProductorForbidden = (req) => {
   }
 };
 
+const assertProductorCanViewOrden = (req, productorId) => {
+  // Productores solo pueden ver sus propios insumos
+  // Admins, Asesores y otros pueden ver insumos de cualquier productor
+  if (isProductorUser(req) && Number(productorId) !== Number(req.user.id)) {
+    console.warn(`[Auth] Productor ${req.user.id} intentó acceder a insumos de productor ${productorId}`);
+    throw AppError.forbidden();
+  }
+};
+
 const assertProductorOwnsOrden = (req, productorId) => {
   if (isProductorUser(req) && Number(productorId) !== Number(req.user.id)) {
     throw AppError.forbidden();
@@ -98,14 +107,31 @@ exports.delete = asyncHandler(async (req, res) => {
 });
 
 exports.getInsumosByProductor = asyncHandler(async (req, res) => {
-  assertProductorOwnsOrden(req, req.params.productorId);
-  const data = await models.Produccion.getInsumosEntregadosByProductor(req.params.productorId);
+  const productorId = req.params.productorId;
+  console.log(`[getInsumosByProductor] productorId=${productorId}, user.id=${req.user?.id}, user.rol=${req.user?.rol}`);
+  assertProductorOwnsOrden(req, productorId);
+  const data = await models.Produccion.getInsumosEntregadosByProductor(productorId);
+  console.log(`[getInsumosByProductor] Returned ${data.length} entregas`);
   res.json({ success: true, data });
 });
 
 exports.getInsumosResumenByProductor = asyncHandler(async (req, res) => {
-  assertProductorOwnsOrden(req, req.params.productorId);
-  const data = await models.Produccion.getInsumosAgregadosByProductor(req.params.productorId);
+  const productorId = req.params.productorId;
+  console.log(`[getInsumosResumenByProductor] productorId=${productorId}, user.id=${req.user?.id}, user.rol=${req.user?.rol}`);
+  assertProductorCanViewOrden(req, productorId);
+  
+  // Debug: obtener entregas sin filtrar
+  const todasLasEntregas = await models.Produccion.getInsumosEntregadosByProductor(productorId);
+  console.log(`[getInsumosResumenByProductor] Entregas totales para productor ${productorId}: ${todasLasEntregas.length}`);
+  if (todasLasEntregas.length > 0) {
+    console.log(`[getInsumosResumenByProductor] Primera entrega:`, JSON.stringify(todasLasEntregas[0]));
+  }
+  
+  const data = await models.Produccion.getInsumosAgregadosByProductor(productorId);
+  console.log(`[getInsumosResumenByProductor] Insumos agregados para productor ${productorId}: ${data.length}`);
+  if (data.length > 0) {
+    console.log(`[getInsumosResumenByProductor] Primero agregado:`, JSON.stringify(data[0]));
+  }
   res.json({ success: true, data });
 });
 
@@ -119,4 +145,23 @@ exports.sugerirConsumo = asyncHandler(async (req, res) => {
   } catch (error) {
     throwIfModelError(error);
   }
+});
+
+exports.debugInsumosByProductor = asyncHandler(async (req, res) => {
+  const productorId = Number(req.params.productorId);
+  if (!Number.isFinite(productorId) || productorId <= 0) {
+    throw AppError.badRequest('productorId inválido');
+  }
+  
+  const insumos = await models.Produccion.getInsumosEntregadosByProductor(productorId);
+  const agregados = await models.Produccion.getInsumosAgregadosByProductor(productorId);
+  
+  res.json({ 
+    success: true, 
+    productorId,
+    entregas_totales: insumos.length,
+    insumos_agregados: agregados.length,
+    entregas_detalle: insumos,
+    insumos_resumido: agregados
+  });
 });

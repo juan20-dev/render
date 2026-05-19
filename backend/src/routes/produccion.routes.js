@@ -28,6 +28,12 @@ router.get(
   validate(productorIdParam, 'params'),
   controller.getInsumosResumenByProductor
 );
+router.get(
+  '/debug-insumos/:productorId',
+  authorizePermissions('Ver Producción'),
+  validate(productorIdParam, 'params'),
+  controller.debugInsumosByProductor
+);
 router.post(
   '/sugerir-consumo',
   authorizePermissions('Registrar Producción'),

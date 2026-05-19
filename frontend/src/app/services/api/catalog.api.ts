@@ -257,6 +257,15 @@ export const catalogApi = {
     getInsumosByProductor: async (productorId: number) => {
       return apiFetchData<any[]>(`/api/produccion/insumos-disponibles/${productorId}`);
     },
+    getInsumosResumenProductor: async (productorId: number) => {
+      return apiFetchData<any[]>(`/api/produccion/insumos-resumen/${productorId}`);
+    },
+    sugerirConsumo: async (pedidoId: number, productorId: number) => {
+      return apiFetchData<any[]>('/api/produccion/sugerir-consumo', {
+        method: 'POST',
+        json: { pedido_id: pedidoId, productor_id: productorId },
+      });
+    },
   },
 
   productoInsumos: {
