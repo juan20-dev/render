@@ -214,7 +214,7 @@ export function Sidebar({ currentPath, onNavigate }: SidebarProps) {
       </div>
 
       {/* Menu Items */}
-      <nav className="flex-1 overflow-y-auto p-1 sm:p-2">
+      <nav className="sidebar-menu-scroll flex-1 overflow-y-auto p-1 sm:p-2">
         {filteredMenuItems.map((item) => (
           <div key={item.name} className="mb-1">
             {item.subItems ? (

@@ -87,7 +87,7 @@ function StaffLayout({ onLogout }: { onLogout: () => void | Promise<void> }) {
           userData={user}
           onLogout={() => void onLogout()}
         />
-        <main key={user.id} className="flex-1 overflow-y-auto p-3 sm:p-4 md:p-6">
+        <main key={user.id} className="main-content-scroll flex-1 overflow-y-auto bg-background p-3 sm:p-4 md:p-6">
           <RequireRouteAccess>
             <Routes>
               <Route path="/" element={<Navigate to={staffHome} replace />} />
