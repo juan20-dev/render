@@ -5,33 +5,50 @@ const config = require('../../config');
 
 let cachedTransporter = null;
 let cachedTransporterMode = null;
+let cachedLogoDataUri = null;
 
 const hasSmtpConfig = () =>
   Boolean(config.mail.host && config.mail.user && config.mail.password);
 
-const LOGO_ABS_PATH = path.join(__dirname, '../../../frontend/public/favicon/android-chrome-192x192.png');
+const LOGO_CANDIDATE_PATHS = [
+  path.join(__dirname, '../../assets/brand/logo.png'),
+  path.join(__dirname, '../../../frontend/public/favicon/android-chrome-192x192.png'),
+  path.join(__dirname, '../../../frontend/public/favicon/android-chrome-512x512.png'),
+];
 
-const buildLogoParts = () => {
-  try {
-    if (fs.existsSync(LOGO_ABS_PATH)) {
-      return {
-        attachments: [
-          {
-            filename: 'logo.png',
-            path: LOGO_ABS_PATH,
-            cid: 'grandmas_logo',
-          },
-        ],
-        headerHtml:
-          '<div style="margin:0 0 20px 0">' +
-          '<img src="cid:grandmas_logo" alt="Grandma\'s Liquors" width="56" height="56" style="display:block;border-radius:10px" />' +
-          '</div>',
-      };
+const buildFallbackLogoDataUri = () => {
+  const svg =
+    '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">' +
+    '<rect width="64" height="64" rx="12" fill="#5b21b6"/>' +
+    '<text x="32" y="40" text-anchor="middle" fill="#ffffff" font-family="Segoe UI,Arial,sans-serif" font-size="18" font-weight="700">GL</text>' +
+    '</svg>';
+  return `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`;
+};
+
+const getLogoDataUri = () => {
+  if (cachedLogoDataUri !== null) return cachedLogoDataUri;
+  for (const logoPath of LOGO_CANDIDATE_PATHS) {
+    try {
+      if (fs.existsSync(logoPath)) {
+        const buf = fs.readFileSync(logoPath);
+        const ext = path.extname(logoPath).toLowerCase();
+        const mime =
+          ext === '.png' ? 'image/png' : ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' : 'image/png';
+        cachedLogoDataUri = `data:${mime};base64,${buf.toString('base64')}`;
+        return cachedLogoDataUri;
+      }
+    } catch (_e) {
+      /* noop */
     }
-  } catch (_e) {
-    /* noop */
   }
-  return { attachments: [], headerHtml: '' };
+  console.warn('[mail] Logo no encontrado en disco; usando marca SVG embebida en correos.');
+  cachedLogoDataUri = buildFallbackLogoDataUri();
+  return cachedLogoDataUri;
+};
+
+const buildEmailLogoHtml = () => {
+  const dataUri = getLogoDataUri();
+  return '<div style="margin:0 0 20px 0;text-align:center"><img src="' + dataUri + '" alt="Grandma\'s Liquors" width="64" height="64" style="display:block;margin:0 auto;border-radius:10px" /></div>';
 };
 
 const createTransporter = () => {
@@ -64,12 +81,6 @@ const createTransporter = () => {
   return cachedTransporter;
 };
 
-/**
- * Envuelve transporter.sendMail para registrar siempre el destinatario y el
- * modo (smtp real vs jsonTransport) y, en caso de error, dejar trazado el
- * problema sin reventar el flujo del controller (los catch del controller
- * siguen funcionando igual).
- */
 const sendWithLogging = async (message, label) => {
   const transporter = createTransporter();
   try {
@@ -94,11 +105,11 @@ const sendWithLogging = async (message, label) => {
 };
 
 const wrapBrandedHtml = (title, innerBodyHtml) => {
-  const { headerHtml } = buildLogoParts();
+  const logoHtml = buildEmailLogoHtml();
   return `
     <div style="font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.55; color: #1e293b; max-width: 560px; margin: 0 auto;">
       <div style="border:1px solid #e2e8f0;border-radius:12px;padding:24px 28px;background:#ffffff">
-        ${headerHtml}
+        ${logoHtml}
         <h1 style="margin:0 0 12px 0;font-size:20px;color:#0f172a;font-weight:600">${title}</h1>
         ${innerBodyHtml}
         <p style="margin:28px 0 0 0;padding-top:16px;border-top:1px solid #e2e8f0;font-size:12px;color:#64748b">
@@ -112,7 +123,6 @@ const wrapBrandedHtml = (title, innerBodyHtml) => {
 
 const sendTemporaryPasswordEmail = async ({ to, name, tempPassword }) => {
   const safeName = String(name || '').trim() || 'estimado cliente';
-  const { attachments } = buildLogoParts();
   const inner = `
     <p style="margin:0 0 12px 0">Hola <strong>${safeName}</strong>,</p>
     <p style="margin:0 0 12px 0">
@@ -143,14 +153,12 @@ const sendTemporaryPasswordEmail = async ({ to, name, tempPassword }) => {
       'Si usted no realizó esta solicitud, puede ignorar este mensaje.',
     ].join('\n'),
     html: wrapBrandedHtml('Restablecimiento de acceso', inner),
-    attachments,
   };
 
   return sendWithLogging(message, 'temporaryPassword');
 };
 
 const sendEmailChangeNotification = async ({ to, name, previousEmail, currentEmail }) => {
-  const { attachments } = buildLogoParts();
   const inner = `
     <p style="margin:0 0 12px 0">Hola <strong>${String(name || '').trim() || 'usuario'}</strong>,</p>
     <p style="margin:0 0 12px 0">Le informamos que el correo electrónico asociado a su cuenta en <strong>Grandma's Liquors</strong> fue actualizado.</p>
@@ -174,10 +182,36 @@ const sendEmailChangeNotification = async ({ to, name, previousEmail, currentEma
       'Si no realizó este cambio, contacte al administrador.',
     ].join('\n'),
     html: wrapBrandedHtml('Correo de acceso actualizado', inner),
-    attachments,
   };
 
   return sendWithLogging(message, 'emailChange');
+};
+
+const sendPasswordChangeNotification = async ({ to, name }) => {
+  const safeName = String(name || '').trim() || 'usuario';
+  const inner = `
+    <p style="margin:0 0 12px 0">Hola <strong>${safeName}</strong>,</p>
+    <p style="margin:0 0 12px 0">
+      Le informamos que la contraseña de su cuenta en <strong>Grandma's Liquors</strong> fue actualizada correctamente.
+    </p>
+    <p style="margin:0;color:#475569;font-size:14px">
+      Si usted no realizó este cambio, contacte de inmediato al administrador del sistema.
+    </p>
+  `;
+  const message = {
+    from: config.mail.from,
+    to,
+    subject: "Grandma's Liquors — Contraseña actualizada",
+    text: [
+      `Hola ${safeName},`,
+      '',
+      'La contraseña de su cuenta en Grandma\'s Liquors fue actualizada.',
+      'Si no realizó este cambio, contacte al administrador de inmediato.',
+    ].join('\n'),
+    html: wrapBrandedHtml('Contraseña actualizada', inner),
+  };
+
+  return sendWithLogging(message, 'passwordChange');
 };
 
 const escapeHtml = (value) =>
@@ -188,18 +222,7 @@ const escapeHtml = (value) =>
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
 
-/**
- * Envia un correo de bienvenida a la plataforma Grandma's Liquors.
- *
- * - Si se recibe `password`, el cuerpo incluye las credenciales (correo + contrasena)
- *   para que el destinatario pueda iniciar sesion. Caso de uso: alta hecha por
- *   un administrador desde Gestion Usuarios o Gestion Clientes.
- * - Si NO se recibe `password`, solo envia el saludo de bienvenida con la
- *   informacion del registro. Caso de uso: cliente que se auto-registra y ya
- *   conoce su contrasena.
- */
 const sendWelcomeEmail = async ({ to, name, email, password = null, emailCredentialExpiresHours = null }) => {
-  const { attachments } = buildLogoParts();
   const safeName = String(name || '').trim() || 'usuario';
   const loginEmail = String(email || to || '').trim();
   const includesCreds = Boolean(password);
@@ -289,14 +312,12 @@ const sendWelcomeEmail = async ({ to, name, email, password = null, emailCredent
       subject,
       text,
       html: wrapBrandedHtml('Bienvenido(a)', innerBody),
-      attachments,
     },
     includesCreds ? 'welcome+credentials' : 'welcome'
   );
 };
 
 const sendUserStatusChangeNotification = async ({ to, name, estado, motivo, changedBy }) => {
-  const { attachments } = buildLogoParts();
   const inner = `
     <p style="margin:0 0 12px 0">Hola <strong>${String(name || '').trim() || 'usuario'}</strong>,</p>
     <p style="margin:0 0 12px 0">El estado de su cuenta en <strong>Grandma's Liquors</strong> fue actualizado.</p>
@@ -323,7 +344,6 @@ const sendUserStatusChangeNotification = async ({ to, name, estado, motivo, chan
       .filter(Boolean)
       .join('\n'),
     html: wrapBrandedHtml('Estado de cuenta', inner),
-    attachments,
   };
 
   return sendWithLogging(message, 'statusChange');
@@ -332,6 +352,7 @@ const sendUserStatusChangeNotification = async ({ to, name, estado, motivo, chan
 module.exports = {
   sendTemporaryPasswordEmail,
   sendEmailChangeNotification,
+  sendPasswordChangeNotification,
   sendUserStatusChangeNotification,
   sendWelcomeEmail,
 };

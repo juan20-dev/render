@@ -217,11 +217,17 @@ export function FormField({
     }
 
     // Validaciones por tipo
-    if (type === 'email' && val) {
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(val.toString())) {
-        setError('Ingresa un correo electrónico válido');
+    if (type === 'email') {
+      if (required && !String(val ?? '').trim()) {
+        setError('Este campo es obligatorio');
         return;
+      }
+      if (val) {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(val.toString())) {
+          setError('Ingresa un correo electrónico válido');
+          return;
+        }
       }
     }
 
@@ -275,10 +281,11 @@ export function FormField({
     if (inputDigitRule) {
       const d = String(newValue).replace(/\D/g, '');
       next = inputDigitRule === 'telefono10' ? d.slice(0, 10) : d.slice(0, 12);
-      // documento6to12: NO marcamos `touched` al escribir para que el mensaje no aparezca todavía.
-      if (inputDigitRule !== 'documento6to12') {
+      if (inputDigitRule === 'documento6to12' ? d.length > 0 : true) {
         setTouched(true);
       }
+    } else if (type === 'email' || type === 'password') {
+      setTouched(true);
     }
     onChange?.(next);
     validateField(next);

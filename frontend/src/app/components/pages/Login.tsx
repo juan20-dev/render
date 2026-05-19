@@ -6,10 +6,57 @@ import { LogIn, UserPlus, KeyRound, ArrowLeft } from 'lucide-react';
 import { Modal } from '../Modal';
 import { AlertDialog } from '../AlertDialog';
 import { useAuth } from '../AuthContext';
-import { api } from '../../services/api';
+import { api, newPasswordPolicyMessage } from '../../services/api';
 
 // Logo local - using favicon from public folder
 const LOGO_URL = '/favicon/apple-touch-icon.png';
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function validateEmail(email: string, required = true): string | undefined {
+  const v = String(email || '').trim();
+  if (!v) return required ? 'El correo es obligatorio' : undefined;
+  if (!EMAIL_RE.test(v)) return 'Ingresa un correo electrónico válido';
+  return undefined;
+}
+
+function validateLoginPassword(password: string): string | undefined {
+  if (!password) return 'La contraseña es obligatoria';
+  return undefined;
+}
+
+function validateRegisterPassword(password: string): string | undefined {
+  if (!password) return 'La contraseña es obligatoria';
+  return newPasswordPolicyMessage(password) || undefined;
+}
+
+function validateName(value: string, label: string): string | undefined {
+  const v = String(value || '').trim();
+  if (!v) return `${label} es obligatorio`;
+  if (v.length < 2) return `${label} debe tener al menos 2 caracteres`;
+  return undefined;
+}
+
+function validateDocumento(value: string): string | undefined {
+  const digits = String(value || '').replace(/\D/g, '');
+  if (!digits) return 'El documento es obligatorio';
+  if (digits.length < 6 || digits.length > 12) return 'El documento debe tener entre 6 y 12 dígitos';
+  return undefined;
+}
+
+function validateTelefono(value: string): string | undefined {
+  const digits = String(value || '').replace(/\D/g, '');
+  if (!digits) return 'El teléfono es obligatorio';
+  if (digits.length !== 10) return 'El teléfono debe tener exactamente 10 dígitos';
+  return undefined;
+}
+
+function validateDireccion(value: string): string | undefined {
+  const v = String(value || '').trim();
+  if (!v) return 'La dirección es obligatoria';
+  if (v.length < 5) return 'Ingresa una dirección más completa';
+  return undefined;
+}
 
 interface LoginProps {
   onLogin: (email: string, password: string) => Promise<void>;
@@ -32,6 +79,11 @@ export function Login({ onLogin, initialTab = 'login', onBackToLanding }: LoginP
     onConfirm: () => {}
   });
   
+  const [touched, setTouched] = useState<Record<string, boolean>>({});
+  const markTouched = (field: string) => setTouched((prev) => ({ ...prev, [field]: true }));
+  const fieldError = (field: string, message: string | undefined) =>
+    touched[field] ? message : undefined;
+
   const [loginData, setLoginData] = useState({ email: '', password: '' });
   const [registerData, setRegisterData] = useState({ 
     tipoDocumento: 'CC' as 'CC' | 'CE' | 'Pasaporte',
@@ -45,8 +97,18 @@ export function Login({ onLogin, initialTab = 'login', onBackToLanding }: LoginP
     confirmPassword: ''
   });
 
+  const loginEmailErr = validateEmail(loginData.email);
+  const loginPasswordErr = validateLoginPassword(loginData.password);
+  const registerConfirmErr =
+    registerData.confirmPassword.trim() &&
+    registerData.password !== registerData.confirmPassword
+      ? 'Las contraseñas no coinciden'
+      : undefined;
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    setTouched((prev) => ({ ...prev, loginEmail: true, loginPassword: true }));
+    if (loginEmailErr || loginPasswordErr) return;
 
     try {
       await onLogin(loginData.email, loginData.password);
@@ -94,16 +156,29 @@ export function Login({ onLogin, initialTab = 'login', onBackToLanding }: LoginP
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (registerData.password !== registerData.confirmPassword) {
-      setAlertState({
-        isOpen: true,
-        title: 'Error en el registro',
-        description: 'Las contraseñas no coinciden',
-        type: 'danger',
-        onConfirm: () => {}
-      });
-      return;
-    }
+    setTouched({
+      regTipoDocumento: true,
+      regNumeroDocumento: true,
+      regNombre: true,
+      regApellido: true,
+      regDireccion: true,
+      regTelefono: true,
+      regEmail: true,
+      regPassword: true,
+      regConfirmPassword: true,
+    });
+
+    const regErrors = [
+      validateDocumento(registerData.numeroDocumento),
+      validateName(registerData.nombre, 'El nombre'),
+      validateName(registerData.apellido, 'El apellido'),
+      validateDireccion(registerData.direccion),
+      validateTelefono(registerData.telefono),
+      validateEmail(registerData.email),
+      validateRegisterPassword(registerData.password),
+      registerConfirmErr,
+    ].filter(Boolean);
+    if (regErrors.length > 0) return;
 
     try {
       await register(registerData);
@@ -132,7 +207,9 @@ export function Login({ onLogin, initialTab = 'login', onBackToLanding }: LoginP
 
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+    setTouched((prev) => ({ ...prev, resetEmail: true }));
+    if (validateEmail(resetEmail)) return;
+
     try {
       await api.auth.requestPasswordReset(resetEmail);
       setAlertState({
@@ -235,15 +312,19 @@ export function Login({ onLogin, initialTab = 'login', onBackToLanding }: LoginP
                 </div>
               </div>
 
-              <Form onSubmit={handleLogin}>
+              <Form onSubmit={handleLogin} noValidate>
                 <FormField
                   label="Correo Electrónico"
                   name="email"
                   type="email"
                   value={loginData.email}
-                  onChange={(value) => setLoginData({ ...loginData, email: value as string })}
+                  onChange={(value) => {
+                    markTouched('loginEmail');
+                    setLoginData({ ...loginData, email: value as string });
+                  }}
                   placeholder="usuario@example.com"
                   required
+                  error={fieldError('loginEmail', loginEmailErr)}
                 />
                 
                 <FormField
@@ -251,13 +332,22 @@ export function Login({ onLogin, initialTab = 'login', onBackToLanding }: LoginP
                   name="password"
                   type="password"
                   value={loginData.password}
-                  onChange={(value) => setLoginData({ ...loginData, password: value as string })}
+                  onChange={(value) => {
+                    markTouched('loginPassword');
+                    setLoginData({ ...loginData, password: value as string });
+                  }}
                   placeholder="••••••••"
                   required
+                  error={fieldError('loginPassword', loginPasswordErr)}
                 />
 
                 <FormActions>
-                  <Button type="submit" className="w-full" icon={<LogIn className="w-5 h-5" />}>
+                  <Button
+                    type="submit"
+                    className="w-full"
+                    icon={<LogIn className="w-5 h-5" />}
+                    disabled={Boolean(loginEmailErr || loginPasswordErr)}
+                  >
                     Iniciar Sesión
                   </Button>
                 </FormActions>
@@ -290,14 +380,17 @@ export function Login({ onLogin, initialTab = 'login', onBackToLanding }: LoginP
               </div>
             </div>
 
-            <Form onSubmit={handleRegister}>
+            <Form onSubmit={handleRegister} noValidate>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1">
                 <FormField
                   label="Tipo de Documento"
                   name="tipoDocumento"
                   type="select"
                   value={registerData.tipoDocumento}
-                  onChange={(value) => setRegisterData({ ...registerData, tipoDocumento: value as any })}
+                  onChange={(value) => {
+                    markTouched('regTipoDocumento');
+                    setRegisterData({ ...registerData, tipoDocumento: value as any });
+                  }}
                   options={[
                     { value: 'CC', label: 'Cédula de Ciudadanía' },
                     { value: 'CE', label: 'Cédula de Extranjería' },
@@ -310,47 +403,69 @@ export function Login({ onLogin, initialTab = 'login', onBackToLanding }: LoginP
                   label="Número de Documento"
                   name="numeroDocumento"
                   value={registerData.numeroDocumento}
-                  onChange={(value) => setRegisterData({ ...registerData, numeroDocumento: value as string })}
+                  onChange={(value) => {
+                    markTouched('regNumeroDocumento');
+                    setRegisterData({ ...registerData, numeroDocumento: value as string });
+                  }}
                   placeholder="Entre 6 y 12 dígitos"
                   required
                   inputDigitRule="documento6to12"
+                  error={fieldError('regNumeroDocumento', validateDocumento(registerData.numeroDocumento))}
                 />
 
                 <FormField
                   label="Nombre"
                   name="nombre"
                   value={registerData.nombre}
-                  onChange={(value) => setRegisterData({ ...registerData, nombre: value as string })}
+                  onChange={(value) => {
+                    markTouched('regNombre');
+                    setRegisterData({ ...registerData, nombre: value as string });
+                  }}
                   placeholder="Juan"
                   required
+                  minLength={2}
+                  error={fieldError('regNombre', validateName(registerData.nombre, 'El nombre'))}
                 />
                 
                 <FormField
                   label="Apellido"
                   name="apellido"
                   value={registerData.apellido}
-                  onChange={(value) => setRegisterData({ ...registerData, apellido: value as string })}
+                  onChange={(value) => {
+                    markTouched('regApellido');
+                    setRegisterData({ ...registerData, apellido: value as string });
+                  }}
                   placeholder="Pérez"
                   required
+                  minLength={2}
+                  error={fieldError('regApellido', validateName(registerData.apellido, 'El apellido'))}
                 />
 
                 <FormField
                   label="Dirección"
                   name="direccion"
                   value={registerData.direccion}
-                  onChange={(value) => setRegisterData({ ...registerData, direccion: value as string })}
+                  onChange={(value) => {
+                    markTouched('regDireccion');
+                    setRegisterData({ ...registerData, direccion: value as string });
+                  }}
                   placeholder="Calle 104 # 79D - 65"
                   required
+                  error={fieldError('regDireccion', validateDireccion(registerData.direccion))}
                 />
 
                 <FormField
                   label="Teléfono"
                   name="telefono"
                   value={registerData.telefono}
-                  onChange={(value) => setRegisterData({ ...registerData, telefono: value as string })}
+                  onChange={(value) => {
+                    markTouched('regTelefono');
+                    setRegisterData({ ...registerData, telefono: value as string });
+                  }}
                   placeholder="3001234567"
                   required
                   inputDigitRule="telefono10"
+                  error={fieldError('regTelefono', validateTelefono(registerData.telefono))}
                 />
 
                 <FormField
@@ -358,9 +473,13 @@ export function Login({ onLogin, initialTab = 'login', onBackToLanding }: LoginP
                   name="email"
                   type="email"
                   value={registerData.email}
-                  onChange={(value) => setRegisterData({ ...registerData, email: value as string })}
+                  onChange={(value) => {
+                    markTouched('regEmail');
+                    setRegisterData({ ...registerData, email: value as string });
+                  }}
                   placeholder="usuario@example.com"
                   required
+                  error={fieldError('regEmail', validateEmail(registerData.email))}
                 />
 
                 <FormField
@@ -368,9 +487,14 @@ export function Login({ onLogin, initialTab = 'login', onBackToLanding }: LoginP
                   name="password"
                   type="password"
                   value={registerData.password}
-                  onChange={(value) => setRegisterData({ ...registerData, password: value as string })}
+                  onChange={(value) => {
+                    markTouched('regPassword');
+                    setRegisterData({ ...registerData, password: value as string });
+                  }}
                   placeholder="••••••••"
                   required
+                  error={fieldError('regPassword', validateRegisterPassword(registerData.password))}
+                  helperText="Mínimo 8 caracteres, una mayúscula, una minúscula y un número."
                 />
 
                 <FormField
@@ -378,14 +502,32 @@ export function Login({ onLogin, initialTab = 'login', onBackToLanding }: LoginP
                   name="confirmPassword"
                   type="password"
                   value={registerData.confirmPassword}
-                  onChange={(value) => setRegisterData({ ...registerData, confirmPassword: value as string })}
+                  onChange={(value) => {
+                    markTouched('regConfirmPassword');
+                    setRegisterData({ ...registerData, confirmPassword: value as string });
+                  }}
                   placeholder="••••••••"
                   required
+                  error={fieldError('regConfirmPassword', registerConfirmErr)}
                 />
 
                 <div className="sm:col-span-2 pt-2">
                   <FormActions>
-                    <Button type="submit" className="w-full" icon={<UserPlus className="w-5 h-5" />}>
+                    <Button
+                      type="submit"
+                      className="w-full"
+                      icon={<UserPlus className="w-5 h-5" />}
+                      disabled={Boolean(
+                        validateDocumento(registerData.numeroDocumento) ||
+                        validateName(registerData.nombre, 'El nombre') ||
+                        validateName(registerData.apellido, 'El apellido') ||
+                        validateDireccion(registerData.direccion) ||
+                        validateTelefono(registerData.telefono) ||
+                        validateEmail(registerData.email) ||
+                        validateRegisterPassword(registerData.password) ||
+                        registerConfirmErr
+                      )}
+                    >
                       Crear Cuenta
                     </Button>
                   </FormActions>
@@ -423,15 +565,19 @@ export function Login({ onLogin, initialTab = 'login', onBackToLanding }: LoginP
           </div>
         </div>
 
-        <Form onSubmit={handleResetPassword}>
+        <Form onSubmit={handleResetPassword} noValidate>
           <FormField
             label="Correo Electrónico"
             name="resetEmail"
             type="email"
             value={resetEmail}
-            onChange={(value) => setResetEmail(value as string)}
+            onChange={(value) => {
+              markTouched('resetEmail');
+              setResetEmail(value as string);
+            }}
             placeholder="usuario@example.com"
             required
+            error={fieldError('resetEmail', validateEmail(resetEmail))}
           />
 
           <FormActions>
@@ -441,7 +587,11 @@ export function Login({ onLogin, initialTab = 'login', onBackToLanding }: LoginP
             }}>
               Cancelar
             </Button>
-            <Button type="submit" icon={<KeyRound className="w-5 h-5" />}>
+            <Button
+              type="submit"
+              icon={<KeyRound className="w-5 h-5" />}
+              disabled={Boolean(validateEmail(resetEmail))}
+            >
               Enviar Enlace
             </Button>
           </FormActions>

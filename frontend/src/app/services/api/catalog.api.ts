@@ -293,7 +293,10 @@ export const catalogApi = {
       return apiFetchData<any[]>(`/api/produccion/insumos-resumen/${productorId}`);
     },
     sugerirConsumo: async (pedidoId: number, productorId: number) => {
-      return apiFetchData<any[]>('/api/produccion/sugerir-consumo', {
+      return apiFetchData<{
+        sugerido: Array<{ clave: string; insumo_nombre?: string; cantidad: number; unidad?: string }>;
+        faltantes?: Array<{ insumo_nombre?: string; falta: number; unidad?: string }>;
+      }>('/api/produccion/sugerir-consumo', {
         method: 'POST',
         json: { pedido_id: pedidoId, productor_id: productorId },
       });

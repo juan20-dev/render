@@ -10,6 +10,7 @@ const { generateTempPassword, isStrongPassword } = require('../utils/credentials
 const {
   sendTemporaryPasswordEmail,
   sendEmailChangeNotification,
+  sendPasswordChangeNotification,
   sendUserStatusChangeNotification,
   sendWelcomeEmail,
 } = require('../services/email.service');
@@ -256,21 +257,38 @@ module.exports = {
         });
       }
 
+      const passwordChanged =
+        normalized.data.password && typeof normalized.data.password === 'string' && normalized.data.password.trim();
+
       await models.Usuarios.update(req.params.id, { ...normalized.data, actor_id: req.user?.id || null });
-      if (normalized.data.password && typeof normalized.data.password === 'string') {
-        const newHash = await bcrypt.hash(normalized.data.password, 10);
+      if (passwordChanged) {
+        const newHash = await bcrypt.hash(normalized.data.password.trim(), 10);
         await models.Usuarios.updatePasswordHash(req.params.id, newHash);
       }
 
+      const userName = `${normalized.data.nombre || currentUsuario.nombre || ''} ${normalized.data.apellido || currentUsuario.apellido || ''}`.trim();
+
       if (emailChanged) {
         void sendEmailChangeNotification({
-          to: normalized.data.email,
-          name: `${normalized.data.nombre || currentUsuario.nombre || ''} ${normalized.data.apellido || currentUsuario.apellido || ''}`.trim(),
+          to: normalized.data.email.trim(),
+          name: userName,
           previousEmail,
           currentEmail: normalized.data.email,
         }).catch((error) => {
           console.error('Error notificando cambio de correo:', error);
         });
+      }
+
+      if (passwordChanged) {
+        const notifyEmail = (normalized.data.email || currentUsuario.email || '').trim();
+        if (notifyEmail) {
+          void sendPasswordChangeNotification({
+            to: notifyEmail,
+            name: userName,
+          }).catch((error) => {
+            console.error('Error notificando cambio de contraseña:', error);
+          });
+        }
       }
 
       res.json({ success: true, message: 'Usuario actualizado exitosamente' });

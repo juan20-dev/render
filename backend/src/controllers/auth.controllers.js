@@ -12,7 +12,11 @@ const jwt = require('jsonwebtoken');
 const config = require('../../config');
 const { normalizeAuthRegisterPayload } = require('./normalizador-http');
 const { generateTempPassword, isStrongPassword } = require('../utils/credentials');
-const { sendTemporaryPasswordEmail, sendWelcomeEmail } = require('../services/email.service');
+const {
+  sendTemporaryPasswordEmail,
+  sendWelcomeEmail,
+  sendPasswordChangeNotification,
+} = require('../services/email.service');
 const { validators } = require('../middlewares/auth.middleware');
 
 /** Validez del código de recuperación enviado por correo (confirmación en el flujo de restablecimiento). */
@@ -346,6 +350,15 @@ module.exports = {
       await models.Usuarios.updatePasswordHash(userId, newHash);
       await models.Usuarios.storePasswordHistory(userId, newHash);
 
+      if (usuario.email) {
+        void sendPasswordChangeNotification({
+          to: usuario.email,
+          name: `${usuario.nombre || ''} ${usuario.apellido || ''}`.trim(),
+        }).catch((error) => {
+          console.error('Error notificando cambio de contraseña:', error);
+        });
+      }
+
       return res.json({ success: true, message: 'Contraseña actualizada exitosamente' });
     } catch (error) {
       return res.status(500).json({ success: false, message: error.message });
@@ -445,6 +458,15 @@ module.exports = {
       const newHash = await bcrypt.hash(newPassword, 10);
       await models.Usuarios.updatePasswordHash(usuario.id, newHash);
       await models.Usuarios.storePasswordHistory(usuario.id, newHash);
+
+      if (usuario.email) {
+        void sendPasswordChangeNotification({
+          to: usuario.email,
+          name: `${usuario.nombre || ''} ${usuario.apellido || ''}`.trim(),
+        }).catch((error) => {
+          console.error('Error notificando restablecimiento de contraseña:', error);
+        });
+      }
 
       return res.json({ success: true, message: 'Contraseña restablecida exitosamente' });
     } catch (error) {

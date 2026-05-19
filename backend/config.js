@@ -59,10 +59,6 @@ const config = {
     password: process.env.MAIL_PASSWORD || '',
     from: process.env.MAIL_FROM || process.env.MAIL_USER || 'no-reply@grandmas-liquors.local',
   },
-  openai: {
-    apiKey: process.env.OPENAI_API_KEY,
-    model: process.env.OPENAI_MODEL ,
-  },
 };
 
 module.exports = config;

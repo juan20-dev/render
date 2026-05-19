@@ -18,9 +18,7 @@ import {
   Receipt,
   CreditCard,
   ClipboardList,
-  Settings,
-  Store,
-  User
+  Settings
 } from 'lucide-react';
 import { useAuth } from './AuthContext';
 
@@ -105,28 +103,6 @@ const menuItems: MenuItem[] = [
       { name: 'Pedidos', icon: <ClipboardList className="w-4 h-4" />, path: '/ventas/pedidos', module: 'ventas/pedidos', roles: ['Administrador', 'Asesor'] },
       { name: 'Domicilios', icon: <Truck className="w-4 h-4" />, path: '/ventas/domicilios', module: 'ventas/domicilios', roles: ['Administrador', 'Asesor', 'Repartidor'] }
     ]
-  },
-  // Menú exclusivo para Cliente
-  {
-    name: 'Tienda',
-    icon: <Store className="w-5 h-5" />,
-    path: '/cliente/tienda',
-    module: 'cliente',
-    roles: ['Cliente']
-  },
-  {
-    name: 'Mis Pedidos',
-    icon: <ClipboardList className="w-5 h-5" />,
-    path: '/cliente/pedidos',
-    module: 'cliente',
-    roles: ['Cliente']
-  },
-  {
-    name: 'Mi Perfil',
-    icon: <User className="w-5 h-5" />,
-    path: '/cliente/perfil',
-    module: 'cliente',
-    roles: ['Cliente']
   }
 ];
 

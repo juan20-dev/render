@@ -199,30 +199,34 @@ const authorizePermissions = (...requiredPermissions) => async (req, res, next) 
 // Middleware de Rate Limiting simple en memoria para endpoints sensibles
 const requestLog = new Map();
 
-const simpleRateLimit = (maxRequests = 5, windowMs = 15 * 60 * 1000) => (req, res, next) => {
-  const identifier = req.ip || req.socket?.remoteAddress || 'unknown';
+const simpleRateLimit = (maxRequests = 5, windowMs = 15 * 60 * 1000, routeKey = 'default') => (
+  req,
+  res,
+  next
+) => {
+  const identifier = `${routeKey}:${req.ip || req.socket?.remoteAddress || 'unknown'}`;
   const now = Date.now();
-  
+
   if (!requestLog.has(identifier)) {
     requestLog.set(identifier, []);
   }
-  
+
   const userRequests = requestLog.get(identifier);
-  const recentRequests = userRequests.filter(time => now - time < windowMs);
-  
+  const recentRequests = userRequests.filter((time) => now - time < windowMs);
+
   if (recentRequests.length >= maxRequests) {
     const oldestRequest = Math.min(...recentRequests);
     const resetIn = Math.ceil((oldestRequest + windowMs - now) / 1000);
     return res.status(429).json({
       success: false,
       message: `Demasiadas solicitudes. Intenta de nuevo en ${resetIn} segundos.`,
-      retryAfter: resetIn
+      retryAfter: resetIn,
     });
   }
-  
+
   recentRequests.push(now);
   requestLog.set(identifier, recentRequests);
-  
+
   return next();
 };
 

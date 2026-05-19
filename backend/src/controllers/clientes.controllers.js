@@ -12,7 +12,11 @@ const ClienteCuenta = require('../models/ventas/cliente-cuenta');
 const { normalizeClientePayload } = require('./normalizador-http');
 const { isClienteUser, assertOwnClienteParam } = require('../utils/selfServiceAccess');
 const { generateTempPassword, isStrongPassword } = require('../utils/credentials');
-const { sendTemporaryPasswordEmail, sendWelcomeEmail } = require('../services/email.service');
+const {
+  sendTemporaryPasswordEmail,
+  sendWelcomeEmail,
+  sendEmailChangeNotification,
+} = require('../services/email.service');
 module.exports = {
   getAll: async (req, res) => {
     try {
@@ -297,6 +301,22 @@ module.exports = {
           usuario_sincronizado: syncResult.usuarioId || null,
         },
       });
+
+      const prevEmail = String(currentCliente.email || '').trim().toLowerCase();
+      const emailChanged =
+        data.email !== undefined &&
+        nextEmail &&
+        nextEmail.toLowerCase() !== prevEmail;
+      if (emailChanged) {
+        void sendEmailChangeNotification({
+          to: nextEmail,
+          name: `${nextNombre} ${nextApellido}`.trim(),
+          previousEmail: currentCliente.email,
+          currentEmail: nextEmail,
+        }).catch((error) => {
+          console.error('Error notificando cambio de correo (cliente):', error);
+        });
+      }
 
       return res.json({
         success: true,

@@ -6,7 +6,6 @@
  * lo importa. La fuente activa es este archivo modular.
  */
 const pool = require('../../../db');
-const config = require('../../../config');
 const InsumosModel = require('./insumos');
 const {
   ensureMotivoEstado,
@@ -59,14 +58,6 @@ const parseConsumoClave = (clave) => {
   const mL = s.match(/^l:(\d+)$/i);
   if (mL) return { tipo: 'legacy', insumo_id: Number(mL[1]) };
   return null;
-};
-
-const extractJsonFromModelText = (text) => {
-  const t = String(text || '').trim();
-  if (!t) throw new Error('Respuesta vacía del modelo');
-  const fenced = t.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  const raw = fenced ? fenced[1].trim() : t;
-  return JSON.parse(raw);
 };
 
 const aggregateEntregasByInsumo = (entregasRows) => {
@@ -230,145 +221,6 @@ const computeFaltantes = (sugerido, disponibleAgregado, catalogo = []) => {
     }
   }
   return faltantes;
-};
-
-const callOpenAIRecetaInsumos = async ({ preparaciones, catalogo, stockProductor }) => {
-  const apiKey = String(config.openai?.apiKey || '').trim();
-  if (!apiKey) {
-    const err = new Error('OPENAI_API_KEY no está configurada en el servidor (.env)');
-    err.statusCode = 503;
-    throw err;
-  }
-
-  const systemPrompt = [
-    'Eres un bartender experto para Grandma\'s Liquors (Colombia).',
-    'Tu tarea: definir la RECETA de insumos (BOM) necesarios para preparar TODAS las bebidas del pedido.',
-    'Identifica cada preparación (ej. Margarita, Whisky en rocas, Mojito) y calcula insumos totales.',
-    'Responde ÚNICAMENTE con JSON válido, sin markdown, con esta forma:',
-    '{"insumos":[{"clave":"c:12","insumo_nombre":"Tequila","cantidad":150,"unidad":"Mililitros"}]}',
-    'Reglas estrictas:',
-    '- "clave" debe ser "c:" + producto_catalogo_id de la lista de catálogo.',
-    '- Solo usa insumos del catálogo proporcionado; no inventes IDs.',
-    '- "cantidad" es el total a consumir del productor para todo el pedido (número > 0).',
-    '- "unidad" debe ser "Unidades" o "Mililitros" (coherente con el insumo).',
-    '- Prioriza consumir insumos que el productor ya tiene en stock; no excedas lo disponible salvo que sea imprescindible.',
-  ].join('\n');
-
-  const userPayload = {
-    preparaciones_pedido: preparaciones.map((p) => ({
-      nombre: p.producto_nombre,
-      cantidad: p.cantidad,
-    })),
-    catalogo_insumos: catalogo,
-    stock_actual_productor: stockProductor.map((s) => ({
-      clave: s.clave,
-      nombre: s.insumo_nombre,
-      disponible: s.disponible,
-      unidad: s.unidad,
-    })),
-  };
-
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: config.openai?.model || 'gpt-4o-mini',
-      temperature: 0.2,
-      response_format: { type: 'json_object' },
-      messages: [
-        { role: 'system', content: systemPrompt },
-        {
-          role: 'user',
-          content: `Define la receta de insumos para este pedido:\n${JSON.stringify(userPayload, null, 2)}`,
-        },
-      ],
-    }),
-  });
-
-  if (!response.ok) {
-    const errText = await response.text().catch(() => '');
-    const err = new Error(`OpenAI no disponible (${response.status}): ${errText.slice(0, 200)}`);
-    err.statusCode = 502;
-    throw err;
-  }
-
-  const body = await response.json();
-  const content = body?.choices?.[0]?.message?.content;
-  const parsed = extractJsonFromModelText(content);
-  const list = Array.isArray(parsed?.insumos) ? parsed.insumos : Array.isArray(parsed) ? parsed : [];
-  return list;
-};
-
-const sugerirConsumoInsumosIA = async (pedidoId, productorId) => {
-  const pid = Number(pedidoId);
-  const prodId = Number(productorId);
-  if (!Number.isInteger(pid) || pid <= 0) {
-    const err = new Error('pedido_id inválido');
-    err.statusCode = 400;
-    throw err;
-  }
-  if (!Number.isInteger(prodId) || prodId <= 0) {
-    const err = new Error('productor_id inválido');
-    err.statusCode = 400;
-    throw err;
-  }
-
-  const preparaciones = await fetchDetallePreparacionPedido(pool, pid);
-  if (!preparaciones.length) {
-    const err = new Error('El pedido no tiene productos de tipo preparación');
-    err.statusCode = 409;
-    throw err;
-  }
-
-  const catalogo = await buildCatalogoInsumosContext();
-  if (!catalogo.length) {
-    const err = new Error('No hay insumos activos en el catálogo para calcular la receta');
-    err.statusCode = 409;
-    throw err;
-  }
-
-  const disponible = await getInsumosAgregadosByProductor(prodId);
-  const aiRaw = await callOpenAIRecetaInsumos({
-    preparaciones,
-    catalogo,
-    stockProductor: disponible,
-  });
-
-  const normalizados = [];
-  for (const item of aiRaw) {
-    const resolved = resolveClaveFromAiItem(item, catalogo);
-    if (!resolved) continue;
-    const cantidad = Number(item.cantidad);
-    if (!Number.isFinite(cantidad) || cantidad <= 0) continue;
-    normalizados.push({
-      clave: resolved.clave,
-      insumo_nombre: resolved.insumo_nombre,
-      cantidad,
-      unidad: String(item.unidad || resolved.unidad || 'Unidades').trim(),
-    });
-  }
-
-  if (!normalizados.length) {
-    const err = new Error(
-      'La IA no pudo asociar insumos del catálogo. Verifique nombres de insumos y el pedido.'
-    );
-    err.statusCode = 422;
-    throw err;
-  }
-
-  const sugerido = mergeConsumoList(normalizados);
-  const faltantes = computeFaltantes(sugerido, disponible, catalogo);
-
-  return {
-    preparaciones,
-    disponible,
-    sugerido,
-    faltantes,
-    receta_origen: 'openai',
-  };
 };
 
 /**
@@ -536,6 +388,83 @@ const buildPedidoInsumoNeedMap = async (client, detallePreparacion) => {
   return need;
 };
 
+/** Convierte necesidad de receta (unidades almacén) a lista de consumo para la UI. */
+const needMapToSugeridoList = (need, catalogo) => {
+  const items = [];
+  for (const [clave, cantidadAlmacen] of need.entries()) {
+    const qty = Number(cantidadAlmacen);
+    if (!Number.isFinite(qty) || qty <= 0) continue;
+    const hit = catalogo.find((c) => c.clave === clave);
+    if (!hit) {
+      items.push({
+        clave,
+        insumo_nombre: clave,
+        cantidad: qty,
+        unidad: 'Unidades',
+      });
+      continue;
+    }
+    const ml = mlPorUnidadFromCatalogHit(hit);
+    items.push({
+      clave,
+      insumo_nombre: hit.nombre,
+      cantidad: ml ? Number((qty * ml).toFixed(4)) : qty,
+      unidad: ml ? 'Mililitros' : hit.unidad || 'Unidades',
+    });
+  }
+  return mergeConsumoList(items);
+};
+
+const sugerirConsumoInsumos = async (pedidoId, productorId) => {
+  const pid = Number(pedidoId);
+  const prodId = Number(productorId);
+  if (!Number.isInteger(pid) || pid <= 0) {
+    const err = new Error('pedido_id inválido');
+    err.statusCode = 400;
+    throw err;
+  }
+  if (!Number.isInteger(prodId) || prodId <= 0) {
+    const err = new Error('productor_id inválido');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const preparaciones = await fetchDetallePreparacionPedido(pool, pid);
+  if (!preparaciones.length) {
+    const err = new Error('El pedido no tiene productos de tipo preparación');
+    err.statusCode = 409;
+    throw err;
+  }
+
+  const catalogo = await buildCatalogoInsumosContext();
+  if (!catalogo.length) {
+    const err = new Error('No hay insumos activos en el catálogo para calcular la receta');
+    err.statusCode = 409;
+    throw err;
+  }
+
+  const need = await buildPedidoInsumoNeedMap(pool, preparaciones);
+  if (!need.size) {
+    const err = new Error(
+      'No hay recetas de insumos configuradas para los productos de preparación del pedido. Configure producto-insumos en el catálogo.'
+    );
+    err.statusCode = 409;
+    throw err;
+  }
+
+  const disponible = await getInsumosAgregadosByProductor(prodId);
+  const sugerido = needMapToSugeridoList(need, catalogo);
+  const faltantes = computeFaltantes(sugerido, disponible, catalogo);
+
+  return {
+    preparaciones,
+    disponible,
+    sugerido,
+    faltantes,
+    receta_origen: 'recetas_catalogo',
+  };
+};
+
 let detallePreparacionColReady = null;
 const ensureProduccionDetallePreparacion = async () => {
   if (!detallePreparacionColReady) {
@@ -689,7 +618,7 @@ const getInsumosEntregadosByProductor = async (productorId) => {
 const Produccion = {
   getInsumosEntregadosByProductor,
   getInsumosAgregadosByProductor,
-  sugerirConsumoInsumos: sugerirConsumoInsumosIA,
+  sugerirConsumoInsumos,
   getAll: async (options = {}) => {
     await ensureProduccionDetallePreparacion();
     await repairPedidosConOrdenProduccionCompletada();

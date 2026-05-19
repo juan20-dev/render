@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { DataTable, Column, commonActions } from '../../DataTable';
+import { DataTable, Column, commonActions, openPrintablePdf } from '../../DataTable';
 import { Modal } from '../../Modal';
 import { Form, FormActions, FieldError, FieldSuccess } from '../../Form';
 import { Button } from '../../Button';
@@ -90,8 +90,6 @@ export function Produccion() {
   const [productores, setProductores] = useState<Usuario[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
-  const [isPdfModalOpen, setIsPdfModalOpen] = useState(false);
-  const [pdfContent, setPdfContent] = useState('');
   const [selectedOrden, setSelectedOrden] = useState<OrdenProduccionView | null>(null);
   const [produccionPending, setProduccionPending] = useState<{
     orden: OrdenProduccionView;
@@ -556,38 +554,58 @@ export function Produccion() {
   };
 
   const handleGeneratePDF = (orden: OrdenProduccionView) => {
-    const lineas =
+    const lineasPrep =
       Array.isArray(orden.detallePreparacion) && orden.detallePreparacion.length > 0
         ? orden.detallePreparacion
-            .map((l) => `  - ${l.cantidad}× ${l.productoNombre || 'Producto'}`)
+            .map((l) => `${l.cantidad}× ${l.productoNombre || 'Producto'}`)
             .join('\n')
-        : `  - ${orden.productoNombre || 'Producto'}: ${orden.cantidad} unidades (total)`;
-    const content = `
-============================================================
-           GRANDMA'S LIQUEURS - ORDEN DE PRODUCCION
-============================================================
+        : `${orden.productoNombre || 'Producto'}: ${orden.cantidad} unidades`;
 
-ID Orden:           #${String(orden.idOrden).padStart(4, '0')}
-Productos (prep.):
-${lineas}
-Total unidades:     ${orden.cantidad}
-Productor:          ${orden.productorNombre}
-Fecha Inicio:       ${orden.fechaInicio}
-Tiempo Preparación: ${orden.tiempoPreparacion} minutos
-Estado:             ${orden.estado}
-${orden.motivoCancelacion ? `Motivo Cancelación: ${orden.motivoCancelacion}` : ''}
+    const estadoLabel =
+      orden.estado === 'completada'
+        ? 'Completada'
+        : orden.estado === 'en proceso'
+          ? 'En proceso'
+          : orden.estado === 'pendiente'
+            ? 'Pendiente'
+            : orden.estado === 'cancelada'
+              ? 'Cancelada'
+              : orden.estado;
 
-------------------------------------------------------------
-Firma Productor:    _______________________
-
-Firma Supervisor:   _______________________
-
-Fecha Impresión:    ${new Date().toLocaleString('es-CO')}
-------------------------------------------------------------
-    `.trim();
-
-    setPdfContent(content);
-    setIsPdfModalOpen(true);
+    const opened = openPrintablePdf({
+      title: `Orden de producción #${String(orden.idOrden).padStart(4, '0')}`,
+      subtitle: `Generado el ${new Date().toLocaleString('es-CO')}`,
+      sections: [
+        {
+          title: 'Datos de la orden',
+          rows: [
+            { label: 'Productor', value: orden.productorNombre || '—' },
+            { label: 'Fecha inicio', value: orden.fechaInicio || '—' },
+            { label: 'Tiempo preparación', value: `${orden.tiempoPreparacion ?? 0} minutos` },
+            { label: 'Total unidades', value: orden.cantidad },
+            { label: 'Estado', value: estadoLabel },
+            ...(orden.pedidoId ? [{ label: 'Pedido vinculado', value: `#${orden.pedidoId}` }] : []),
+          ],
+        },
+        {
+          title: 'Productos (preparación)',
+          text: lineasPrep,
+        },
+        ...(orden.motivoCancelacion
+          ? [{ title: 'Motivo cancelación', text: orden.motivoCancelacion }]
+          : []),
+        {
+          title: 'Firmas',
+          text: 'Productor: _______________________\n\nSupervisor: _______________________',
+        },
+      ],
+      footer: 'Comprobante generado por Grandma\u2019s Liquors. Use "Descargar PDF" para guardar o imprimir.',
+    });
+    if (!opened) {
+      toast.error('No se pudo abrir la vista PDF', {
+        description: 'Permita las ventanas emergentes para este sitio.',
+      });
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -1268,27 +1286,6 @@ Fecha Impresión:    ${new Date().toLocaleString('es-CO')}
         )}
       </Modal>
 
-      {/* Modal de PDF */}
-      <Modal
-        isOpen={isPdfModalOpen}
-        onClose={() => setIsPdfModalOpen(false)}
-        title="Orden de Producción"
-        size="lg"
-      >
-        <div className="p-4 bg-accent/50 rounded-lg">
-          <pre className="text-sm text-muted-foreground">
-            {pdfContent}
-          </pre>
-        </div>
-        <div className="flex justify-end mt-4">
-          <Button 
-            variant="outline" 
-            onClick={() => setIsPdfModalOpen(false)}
-          >
-            Cerrar
-          </Button>
-        </div>
-      </Modal>
     </div>
   );
 }

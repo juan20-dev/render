@@ -6,7 +6,7 @@ import {
   uiAct, dbAct, mapUsuario, mapCategoria, mapProducto, mapProveedor, mapCompra, mapCliente,
   mapPedidoListRow, mapPedidoDetail, mapVenta, mapAbono, mapDomicilio, mapProduccion,
 } from '../mappers';
-import { q, rolIdByNombre, clearRolesCache } from './shared';
+import { clearRolesCache } from './shared';
 
 
 export const authApi = {
@@ -42,7 +42,7 @@ export const authApi = {
         method: 'POST',
         json: data,
       });
-      return api.auth.login(String(data.email), String(data.password), false).catch(() => null);
+      return authApi.auth.login(String(data.email), String(data.password), false).catch(() => null);
     },
     me: async () => {
       const d = await apiFetchData<{
@@ -68,7 +68,7 @@ export const authApi = {
     },
     logout: async () => {
       await apiFetch('/api/auth/logout', { method: 'POST', json: {} });
-      rolesCache = null;
+      clearRolesCache();
     },
     verifyCurrentPassword: async (currentPassword: string): Promise<boolean> => {
       const d = await apiFetchData<{ valid: boolean }>('/api/auth/verify-current-password', {

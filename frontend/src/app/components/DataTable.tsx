@@ -256,9 +256,19 @@ const escapeHtml = (s: string | number) =>
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
 
+const PDF_LOGO_URL = `${typeof window !== 'undefined' ? window.location.origin : ''}/favicon/android-chrome-192x192.png`;
+
 export function openPrintablePdf(opts: PdfReportOptions): boolean {
   const w = window.open('', '_blank', 'width=900,height=1000');
   if (!w) return false;
+
+  const logoHeader = `<div style="display:flex;align-items:center;gap:14px;margin-bottom:20px;padding-bottom:16px;border-bottom:2px solid #e2e8f0">
+    <img src="${PDF_LOGO_URL}" alt="Grandma's Liquors" width="56" height="56" style="border-radius:10px;object-fit:contain" onerror="this.style.display='none'" />
+    <div>
+      <p style="margin:0;font-size:11px;color:#64748b;letter-spacing:.04em;text-transform:uppercase">Grandma's Liquors</p>
+      <p style="margin:2px 0 0 0;font-size:13px;color:#475569">Comprobante oficial</p>
+    </div>
+  </div>`;
 
   const sectionsHtml = opts.sections
     .map((sec) => {
@@ -331,6 +341,7 @@ export function openPrintablePdf(opts: PdfReportOptions): boolean {
   <button class="primary" onclick="window.print()">Descargar PDF</button>
 </div>
 <div class="page">
+  ${logoHeader}
   <h1>${escapeHtml(opts.title)}</h1>
   ${opts.subtitle ? `<p class="sub">${escapeHtml(opts.subtitle)}</p>` : ''}
   ${sectionsHtml}

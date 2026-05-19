@@ -25,9 +25,6 @@ import { Ventas } from './components/pages/ventas/Ventas';
 import { Abonos } from './components/pages/ventas/Abonos';
 import { Pedidos } from './components/pages/ventas/Pedidos';
 import { Domicilios } from './components/pages/ventas/Domicilios';
-import { TiendaCliente } from './components/pages/cliente/TiendaCliente';
-import { MisPedidos } from './components/pages/cliente/MisPedidos';
-import { MiPerfil } from './components/pages/cliente/MiPerfil';
 import { SessionIdleWatcher } from './components/SessionIdleWatcher';
 
 const pageTitles: Record<string, string> = {
@@ -49,9 +46,6 @@ const pageTitles: Record<string, string> = {
   '/ventas/pedidos': 'Pedidos',
   '/ventas/domicilios': 'Domicilios',
   '/configuracion/roles': 'Gestión de Roles',
-  '/cliente/tienda': 'Tienda de Productos',
-  '/cliente/pedidos': 'Mis Pedidos',
-  '/cliente/perfil': 'Mi Perfil',
 };
 
 function RequireRouteAccess({ children }: { children: React.ReactNode }) {
@@ -61,16 +55,14 @@ function RequireRouteAccess({ children }: { children: React.ReactNode }) {
   if (!user) return null;
   if (!hasPermission(routeKey)) {
     const fallback =
-      user.rol === 'Cliente'
-        ? '/cliente/tienda'
-        : firstPermittedStaffPath(user.permisos || [], user.rol);
+      user.rol === 'Cliente' ? '/' : firstPermittedStaffPath(user.permisos || [], user.rol);
     return <Navigate to={fallback} replace />;
   }
   return <>{children}</>;
 }
 
-function StaffLayout() {
-  const { user, logout, hasPermission } = useAuth();
+function StaffLayout({ onLogout }: { onLogout: () => void | Promise<void> }) {
+  const { user, hasPermission } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   if (!user) return null;
@@ -93,10 +85,7 @@ function StaffLayout() {
           userName={`${user.nombre} ${user.apellido}`}
           userRole={user.rol}
           userData={user}
-          onLogout={async () => {
-            await logout();
-            navigate('/');
-          }}
+          onLogout={() => void onLogout()}
         />
         <main key={user.id} className="flex-1 overflow-y-auto p-3 sm:p-4 md:p-6">
           <RequireRouteAccess>
@@ -129,59 +118,23 @@ function StaffLayout() {
   );
 }
 
-function ClienteAppShell() {
-  const { user, logout } = useAuth();
-  const navigate = useNavigate();
-  const location = useLocation();
-  if (!user) return null;
-
-  const pageTitle = pageTitles[location.pathname] || 'Mi cuenta';
-
-  return (
-    <div className="flex min-h-screen h-full bg-background">
-      <Sidebar
-        currentPath={location.pathname}
-        onNavigate={(path) => navigate(path)}
-      />
-      <div className="flex-1 flex flex-col min-h-screen">
-        <Header
-          title={pageTitle}
-          userName={`${user.nombre} ${user.apellido}`}
-          userRole={user.rol}
-          userData={user}
-          onLogout={async () => {
-            await logout();
-            navigate('/');
-          }}
-        />
-        <main key={user.id} className="flex-1 overflow-y-auto p-3 sm:p-4 md:p-6">
-          <RequireRouteAccess>
-            <Routes>
-              <Route path="/cliente/tienda" element={<TiendaCliente />} />
-              <Route path="/cliente/pedidos" element={<MisPedidos />} />
-              <Route path="/cliente/perfil" element={<MiPerfil />} />
-              <Route path="*" element={<Navigate to="/cliente/tienda" replace />} />
-            </Routes>
-          </RequireRouteAccess>
-        </main>
-      </div>
-    </div>
-  );
-}
-
 function AppContent() {
-  const { user, login } = useAuth();
+  const { user, login, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [showAuth, setShowAuth] = useState<'landing' | 'login' | 'register' | 'nosotros'>('landing');
-  const [stayOnLanding, setStayOnLanding] = useState(false);
+
+  const handleLogoutToLanding = async () => {
+    await logout();
+    setShowAuth('landing');
+    navigate('/', { replace: true });
+  };
 
   useEffect(() => {
     if (!user) return;
-    if (user.rol === 'Cliente' && stayOnLanding) return;
     if (user.rol === 'Cliente') {
-      if (!location.pathname.startsWith('/cliente')) {
-        navigate('/cliente/tienda', { replace: true });
+      if (location.pathname.startsWith('/cliente')) {
+        navigate('/', { replace: true });
       }
       return;
     }
@@ -189,21 +142,20 @@ function AppContent() {
     if (location.pathname === '/' || location.pathname === '') {
       navigate(home, { replace: true });
     }
-  }, [user, stayOnLanding, navigate, location.pathname]);
+  }, [user, navigate, location.pathname]);
 
   const handleLogin = async (email: string, password: string) => {
     await login(email, password);
-    const me = await api.auth.me();
     setShowAuth('landing');
-    if (me.rol === 'Cliente') {
-      setStayOnLanding(true);
-    } else {
-      setStayOnLanding(false);
+    const me = await api.auth.me();
+    if (me.rol !== 'Cliente') {
       navigate(firstPermittedStaffPath(me.permisos || [], me.rol), { replace: true });
+    } else {
+      navigate('/', { replace: true });
     }
   };
 
-  if (user?.rol === 'Cliente' && stayOnLanding) {
+  if (user?.rol === 'Cliente') {
     if (showAuth === 'nosotros') {
       return (
         <NosotrosPage
@@ -218,20 +170,13 @@ function AppContent() {
         onNavigateToRegister={() => setShowAuth('register')}
         onNavigateToNosotros={() => setShowAuth('nosotros')}
         user={user}
-        onLogout={async () => {
-          setStayOnLanding(false);
-          navigate('/');
-        }}
+        onLogout={handleLogoutToLanding}
       />
     );
   }
 
-  if (user?.rol === 'Cliente') {
-    return <ClienteAppShell />;
-  }
-
   if (user) {
-    return <StaffLayout />;
+    return <StaffLayout onLogout={handleLogoutToLanding} />;
   }
 
   if (showAuth === 'landing') {
