@@ -11,6 +11,7 @@ const pool = new Pool({
   user: config.db.user,
   password: dbPassword,
   database: config.db.database,
+  ssl: config.db.ssl,
   max: 10,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 2000,

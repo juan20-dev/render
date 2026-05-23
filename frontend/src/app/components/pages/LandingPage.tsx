@@ -131,18 +131,15 @@ export function LandingPage({ onNavigateToLogin, onNavigateToRegister, onNavigat
     setAccesoBloqueadoPorEdad(true);
   };
 
-  // Cargar productos y categorías desde la API
+  // Catálogo público (sin login) — GET /api/public/catalogo
   useEffect(() => {
     const cargarDatos = async () => {
       try {
-        const [productos, categorias] = await Promise.all([
-          api.productos.getAll(),
-          api.categorias.getAll()
-        ]);
-        setProductosAPI(productos.filter(p => p.estado === 'activo'));
-        setCategoriasAPI(categorias.filter(c => c.estado === 'activo'));
+        const { productos, categorias } = await api.public.getCatalogo();
+        setProductosAPI(Array.isArray(productos) ? productos : []);
+        setCategoriasAPI(Array.isArray(categorias) ? categorias : []);
       } catch (error) {
-        console.error('Error cargando datos:', error);
+        console.error('Error cargando catálogo público:', error);
       } finally {
         setLoadingProductos(false);
       }
@@ -156,7 +153,7 @@ export function LandingPage({ onNavigateToLogin, onNavigateToRegister, onNavigat
       return;
     }
     api.pedidos
-      .getAll()
+      .getAllWithDetails()
       .then((rows) => setPedidos(Array.isArray(rows) ? rows : []))
       .catch(() => setPedidos([]));
   }, [user]);
@@ -184,21 +181,34 @@ export function LandingPage({ onNavigateToLogin, onNavigateToRegister, onNavigat
     };
   }, [passwordData.currentPassword, user]);
 
-  // Convertir productos de API a formato de la landing
-  const productosFromAPI: Producto[] = productosAPI.map(p => {
-    const categoria = categoriasAPI.find(c => c.id === p.categoriaId);
+  const imagenProductoFallback =
+    'https://images.unsplash.com/photo-1569529465841-dfecdab7503b?w=400&h=400&fit=crop';
+
+  // Convertir catálogo público al formato de la landing
+  const productosFromAPI: Producto[] = productosAPI.map((p: {
+    id: number;
+    nombre?: string;
+    descripcion?: string;
+    precio?: number;
+    imagen_url?: string;
+    categoria?: string;
+  }) => {
+    const imagenUrl = String(p.imagen_url || '').trim();
     return {
-      id: p.id.toString(),
-      nombre: p.nombre,
-      categoria: categoria?.nombre || 'Sin categoría',
-      precio: p.precioVenta,
-      imagen: 'https://images.unsplash.com/photo-1569529465841-dfecdab7503b?w=400&h=400&fit=crop',
-      descripcion: p.descripcion
+      id: String(p.id),
+      nombre: p.nombre || '',
+      categoria: p.categoria || 'Sin categoría',
+      precio: Number(p.precio ?? 0),
+      imagen: imagenUrl || imagenProductoFallback,
+      descripcion: p.descripcion || '',
     };
   });
 
   const todosLosProductos = productosFromAPI;
-  const categorias = ['Todos', ...categoriasAPI.map(c => c.nombre)];
+  const categorias = [
+    'Todos',
+    ...categoriasAPI.map((c: { nombre?: string }) => c.nombre).filter(Boolean),
+  ];
 
   // Auto-avance del carrusel
   React.useEffect(() => {
@@ -359,7 +369,7 @@ export function LandingPage({ onNavigateToLogin, onNavigateToRegister, onNavigat
   };
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen h-screen overflow-y-auto bg-background main-content-scroll">
       {/* Navbar */}
       <nav className="bg-primary text-white sticky top-0 z-40 shadow-lg flex-shrink-0">
         <div className="max-w-7xl mx-auto px-3 sm:px-4 md:px-6 lg:px-8">
@@ -499,7 +509,7 @@ export function LandingPage({ onNavigateToLogin, onNavigateToRegister, onNavigat
             className="fixed inset-0 bg-black/50 z-40"
             onClick={() => setIsSideMenuOpen(false)}
           />
-          <div className="fixed left-0 top-0 h-full w-64 sm:w-72 md:w-80 bg-primary text-white z-50 shadow-xl overflow-y-auto">
+          <div className="fixed left-0 top-0 h-full w-64 sm:w-72 md:w-80 bg-primary text-white z-50 shadow-xl overflow-y-auto sidebar-menu-scroll">
             <div className="p-6">
               <div className="flex items-center justify-between mb-8">
                 <div className="flex items-center gap-3">
@@ -727,7 +737,7 @@ export function LandingPage({ onNavigateToLogin, onNavigateToRegister, onNavigat
             className="fixed inset-0 bg-black/50 z-40"
             onClick={() => setIsCarritoOpen(false)}
           />
-          <div className="fixed right-0 top-0 h-full w-full sm:w-96 bg-white z-50 shadow-2xl overflow-y-auto">
+          <div className="fixed right-0 top-0 h-full w-full sm:w-96 bg-white z-50 shadow-2xl overflow-y-auto main-content-scroll">
             <div className="sticky top-0 bg-primary text-white p-6 shadow-md z-10">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
@@ -1148,7 +1158,7 @@ export function LandingPage({ onNavigateToLogin, onNavigateToRegister, onNavigat
             onClick={() => setShowCheckout(false)}
           />
           <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4">
-            <div className="bg-white rounded-xl sm:rounded-2xl shadow-2xl max-w-2xl w-full max-h-[95vh] sm:max-h-[90vh] overflow-y-auto">
+            <div className="bg-white rounded-xl sm:rounded-2xl shadow-2xl max-w-2xl w-full max-h-[95vh] sm:max-h-[90vh] overflow-y-auto main-content-scroll">
               <div className="sticky top-0 bg-primary text-white p-4 sm:p-6 rounded-t-xl sm:rounded-t-2xl flex-shrink-0">
                 <div className="flex items-center justify-between">
                   <h3 className="text-white text-base sm:text-lg md:text-xl">Finalizar Pedido</h3>
@@ -1345,7 +1355,7 @@ export function LandingPage({ onNavigateToLogin, onNavigateToRegister, onNavigat
                           })),
                         } as any);
 
-                        const pedidosActualizados = await api.pedidos.getAll();
+                        const pedidosActualizados = await api.pedidos.getAllWithDetails();
                         setPedidos(Array.isArray(pedidosActualizados) ? pedidosActualizados : []);
 
                         setAlertState({
@@ -1390,7 +1400,7 @@ export function LandingPage({ onNavigateToLogin, onNavigateToRegister, onNavigat
             className="fixed inset-0 bg-black/50 z-40"
             onClick={() => setShowMisPedidos(false)}
           />
-          <div className="fixed right-0 top-0 h-full w-full sm:w-[450px] md:w-[500px] bg-white z-50 shadow-2xl overflow-y-auto">
+          <div className="fixed right-0 top-0 h-full w-full sm:w-[450px] md:w-[500px] bg-white z-50 shadow-2xl overflow-y-auto main-content-scroll">
             <div className="sticky top-0 bg-primary text-white p-4 sm:p-6 shadow-md z-10 flex-shrink-0">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 sm:gap-3">
@@ -1437,7 +1447,7 @@ export function LandingPage({ onNavigateToLogin, onNavigateToRegister, onNavigat
                         <div>
                           <h4 className="text-sm mb-1">Pedido #{pedido.id}</h4>
                           <p className="text-xs text-muted-foreground">
-                            {new Date(pedido.fecha).toLocaleDateString('es-CO', {
+                            {new Date(pedido.fechaPedido || pedido.fecha || '').toLocaleDateString('es-CO', {
                               day: '2-digit',
                               month: 'long',
                               year: 'numeric',
@@ -1459,7 +1469,7 @@ export function LandingPage({ onNavigateToLogin, onNavigateToRegister, onNavigat
                         {(pedido.productos || []).map((item: any, idx: number) => (
                           <div key={`${pedido.id}-${idx}`} className="flex justify-between text-sm">
                             <span className="text-muted-foreground">
-                              {item.producto?.nombre || `Producto #${item.productoId || 'N/A'}`} x{item.cantidad || 0}
+                              {item.nombre || item.producto?.nombre || `Producto #${item.productoId || 'N/A'}`} x{item.cantidad || 0}
                             </span>
                             <span>
                               ${((item.producto?.precio || item.precio || 0) * (item.cantidad || 0)).toLocaleString('es-CO')}
@@ -1476,7 +1486,7 @@ export function LandingPage({ onNavigateToLogin, onNavigateToRegister, onNavigat
                         <div className="flex justify-between text-sm">
                           <span className="text-muted-foreground">Monto pagado</span>
                           <span className="text-primary">
-                            ${Number(pedido.montoPagado || pedido.total || 0).toLocaleString('es-CO')}
+                            ${Number(pedido.montoAbonado ?? pedido.montoPagado ?? pedido.total ?? 0).toLocaleString('es-CO')}
                           </span>
                         </div>
                         {Number(pedido.saldo || 0) > 0 && (

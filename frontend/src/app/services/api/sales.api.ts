@@ -64,7 +64,13 @@ export const salesApi = {
     getById: async (id: number) => mapPedidoDetail(await apiFetchData(`/api/pedidos/${id}`)),
     create: async (data: Partial<Pedido>) => {
       const numero = `PED-${Date.now()}`;
-      const env = await apiFetch<{ id: number }>('/api/pedidos', {
+      const productos = (data.productos || []).map((p) => ({
+        productoId: p.productoId,
+        cantidad: p.cantidad,
+        precio: p.precio,
+        precioUnitario: p.precio,
+      }));
+      await apiFetch('/api/pedidos', {
         method: 'POST',
         json: {
           numero_pedido: numero,
@@ -78,15 +84,15 @@ export const salesApi = {
           estado: 'Pendiente',
           metodo_pago: metodoPagoDb(String(data.metodoPago || 'efectivo')),
           esquema_abono: data.porcentajeAbono === 50 ? '50%' : '100%',
+          productos,
         },
       });
-      const pid = env.id!;
-      for (const p of data.productos || []) {
-        await apiFetch('/api/pedidos/producto', {
-          method: 'POST',
-          json: { pedidoId: pid, productoId: p.productoId, cantidad: p.cantidad, precioUnitario: p.precio },
-        });
-      }
+    },
+    /** Lista pedidos del cliente autenticado con líneas de detalle (nombres y cantidades). */
+    getAllWithDetails: async () => {
+      const rows = await apiFetchData<any[]>('/api/pedidos');
+      const list = Array.isArray(rows) ? rows : [];
+      return Promise.all(list.map((row) => mapPedidoDetail(apiFetchData(`/api/pedidos/${row.id}`))));
     },
     update: async (id: number, updates: Partial<Pedido>) => {
       await apiFetch(`/api/pedidos/${id}`, {

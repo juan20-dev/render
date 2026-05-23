@@ -24,13 +24,29 @@ const defaultCorsOrigins = isProduction
 
 const configuredCorsOrigins = parseCsv(process.env.CORS_ORIGINS);
 
+/** SSL para PostgreSQL: obligatorio en RDS; opcional en localhost. DB_SSL=true|false fuerza el valor. */
+const resolveDbSsl = (host) => {
+  const flag = String(process.env.DB_SSL || '').toLowerCase();
+  if (flag === 'false' || flag === '0' || flag === 'no') return false;
+  if (flag === 'true' || flag === '1' || flag === 'yes') {
+    return { rejectUnauthorized: false };
+  }
+  if (String(host || '').includes('rds.amazonaws.com')) {
+    return { rejectUnauthorized: false };
+  }
+  return false;
+};
+
+const dbHost = process.env.DB_HOST || 'localhost';
+
 const config = {
   db: {
-    host: process.env.DB_HOST ,
-    port: parseInt(process.env.DB_PORT),
-    user: process.env.DB_USER ,
-    password: process.env.DB_PASSWORD ,
+    host: dbHost,
+    port: parseInt(process.env.DB_PORT || '5432', 10),
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
     database: process.env.DB_DATABASE,
+    ssl: resolveDbSsl(dbHost),
   },
   server: {
     port: process.env.PORT || 3002,

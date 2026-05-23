@@ -22,14 +22,20 @@
 const fs = require('fs');
 const path = require('path');
 const { Pool } = require('pg');
-require('dotenv').config();
+const config = require('./config');
+
+const dbPassword =
+  typeof config.db.password === 'string'
+    ? config.db.password
+    : String(config.db.password || '');
 
 const dbConfig = {
-  host: process.env.DB_HOST || 'localhost',
-  port: process.env.DB_PORT || 5432,
-  user: process.env.DB_USER || 'postgres',
-  password: process.env.DB_PASSWORD || 'password',
-  database: process.env.DB_DATABASE || "grandma'sdb",
+  host: config.db.host || 'localhost',
+  port: config.db.port || 5432,
+  user: config.db.user || 'postgres',
+  password: dbPassword || 'password',
+  database: config.db.database || "grandma'sdb",
+  ssl: config.db.ssl,
 };
 
 const pool = new Pool(dbConfig);

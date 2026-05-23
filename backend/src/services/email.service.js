@@ -10,11 +10,21 @@ let cachedLogoDataUri = null;
 const hasSmtpConfig = () =>
   Boolean(config.mail.host && config.mail.user && config.mail.password);
 
-const LOGO_CANDIDATE_PATHS = [
-  path.join(__dirname, '../../assets/brand/logo.png'),
-  path.join(__dirname, '../../../frontend/public/favicon/android-chrome-192x192.png'),
-  path.join(__dirname, '../../../frontend/public/favicon/android-chrome-512x512.png'),
-];
+const LOGO_RELATIVE_PATH = path.join('assets', 'brand', 'logo.png');
+
+/** Rutas probadas en orden: env, raíz del app (Beanstalk /var/app/current), relativa al servicio. */
+const getLogoCandidatePaths = () => {
+  const fromEnv = process.env.MAIL_LOGO_PATH ? path.resolve(process.env.MAIL_LOGO_PATH) : null;
+  const appRoot = process.cwd();
+  const candidates = [
+    fromEnv,
+    path.join(appRoot, LOGO_RELATIVE_PATH),
+    path.join(__dirname, '..', '..', 'assets', 'brand', 'logo.png'),
+    path.join(__dirname, '..', '..', '..', 'frontend', 'public', 'favicon', 'android-chrome-192x192.png'),
+    path.join(__dirname, '..', '..', '..', 'frontend', 'public', 'favicon', 'apple-touch-icon.png'),
+  ].filter(Boolean);
+  return [...new Set(candidates.map((p) => path.normalize(p)))];
+};
 
 const buildFallbackLogoDataUri = () => {
   const svg =
@@ -27,21 +37,26 @@ const buildFallbackLogoDataUri = () => {
 
 const getLogoDataUri = () => {
   if (cachedLogoDataUri !== null) return cachedLogoDataUri;
-  for (const logoPath of LOGO_CANDIDATE_PATHS) {
+  const candidates = getLogoCandidatePaths();
+  for (const logoPath of candidates) {
     try {
-      if (fs.existsSync(logoPath)) {
-        const buf = fs.readFileSync(logoPath);
-        const ext = path.extname(logoPath).toLowerCase();
-        const mime =
-          ext === '.png' ? 'image/png' : ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' : 'image/png';
-        cachedLogoDataUri = `data:${mime};base64,${buf.toString('base64')}`;
-        return cachedLogoDataUri;
-      }
-    } catch (_e) {
-      /* noop */
+      if (!fs.existsSync(logoPath)) continue;
+      const buf = fs.readFileSync(logoPath);
+      if (!buf.length) continue;
+      const ext = path.extname(logoPath).toLowerCase();
+      const mime =
+        ext === '.png' ? 'image/png' : ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' : 'image/png';
+      cachedLogoDataUri = `data:${mime};base64,${buf.toString('base64')}`;
+      console.log(`[mail] Logo de correo cargado: ${logoPath} (${buf.length} bytes)`);
+      return cachedLogoDataUri;
+    } catch (err) {
+      console.warn(`[mail] No se pudo leer logo en ${logoPath}:`, err.message);
     }
   }
-  console.warn('[mail] Logo no encontrado en disco; usando marca SVG embebida en correos.');
+  console.warn(
+    '[mail] Logo no encontrado. Incluya assets/brand/logo.png en el ZIP de despliegue. Rutas probadas:',
+    candidates.join(' | ')
+  );
   cachedLogoDataUri = buildFallbackLogoDataUri();
   return cachedLogoDataUri;
 };

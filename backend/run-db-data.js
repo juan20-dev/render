@@ -16,6 +16,7 @@ async function main() {
     user: config.db.user,
     password,
     database,
+    ssl: config.db.ssl,
     connectionTimeoutMillis: 30000,
   });
 
