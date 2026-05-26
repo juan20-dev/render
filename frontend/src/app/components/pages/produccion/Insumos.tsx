@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { DataTable, Column, commonActions } from '../../DataTable';
 import { Modal } from '../../Modal';
 import { Button } from '../../Button';
+import { X } from 'lucide-react';
 import { api } from '../../../services/api';
 import { toast } from '../../AlertDialog';
 import type { Insumo } from '../../../services/types';
@@ -17,6 +18,7 @@ export function Insumos() {
   const [busqueda, setBusqueda] = useState('');
   const [filtroFecha, setFiltroFecha] = useState<string>('');
   const [filtroOperario, setFiltroOperario] = useState<string>('');
+  const [showInfoMessage, setShowInfoMessage] = useState(true);
 
   useEffect(() => {
     cargarDatos();
@@ -119,7 +121,7 @@ export function Insumos() {
               type="text"
               value={busqueda}
               onChange={(e) => setBusqueda(e.target.value)}
-              placeholder="Buscar... (mín. 2, máx. 50 caracteres)"
+              placeholder="Buscar ..."
               className="w-full px-4 py-2.5 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
               maxLength={50}
             />
@@ -158,12 +160,24 @@ export function Insumos() {
         </div>
       </div>
 
-      <div className="p-4 bg-accent/50 rounded-lg">
-        <p className="text-sm text-muted-foreground">
-          Solo se listan <strong>productos tipo insumo</strong> activos. El stock aumenta al marcar como recibidas las
-          compras a proveedor y disminuye al registrar <strong>entregas a productores</strong>.
-        </p>
-      </div>
+      {showInfoMessage ? (
+        <div className="rounded-lg bg-accent/50 p-4">
+          <div className="flex items-start justify-between gap-3">
+            <p className="text-sm text-muted-foreground">
+              Solo se listan <strong>productos tipo insumo</strong> activos. El stock aumenta al marcar como recibidas las
+              compras a proveedor y disminuye al registrar <strong>entregas a productores</strong>.
+            </p>
+            <button
+              type="button"
+              onClick={() => setShowInfoMessage(false)}
+              className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-white/70 hover:text-foreground"
+              aria-label="Cerrar mensaje informativo"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       <DataTable
         columns={columns}

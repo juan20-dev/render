@@ -70,10 +70,7 @@ module.exports = {
 
       const metodoNorm = normalizeMetodoPago(payload.metodo_pago);
       const metodo_pago = metodoNorm || 'Efectivo';
-      const numero_abono = `ABO-${Date.now()}`;
-
       const id = await models.Abonos.create({
-        numero_abono,
         pedido_id: pedidoId,
         cliente_id: clienteId,
         monto,

@@ -109,6 +109,49 @@ const createInsumoBody = z
 
 const updateInsumoBody = createInsumoBody.partial().passthrough();
 
+const productoInsumoBodyBase = z
+  .object({
+    producto_id: z.coerce.number().int().positive().optional(),
+    insumo_id: z.coerce.number().int().positive().optional(),
+    cantidad_requerida: z.coerce.number().positive().optional(),
+    unidad: z.string().trim().min(1).optional(),
+    notas: z.string().nullable().optional(),
+  })
+  .passthrough();
+
+const createProductoInsumoBody = productoInsumoBodyBase.superRefine((data, ctx) => {
+  if (!data.producto_id) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['producto_id'],
+      message: 'producto_id es obligatorio',
+    });
+  }
+  if (!data.insumo_id) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['insumo_id'],
+      message: 'insumo_id es obligatorio',
+    });
+  }
+  if (!data.cantidad_requerida) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['cantidad_requerida'],
+      message: 'cantidad_requerida es obligatoria',
+    });
+  }
+  if (!data.unidad || !String(data.unidad).trim()) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['unidad'],
+      message: 'unidad es obligatoria',
+    });
+  }
+});
+
+const updateProductoInsumoBody = productoInsumoBodyBase;
+
 const entregaInsumoBaseBody = z
   .object({
     numero_entrega: z.string().trim().min(1).optional(),
@@ -158,6 +201,8 @@ module.exports = {
   createInsumoBody,
   updateInsumoBody,
   updateInsumoEstadoBody: motivoEstadoBody,
+  createProductoInsumoBody,
+  updateProductoInsumoBody,
   createEntregaInsumoBody,
   updateEntregaInsumoBody,
 };

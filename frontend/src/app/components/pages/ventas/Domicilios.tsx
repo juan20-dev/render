@@ -5,6 +5,7 @@ import { Form, FormField, FormActions } from '../../Form';
 import { Button } from '../../Button';
 import { Plus } from 'lucide-react';
 import { api } from '../../../services/api';
+import { formatEntityCode } from '../../../services/mappers';
 import { toast } from '../../AlertDialog';
 import type { Domicilio, Pedido, Cliente, Usuario } from '../../../services/types';
 import { MotivoModal } from '../../MotivoModal';
@@ -62,7 +63,7 @@ export function Domicilios() {
           repartidorNombre: user ? `${user.nombre} ${user.apellido}`.trim() : 'Asignado a mí',
           pedidoNumero:
             domicilio.pedidoNumero ||
-            (domicilio.pedidoId ? `#${String(domicilio.pedidoId).padStart(4, '0')}` : 'Desconocido'),
+            (domicilio.pedidoId ? formatEntityCode('P', domicilio.pedidoId) : 'Desconocido'),
         }));
         setDomicilios(domiciliosConInfo);
         setPedidos([]);
@@ -113,7 +114,7 @@ export function Domicilios() {
           repartidorNombre: repartidor ? `${repartidor.nombre} ${repartidor.apellido}` : 'Desconocido',
           pedidoNumero:
             domicilio.pedidoNumero ||
-            (pedido ? `#${String(pedido.id).padStart(4, '0')}` : 'Desconocido'),
+            (pedido ? formatEntityCode('P', pedido.id) : 'Desconocido'),
         };
       });
 
@@ -230,6 +231,11 @@ export function Domicilios() {
   };
 
   const columns: Column[] = [
+    {
+      key: 'id',
+      label: 'ID Domicilio',
+      render: (value: number) => formatEntityCode('D', value)
+    },
     {
       key: 'pedidoNumero',
       label: 'ID Pedido'
@@ -476,7 +482,7 @@ export function Domicilios() {
               type="text"
               value={busqueda}
               onChange={(e) => setBusqueda(e.target.value)}
-              placeholder="Buscar... (mín. 2, máx. 50 caracteres)"
+              placeholder="Buscar ..."
               className="w-full px-4 py-2.5 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
               maxLength={50}
             />
@@ -522,13 +528,6 @@ export function Domicilios() {
         </div>
       </div>
 
-      <div className="p-4 bg-green-50 rounded-lg border border-green-200">
-        <p className="text-sm text-green-700">
-          <strong>Sincronización automática:</strong> Cuando un domicilio se marca como "Completado",
-          se actualizan automáticamente el pedido, venta y abono relacionados a estado completado.
-        </p>
-      </div>
-
       <DataTable
         columns={columns}
         data={domiciliosFiltrados}
@@ -566,7 +565,7 @@ export function Domicilios() {
             <>
               <p>
                 <strong>Domicilio:</strong> #
-                {String(domicilioPending.domicilio.id).padStart(4, '0')}
+                {formatEntityCode('D', domicilioPending.domicilio.id)}
               </p>
               <p className="text-muted-foreground">
                 Estado actual: {domicilioPending.domicilio.estado}
@@ -613,7 +612,7 @@ export function Domicilios() {
             {editingDomicilio ? (
               <div className="p-3 rounded-lg bg-accent text-sm">
                 <p>
-                  <strong>Domicilio:</strong> #{String(editingDomicilio.id).padStart(4, '0')}
+                  <strong>Domicilio:</strong> {formatEntityCode('D', editingDomicilio.id)}
                 </p>
                 <p>
                   <strong>Pedido asignado:</strong> {editingDomicilio.pedidoNumero}
@@ -641,7 +640,7 @@ export function Domicilios() {
                     const cliente = clientes.find(c => c.id === p.clienteId);
                     return {
                       value: String(p.id),
-                      label: `Pedido #${String(p.id).padStart(4, '0')} - ${cliente ? `${cliente.nombre} ${cliente.apellido}` : 'Desconocido'} - Entrega: ${p.fechaEntrega}`
+                      label: `Pedido ${formatEntityCode('P', p.id)} - ${cliente ? `${cliente.nombre} ${cliente.apellido}` : 'Desconocido'} - Entrega: ${p.fechaEntrega}`
                     };
                   })
                 ]}
@@ -742,7 +741,7 @@ export function Domicilios() {
           <div className="space-y-6">
             <div className="flex items-center justify-between p-4 bg-accent rounded-lg">
               <div>
-                <h3 className="text-lg">Domicilio #{String(selectedDomicilio.id).padStart(4, '0')}</h3>
+                <h3 className="text-lg">Domicilio {formatEntityCode('D', selectedDomicilio.id)}</h3>
                 <p className="text-sm text-muted-foreground">{selectedDomicilio.clienteNombre}</p>
               </div>
               <span className={`px-4 py-2 rounded-full text-sm ${

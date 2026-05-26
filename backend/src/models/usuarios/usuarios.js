@@ -29,9 +29,11 @@ const {
   isLoginBlocked,
   getLoginBlockInfo,
   revokeUserSession,
+  revokeAllUserSessions,
   isUserSessionActive,
   touchUserSession,
   getActiveUserSessionCount,
+  getLatestUserStatusReason,
   getLinkedClienteForUsuario,
   getUserDeletionBlockers,
   getUserDeletionImpact,
@@ -275,11 +277,13 @@ const Usuarios = {
     await revokeUserSession(jti);
     return true;
   },
+  revokeAllSessions: async (usuarioId) => revokeAllUserSessions(usuarioId),
   isSessionActive: async (usuarioId, jti) => isUserSessionActive(usuarioId, jti),
   touchSession: async (jti) => touchUserSession(jti),
   getActiveSessionCount: async (id) => {
     return getActiveUserSessionCount(id);
   },
+  getLatestStatusReason: async (usuarioId, estado = null) => getLatestUserStatusReason(usuarioId, estado),
   getActivityById: async (id, limit = 80) => {
     await ensureUserAuditTable();
     await ensureUserSessionTable();
@@ -375,17 +379,15 @@ const Usuarios = {
 
     const forceRequested = data.force === true || data.force === 'true';
     let activeSessions = 0;
+    let revokedSessions = 0;
 
     if (nextStatus === 'Inactivo') {
       ensureMotivoEstado(data?.motivo);
       activeSessions = await getActiveUserSessionCount(id);
-      if (activeSessions > 0) {
-        const error = new Error('No se puede desactivar un usuario con sesion activa');
-        error.statusCode = 409;
-        error.details = { activeSessions, forceRequested };
-        throw error;
-      }
       await checkInactivacionDependencias('usuario', id);
+      if (activeSessions > 0) {
+        revokedSessions = await revokeAllUserSessions(id);
+      }
     } else {
       ensureMotivoEstado(data?.motivo);
     }
@@ -409,6 +411,7 @@ const Usuarios = {
         statusChange: true,
         forceRequested,
         activeSessions,
+        revokedSessions,
       },
     });
 

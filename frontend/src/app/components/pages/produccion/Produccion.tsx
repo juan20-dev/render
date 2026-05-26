@@ -732,7 +732,7 @@ export function Produccion() {
               type="text"
               value={busqueda}
               onChange={(e) => setBusqueda(e.target.value)}
-              placeholder="Buscar... (mín. 2, máx. 50 caracteres)"
+              placeholder="Buscar ..."
               className="w-full px-4 py-2.5 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
               maxLength={50}
             />
@@ -937,7 +937,7 @@ export function Produccion() {
                         className="flex items-center justify-between rounded-md border border-border bg-muted/30 px-3 py-2"
                       >
                         <span className="font-medium">{p.nombre}</span>
-                        <span className="tabular-nums text-muted-foreground">{c} u.</span>
+                        <span className="tabular-nums text-muted-foreground">{c} Unidades</span>
                       </li>
                     );
                   })}
@@ -1231,7 +1231,7 @@ export function Produccion() {
                       className="flex items-center justify-between border-b border-border pb-2 last:border-0 last:pb-0"
                     >
                       <span className="font-medium">{line.productoNombre || `Producto #${line.productoId}`}</span>
-                      <span className="tabular-nums text-muted-foreground">{line.cantidad} u.</span>
+                      <span className="tabular-nums text-muted-foreground">{line.cantidad} Unidades</span>
                     </li>
                   ))}
                 </ul>

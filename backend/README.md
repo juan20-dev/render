@@ -64,7 +64,7 @@ npm run setup-db
 #### Opción B: Importar manualmente en PostgreSQL
 
 ```bash
-psql -U postgres -d grandmas_liquors -f backend/db.pgsql
+psql -h localhost -p 5432 -U postgres -d grandmasliquorsdb -f backend/db.pgsql
 ```
 
 ### 3. Configurar Variables de Entorno
@@ -72,12 +72,12 @@ psql -U postgres -d grandmas_liquors -f backend/db.pgsql
 Actualiza el archivo `.env` con tus credenciales:
 
 ```env
-# Configuración de Base de Datos (PostgreSQL)
+# Configuración de Base de Datos (PostgreSQL local)
 DB_HOST=localhost
 DB_PORT=5432
 DB_USER=postgres
 DB_PASSWORD=your_password
-DB_DATABASE=grandmas_liquors
+DB_DATABASE=grandmasliquorsdb
 
 # Configuración del Servidor
 PORT=3002
@@ -468,12 +468,12 @@ DELETE /api/productos/:id       - Eliminar
 ## Variables de Entorno
 
 ```env
-# Base de Datos (PostgreSQL)
-DB_HOST          # Host del servidor PostgreSQL (default: localhost)
+# Base de Datos (PostgreSQL / AWS RDS)
+DB_HOST          # Host del servidor PostgreSQL (ej: localhost)
 DB_PORT          # Puerto PostgreSQL (default: 5432)
 DB_USER          # Usuario PostgreSQL (default: postgres)
 DB_PASSWORD      # Contraseña PostgreSQL
-DB_DATABASE      # Nombre de la base de datos (default: grandmas_liquors)
+DB_DATABASE      # Nombre de la base de datos (ej: grandmasliquorsdb)
 
 # Servidor
 PORT             # Puerto del servidor (default: 3002)

@@ -54,6 +54,10 @@ const mapUserForResponse = (usuario, roleName, clienteId, permissions = []) => (
   email: usuario.email,
   nombre: usuario.nombre,
   apellido: usuario.apellido,
+  tipo_documento: usuario.tipo_documento || null,
+  documento: usuario.documento || null,
+  telefono: usuario.telefono || null,
+  direccion: usuario.direccion || null,
   rol: roleName,
   rol_id: usuario.rol_id,
   cliente_id: clienteId,
@@ -94,6 +98,36 @@ const headerValueToString = (value) => {
 };
 
 module.exports = {
+  checkRegisterClienteAvailability: async (req, res) => {
+    try {
+      const documento = String(req.query?.documento || '').replace(/\D/g, '');
+      const email = getLoginIdentifier(req.query?.email);
+      const data = {
+        documentoExists: false,
+        emailExists: false,
+      };
+
+      if (documento) {
+        const [usuarioByDocumento, clienteByDocumento] = await Promise.all([
+          models.Usuarios.getByDocumento(documento),
+          models.Clientes.getByDocumento(documento),
+        ]);
+        data.documentoExists = Boolean(usuarioByDocumento || clienteByDocumento);
+      }
+
+      if (email) {
+        const [usuarioByEmail, clienteByEmail] = await Promise.all([
+          models.Usuarios.getByEmailLogin(email),
+          models.Clientes.getByEmail(email),
+        ]);
+        data.emailExists = Boolean(usuarioByEmail || clienteByEmail);
+      }
+
+      return res.json({ success: true, data });
+    } catch (error) {
+      return res.status(500).json({ success: false, message: error.message });
+    }
+  },
   login: async (req, res) => {
     try {
       const { email, password, rememberMe } = req.body;
@@ -105,6 +139,15 @@ module.exports = {
       const identifier = getLoginIdentifier(email);
       const MAX_INTENTOS = models.Usuarios.MAX_LOGIN_ATTEMPTS || 6;
       const BLOQUEO_MIN = Math.round((models.Usuarios.LOGIN_BLOCK_DURATION_MS || 5 * 60 * 1000) / 60000);
+
+      const usuario = await models.Usuarios.getByEmailLogin(identifier);
+      if (!usuario) {
+        return res.status(401).json({
+          success: false,
+          code: 'INVALID_CREDENTIALS',
+          message: 'No encontramos un usuario activo con esas credenciales. Verifica el correo y la contraseña o regístrate en la aplicación.',
+        });
+      }
 
       const blockInfo = await models.Usuarios.getLoginBlockInfo(identifier);
       if (blockInfo?.blocked) {
@@ -123,29 +166,15 @@ module.exports = {
         });
       }
 
-      const usuario = await models.Usuarios.getByEmailLogin(identifier);
-      if (!usuario) {
-        const failure = await models.Usuarios.registerLoginFailure(identifier);
-        const intentosUsados = Number(failure?.attempts || 0);
-        const intentosRestantes = Math.max(0, MAX_INTENTOS - intentosUsados);
-        if (intentosRestantes === 0) {
-          return res.status(429).json({
-            success: false,
-            code: 'LOGIN_BLOCKED',
-            message: `Demasiados intentos de inicio de sesión. Tu acceso ha sido bloqueado temporalmente; vuelve a intentarlo en ${BLOQUEO_MIN} minutos.`,
-            details: { blocked: true, remainingMinutes: BLOQUEO_MIN, maxAttempts: MAX_INTENTOS, blockMinutes: BLOQUEO_MIN },
-          });
-        }
-        return res.status(401).json({
-          success: false,
-          code: 'INVALID_CREDENTIALS',
-          message: `Credenciales incorrectas. Te quedan ${intentosRestantes} intento${intentosRestantes === 1 ? '' : 's'} antes de bloquear el acceso por ${BLOQUEO_MIN} minutos.`,
-          details: { attemptsUsed: intentosUsados, attemptsRemaining: intentosRestantes, maxAttempts: MAX_INTENTOS },
-        });
-      }
-
       if (usuario.estado !== 'Activo') {
-        return res.status(403).json({ success: false, message: 'La cuenta se encuentra inactiva y no puede iniciar sesion' });
+        const latestReason = await models.Usuarios.getLatestStatusReason(usuario.id, 'Inactivo').catch(() => null);
+        return res.status(403).json({
+          success: false,
+          code: 'INACTIVE_ACCOUNT',
+          message: latestReason
+            ? `Tu cuenta está inactiva. Motivo: ${latestReason}. Comunícate con los administradores de la aplicación.`
+            : 'Tu cuenta está inactiva. Comunícate con los administradores de la aplicación.',
+        });
       }
 
       const isValid = await bcrypt.compare(password, usuario.password_hash || '');
@@ -164,7 +193,7 @@ module.exports = {
         return res.status(401).json({
           success: false,
           code: 'INVALID_CREDENTIALS',
-          message: `Credenciales incorrectas. Te quedan ${intentosRestantes} intento${intentosRestantes === 1 ? '' : 's'} antes de bloquear el acceso por ${BLOQUEO_MIN} minutos.`,
+          message: `No encontramos un usuario activo con esas credenciales. Verifica el correo y la contraseña o regístrate en la aplicación. Te quedan ${intentosRestantes} intento${intentosRestantes === 1 ? '' : 's'} antes de bloquear el acceso por ${BLOQUEO_MIN} minutos.`,
           details: { attemptsUsed: intentosUsados, attemptsRemaining: intentosRestantes, maxAttempts: MAX_INTENTOS },
         });
       }
@@ -243,7 +272,15 @@ module.exports = {
 
       const usuario = await models.Usuarios.getById(userId);
       if (!usuario || usuario.estado !== 'Activo') {
-        return res.status(401).json({ success: false, message: 'Sesion invalida' });
+        const latestReason = usuario
+          ? await models.Usuarios.getLatestStatusReason(userId, 'Inactivo').catch(() => null)
+          : null;
+        return res.status(401).json({
+          success: false,
+          message: latestReason
+            ? `Tu cuenta fue desactivada y tu sesión se cerró. Motivo: ${latestReason}`
+            : 'Sesion invalida',
+        });
       }
 
       const { roleName, clienteId, permissions } = await resolveUserRoleAndClienteId(usuario);

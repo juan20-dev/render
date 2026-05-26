@@ -6,6 +6,7 @@
  * lo importa. La fuente activa es este archivo modular.
  */
 const pool = require('../../../db');
+const { reserveEntityIdAndCode } = require('../shared/auditoria');
 
 let abonosSchemaEnsured = false;
 let abonosSchemaPromise = null;
@@ -66,10 +67,12 @@ const Abonos = {
   },
   create: async (data) => {
     await ensureAbonosSchema();
+    const reserved = await reserveEntityIdAndCode(pool, 'public.abonos', 'A');
     const result = await pool.query(
-      'INSERT INTO abonos (numero_abono, pedido_id, cliente_id, monto, fecha, metodo_pago, estado, detalle, porcentaje_abonado) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id',
+      'INSERT INTO abonos (id, numero_abono, pedido_id, cliente_id, monto, fecha, metodo_pago, estado, detalle, porcentaje_abonado) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id',
       [
-        data.numero_abono,
+        reserved.id,
+        reserved.code,
         data.pedido_id,
         data.cliente_id,
         data.monto,
@@ -90,7 +93,8 @@ const Abonos = {
          fecha = COALESCE($2, fecha),
          metodo_pago = COALESCE($3, metodo_pago),
          estado = COALESCE($4, estado),
-         detalle = COALESCE($5, detalle)
+         detalle = COALESCE($5, detalle),
+         updated_at = CURRENT_TIMESTAMP
        WHERE id = $6`,
       [
         data.monto !== undefined ? data.monto : null,
@@ -105,7 +109,7 @@ const Abonos = {
   },
   updateEstado: async (id, estado) => {
     await ensureAbonosSchema();
-    await pool.query('UPDATE abonos SET estado = $1 WHERE id = $2', [estado, id]);
+    await pool.query('UPDATE abonos SET estado = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', [estado, id]);
     return true;
   },
   /**
@@ -120,7 +124,8 @@ const Abonos = {
          monto = COALESCE($1, monto),
          detalle = COALESCE($2, detalle),
          estado = COALESCE($3, estado),
-         porcentaje_abonado = COALESCE($4, porcentaje_abonado)
+         porcentaje_abonado = COALESCE($4, porcentaje_abonado),
+         updated_at = CURRENT_TIMESTAMP
        WHERE id = $5`,
       [
         monto !== undefined ? monto : null,

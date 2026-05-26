@@ -47,27 +47,7 @@ export function Proveedores() {
   const [isSavingProveedor, setIsSavingProveedor] = useState(false);
 
   const sanitizeNitInput = (value: string) => {
-    let digits = 0;
-    let formatted = '';
-    let lastWasSeparator = false;
-    const allowedSeparators = new Set([':', '-', '/', '*', ',']);
-
-    for (const char of String(value || '')) {
-      if (/\d/.test(char)) {
-        if (digits >= 12) continue;
-        formatted += char;
-        digits += 1;
-        lastWasSeparator = false;
-        continue;
-      }
-
-      if (allowedSeparators.has(char) && formatted && !lastWasSeparator) {
-        formatted += char;
-        lastWasSeparator = true;
-      }
-    }
-
-    return formatted.replace(/[:/*,-]+$/g, '');
+    return String(value || '').replace(/\D/g, '').slice(0, 15);
   };
 
   useEffect(() => {
@@ -107,7 +87,7 @@ export function Proveedores() {
   const nitDigits = String(formData.nit || '').replace(/\D/g, '');
   const nitDuplicadoEnLista = useMemo(() => {
     if (selectedProveedor) return '';
-    if (nitDigits.length < 6 || nitDigits.length > 12) return '';
+    if (nitDigits.length < 6 || nitDigits.length > 15) return '';
     const dup = proveedores.some((p) => String(p.nit || '').replace(/\D/g, '') === nitDigits);
     return dup
       ? 'Este NIT o documento ya está en la lista de proveedores. Use otro número o edite el existente.'
@@ -369,7 +349,7 @@ export function Proveedores() {
 
     if (nitDigits.length < 6 || nitDigits.length > 12) {
       toast.error('NIT o documento inválido', {
-        description: 'El NIT/Documento debe tener entre 6 y 12 dígitos.',
+        description: 'El NIT/Documento debe tener entre 6 y 15 dígitos.',
       });
       return;
     }
@@ -461,7 +441,7 @@ export function Proveedores() {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Buscar... (mín. 2, máx. 50 caracteres)"
+              placeholder="Buscar ..."
               className="w-full px-4 py-2.5 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
               maxLength={50}
             />
@@ -603,11 +583,11 @@ export function Proveedores() {
               if (selectedProveedor) return;
               setFormData({ ...formData, nit: sanitizeNitInput(value as string) });
             }}
-            placeholder="Ej: 900-123456-7 / 900:123456*7"
+            placeholder="Ej: 9001234567"
             required
             disabled={!!selectedProveedor}
             error={nitDuplicadoEnLista || undefined}
-            helperText="Puede incluir :, -, /, * y coma. Se validan entre 6 y 12 dígitos."
+            inputDigitRule="documento6to15"
           />
 
           {selectedProveedor && (

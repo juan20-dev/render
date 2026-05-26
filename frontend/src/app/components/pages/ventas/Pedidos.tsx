@@ -5,6 +5,7 @@ import { Button } from '../../Button';
 import { Form, FormField, FormActions } from '../../Form';
 import { Plus, Minus, Trash2, Search, Package, ShoppingCart } from 'lucide-react';
 import { api } from '../../../services/api';
+import { formatEntityCode } from '../../../services/mappers';
 import { toast } from '../../AlertDialog';
 import type { Pedido, Cliente, Producto, PedidoProducto, OrdenProduccion } from '../../../services/types';
 import { MotivoModal } from '../../MotivoModal';
@@ -216,7 +217,7 @@ export function Pedidos() {
     {
       key: 'id',
       label: 'ID Pedido',
-      render: (value: number) => `#${String(value).padStart(4, '0')}`
+      render: (value: number) => formatEntityCode('P', value)
     },
     {
       key: 'clienteNombre',
@@ -364,7 +365,7 @@ export function Pedidos() {
   const buildPedidoPdf = (pedido: PedidoView) => {
     const cliente = clientes.find((c) => c.id === pedido.clienteId);
     const opened = openPrintablePdf({
-      title: `Pedido #${String(pedido.id).padStart(4, '0')}`,
+      title: `Pedido ${formatEntityCode('P', pedido.id)}`,
       subtitle: `Generado el ${new Date().toLocaleString('es-CO')}`,
       sections: [
         {
@@ -651,7 +652,7 @@ export function Pedidos() {
               type="text"
               value={busqueda}
               onChange={(e) => setBusqueda(e.target.value)}
-              placeholder="Buscar... (mín. 2, máx. 50 caracteres)"
+              placeholder="Buscar ..."
               className="w-full px-4 py-2.5 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
               maxLength={50}
             />
@@ -727,7 +728,7 @@ export function Pedidos() {
             <>
               <p>
                 <strong>Pedido:</strong> #
-                {String(pedidoPending.pedido.id).padStart(4, '0')}
+                {formatEntityCode('P', pedidoPending.pedido.id)}
               </p>
               <p className="text-muted-foreground">
                 Estado actual: {pedidoPending.pedido.estado}
@@ -1058,7 +1059,7 @@ export function Pedidos() {
           <div className="space-y-6">
             <div className="flex items-center justify-between p-4 bg-accent rounded-lg">
               <div>
-                <h3 className="text-lg">Pedido #{String(selectedPedido.id).padStart(4, '0')}</h3>
+                <h3 className="text-lg">Pedido {formatEntityCode('P', selectedPedido.id)}</h3>
                 <p className="text-sm text-muted-foreground">{selectedPedido.clienteNombre}</p>
               </div>
               <span className={`px-4 py-2 rounded-full text-sm ${

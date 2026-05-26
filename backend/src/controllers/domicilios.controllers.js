@@ -36,8 +36,6 @@ const throwIfModelError = (error) => {
 
 const normalizeEstado = (value) => String(value || '').trim().toLowerCase();
 
-const buildVentaNumber = () => `VEN-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-
 const ensureVentaForDeliveredDomicilio = async (domicilioId) => {
   try {
     const domicilio = await models.Domicilios.getById(domicilioId);
@@ -110,9 +108,7 @@ const ensureVentaForDeliveredDomicilio = async (domicilioId) => {
         }
       } else if (totalPedido > 0 && lista.length === 0) {
         const fechaHoy = new Date().toISOString().split('T')[0];
-        const numero_abono = `ABO-${Date.now()}`;
         await models.Abonos.create({
-          numero_abono,
           pedido_id: pedido.id,
           cliente_id: pedido.cliente_id,
           monto: Math.round(totalPedido),
@@ -152,7 +148,6 @@ const ensureVentaForDeliveredDomicilio = async (domicilioId) => {
 
     // Crear venta por pedido y marcarla como Completada
     const ventaId = await models.Ventas.create({
-      numero_venta: buildVentaNumber(),
       tipo: 'Por Pedido',
       cliente_id: pedido.cliente_id,
       pedido_id: pedido.id,
@@ -285,12 +280,6 @@ exports.create = asyncHandler(async (req, res) => {
         fecha = new Date().toISOString().split('T')[0];
       }
 
-      const numeroRaw =
-        (typeof b.numero_domicilio === 'string' && b.numero_domicilio.trim()) ||
-        (typeof b.numeroDomicilio === 'string' && b.numeroDomicilio.trim()) ||
-        `DOM-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
-      const numero = String(numeroRaw).slice(0, 50);
-
       let repartidorNombre =
         b.repartidor !== undefined && b.repartidor !== null && String(b.repartidor).trim() !== ''
           ? String(b.repartidor).trim()
@@ -308,7 +297,6 @@ exports.create = asyncHandler(async (req, res) => {
       if (horaVal === '' || horaVal === undefined) horaVal = null;
 
       const payload = {
-        numero_domicilio: numero,
         pedido_id,
         cliente_id,
         direccion,

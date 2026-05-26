@@ -35,9 +35,9 @@ const uploadProfilePhotoHandler = (req, res, next) => {
 router.get('/', authorizePermissions('Ver Clientes'), denyRoles(...OPERATIONAL_DENY_ROLES), controller.getAll);
 router.get('/documento/:documento', authorizePermissions('Ver Clientes'), denyRoles(...OPERATIONAL_DENY_ROLES), controller.getByDocumento);
 router.get('/email/:email', authorizePermissions('Ver Clientes'), denyRoles(...OPERATIONAL_DENY_ROLES), controller.getByEmail);
-router.get('/usuario/:usuarioId', authorizePermissions('Ver Clientes'), controller.getByUsuarioId);
-router.post('/perfil/foto', uploadProfilePhotoHandler, authorizePermissions('Editar Clientes'), controller.uploadProfilePhoto);
-router.get('/:id', authorizePermissions('Ver Clientes'), validate(idParam, 'params'), controller.getById);
+router.get('/usuario/:usuarioId', authorizePermissions('Ver Clientes', 'Cliente'), controller.getByUsuarioId);
+router.post('/perfil/foto', uploadProfilePhotoHandler, authorizePermissions('Editar Clientes', 'Cliente'), controller.uploadProfilePhoto);
+router.get('/:id', authorizePermissions('Ver Clientes', 'Cliente'), validate(idParam, 'params'), controller.getById);
 router.post(
   '/',
   simpleRateLimit(1, 3000, 'create-cliente'),
@@ -46,7 +46,7 @@ router.post(
   validate(createClienteBody),
   controller.create
 );
-router.put('/:id', authorizePermissions('Editar Clientes'), validate(idParam, 'params'), validate(updateClienteBody), controller.update);
+router.put('/:id', authorizePermissions('Editar Clientes', 'Cliente'), validate(idParam, 'params'), validate(updateClienteBody), controller.update);
 router.put('/:id/estado', authorizePermissions('Editar Clientes'), denyRoles(...OPERATIONAL_DENY_ROLES), validate(idParam, 'params'), validate(updateClienteEstadoBody), controller.updateStatus);
 router.patch('/:id/estado', authorizePermissions('Editar Clientes'), denyRoles(...OPERATIONAL_DENY_ROLES), validate(idParam, 'params'), validate(updateClienteEstadoBody), controller.updateStatus);
 router.delete('/:id', authorizePermissions('Eliminar Clientes'), denyRoles(...OPERATIONAL_DENY_ROLES), validate(idParam, 'params'), controller.delete);

@@ -5,6 +5,7 @@ import { Form, FormField, FormActions } from '../../Form';
 import { Button } from '../../Button';
 import { Plus, Eye, Trash2, Package, Search, ShoppingCart } from 'lucide-react';
 import { api } from '../../../services/api';
+import { formatEntityCode } from '../../../services/mappers';
 import type { Compra, Producto, Proveedor, CompraProducto } from '../../../services/types';
 import { toast } from '../../AlertDialog';
 import { AlertDialog } from '../../AlertDialog';
@@ -151,7 +152,7 @@ export function Compras() {
     {
       key: 'id',
       label: 'ID Compra',
-      render: (id: number) => `#${id}`
+      render: (id: number) => formatEntityCode('C', id)
     },
     {
       key: 'proveedorId',
@@ -313,13 +314,13 @@ export function Compras() {
   const handleVerPdf = (compra: Compra) => {
     const proveedor = proveedores.find((p) => p.id === compra.proveedorId);
     const opened = openPrintablePdf({
-      title: `Compra #${compra.id}`,
+      title: `Compra ${formatEntityCode('C', compra.id)}`,
       subtitle: `Generado el ${new Date().toLocaleString('es-CO')}`,
       sections: [
         {
           title: 'Datos generales',
           rows: [
-            { label: 'ID compra', value: `#${compra.id}` },
+            { label: 'ID compra', value: formatEntityCode('C', compra.id) },
             { label: 'Proveedor', value: proveedor?.nombreRazonSocial || `ID ${compra.proveedorId}` },
             ...(proveedor?.nit ? [{ label: 'NIT/Documento proveedor', value: proveedor.nit }] : []),
             { label: 'Fecha de compra', value: new Date(compra.fecha).toLocaleString('es-CO') },
@@ -537,7 +538,7 @@ export function Compras() {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Buscar... (mín. 2, máx. 50 caracteres)"
+              placeholder="Buscar ..."
               className="w-full px-4 py-2.5 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
               maxLength={50}
             />
@@ -849,7 +850,7 @@ export function Compras() {
           setIsDetailModalOpen(false);
           setSelectedCompra(null);
         }}
-        title={`Detalle de Compra #${selectedCompra?.id}`}
+        title={`Detalle de Compra ${formatEntityCode('C', selectedCompra?.id)}`}
         size="lg"
       >
         {selectedCompra && (
@@ -957,7 +958,7 @@ export function Compras() {
       >
         <div className="space-y-4">
           <p className="text-sm text-muted-foreground">
-            Cancelación de la compra <strong>#{selectedCompra?.id}</strong>. Indique el motivo.
+            Cancelación de la compra <strong>{formatEntityCode('C', selectedCompra?.id)}</strong>. Indique el motivo.
           </p>
 
           <FormField

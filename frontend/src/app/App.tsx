@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router';
-import { Toaster } from './components/AlertDialog';
+import { Toaster, toast } from './components/AlertDialog';
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
 import { AuthProvider, useAuth } from './components/AuthContext';
@@ -26,7 +26,6 @@ import { Abonos } from './components/pages/ventas/Abonos';
 import { Pedidos } from './components/pages/ventas/Pedidos';
 import { Domicilios } from './components/pages/ventas/Domicilios';
 import { SessionIdleWatcher } from './components/SessionIdleWatcher';
-import { toast } from 'sonner';
 
 const pageTitles: Record<string, string> = {
   '/dashboard': 'Dashboard',
@@ -83,6 +82,7 @@ function StaffLayout({ onLogout }: { onLogout: () => void | Promise<void> }) {
       <div className="flex-1 flex flex-col min-h-screen">
         <Header
           title={pageTitle}
+          currentPath={location.pathname}
           userName={`${user.nombre} ${user.apellido}`}
           userRole={user.rol}
           userData={user}
@@ -129,6 +129,7 @@ function AppContent() {
     await logout();
     setShowAuth('landing');
     navigate('/', { replace: true });
+    toast.success('Sesión cerrada exitosamente');
   };
 
   useEffect(() => {

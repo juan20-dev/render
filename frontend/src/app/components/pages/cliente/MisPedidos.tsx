@@ -4,6 +4,7 @@ import { Modal } from '../../Modal';
 import { Button } from '../../Button';
 import { Eye, Package } from 'lucide-react';
 import { api } from '../../../services/api';
+import { formatEntityCode } from '../../../services/mappers';
 
 type PedidoView = {
   id: string;
@@ -40,7 +41,7 @@ export function MisPedidos() {
             const dom = (detalle as { domicilio?: { estado?: string } } | null)?.domicilio;
             const domEstado = dom?.estado ? String(dom.estado) : null;
             return {
-              id: `PED-${p.id}`,
+              id: formatEntityCode('P', p.id),
               fecha: p.fechaPedido,
               productos: productsText || `${(p.productos || []).length} productos`,
               total: Number(p.total || 0),
@@ -137,7 +138,7 @@ export function MisPedidos() {
           },
         ]}
         onSearch={() => undefined}
-        searchPlaceholder="Buscar pedidos..."
+        searchPlaceholder="Buscar ..."
       />
 
       <Modal

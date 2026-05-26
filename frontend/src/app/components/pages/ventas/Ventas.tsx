@@ -5,6 +5,7 @@ import { Form, FormField, FormActions, FieldError } from '../../Form';
 import { Button } from '../../Button';
 import { Plus, Trash2, Minus, Search, ShoppingCart, Package } from 'lucide-react';
 import { api } from '../../../services/api';
+import { formatEntityCode } from '../../../services/mappers';
 import { toast } from '../../AlertDialog';
 import type { Venta, Cliente, Producto, Pedido, PedidoProducto } from '../../../services/types';
 import { AlertDialog } from '../../AlertDialog';
@@ -121,7 +122,7 @@ export function Ventas() {
         return {
           ...venta,
           clienteNombre: cliente ? `${cliente.nombre} ${cliente.apellido}` : 'Desconocido',
-          pedidoNumero: pedido ? `#${String(pedido.id).padStart(4, '0')}` : undefined
+          pedidoNumero: pedido ? formatEntityCode('P', pedido.id) : undefined
         };
       });
 
@@ -168,7 +169,7 @@ export function Ventas() {
   const handleVerPdfVenta = (venta: VentaView) => {
     const cliente = clientes.find((c) => c.id === venta.clienteId);
     const opened = openPrintablePdf({
-      title: `Venta #${String(venta.id).padStart(4, '0')}`,
+      title: `Venta ${formatEntityCode('V', venta.id)}`,
       subtitle: `Generado el ${new Date().toLocaleString('es-CO')}`,
       sections: [
         {
@@ -233,6 +234,11 @@ export function Ventas() {
   };
 
   const columns: Column[] = [
+    {
+      key: 'id',
+      label: 'ID Venta',
+      render: (value: number) => formatEntityCode('V', value)
+    },
     {
       key: 'tipo',
       label: 'Tipo',
@@ -429,7 +435,7 @@ export function Ventas() {
   const seleccionarPedido = (pedido: Pedido) => {
     setFormData((prev) => ({ ...prev, pedidoId: pedido.id }));
     const cliente = clientes.find(c => c.id === pedido.clienteId);
-    setBusquedaPedido(`#${String(pedido.id).padStart(4, '0')} - ${cliente ? `${cliente.nombre} ${cliente.apellido}` : 'Desconocido'}`);
+    setBusquedaPedido(`${formatEntityCode('P', pedido.id)} - ${cliente ? `${cliente.nombre} ${cliente.apellido}` : 'Desconocido'}`);
     setMostrarListaPedidos(false);
     void cargarProductosDePedido(pedido.id);
   };
@@ -536,9 +542,9 @@ export function Ventas() {
         estado: formData.tipo === 'directa' ? 'completada' : 'pendiente'
       });
 
-      const ventaId = ventaCreada?.id || 'XXXX';
+      const ventaId = ventaCreada?.id;
       toast.success('Venta registrada exitosamente', {
-        description: `Venta #${String(ventaId).padStart(4, '0')} registrada por ${formatCurrency(total)}. Stock actualizado.`
+        description: `Venta ${formatEntityCode('V', ventaId)} registrada por ${formatCurrency(total)}. Stock actualizado.`
       });
       setIsModalOpen(false);
       cargarDatos();
@@ -582,7 +588,7 @@ export function Ventas() {
               type="text"
               value={busqueda}
               onChange={(e) => setBusqueda(e.target.value)}
-              placeholder="Buscar... (mín. 2, máx. 50 caracteres)"
+              placeholder="Buscar ..."
               className="w-full px-4 py-2.5 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
               maxLength={50}
             />
@@ -779,7 +785,7 @@ export function Ventas() {
                             onClick={() => seleccionarPedido(p)}
                             className="px-3 py-2 hover:bg-accent cursor-pointer border-b border-border last:border-b-0"
                           >
-                            <div className="font-medium">Pedido #{String(p.id).padStart(4, '0')}</div>
+                            <div className="font-medium">Pedido {formatEntityCode('P', p.id)}</div>
                             <div className="text-sm text-muted-foreground">
                               Cliente: {cliente ? `${cliente.nombre} ${cliente.apellido}` : 'Desconocido'} | Total: {formatCurrency(p.total)}
                             </div>
@@ -1082,7 +1088,7 @@ export function Ventas() {
           <div className="space-y-6">
             <div className="flex items-center justify-between p-4 bg-accent rounded-lg">
               <div>
-                <h3 className="text-lg">Venta #{String(selectedVenta.id).padStart(4, '0')}</h3>
+                <h3 className="text-lg">Venta {formatEntityCode('V', selectedVenta.id)}</h3>
                 <p className="text-sm text-muted-foreground">{selectedVenta.clienteNombre}</p>
               </div>
               <div className="flex gap-2">

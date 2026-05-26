@@ -8,7 +8,7 @@ async function main() {
     typeof config.db.password === 'string'
       ? config.db.password
       : String(config.db.password || '');
-  const database = config.db.database || process.env.DB_NAME || 'grandmas_liquors';
+  const database = config.db.database || process.env.DB_NAME || 'grandmasliquorsdb';
 
   const client = new Client({
     host: config.db.host,

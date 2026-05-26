@@ -449,7 +449,7 @@ export function Productos() {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Buscar... (mín. 2, máx. 50 caracteres)"
+              placeholder="Buscar ..."
               className="w-full px-4 py-2.5 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
               maxLength={50}
             />
@@ -563,7 +563,7 @@ export function Productos() {
             type="textarea"
             value={formData.descripcion}
             onChange={(value) => setFormData({ ...formData, descripcion: value as string })}
-            placeholder="Descripción del producto (10-50 caracteres)"
+            placeholder="Descripción del producto"
             required
             minLength={10}
             maxLength={50}

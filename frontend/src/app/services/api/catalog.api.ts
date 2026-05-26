@@ -225,14 +225,12 @@ export const catalogApi = {
       return mapCompra({ ...raw, items: raw.detalles || raw.items || [] });
     },
     create: async (data: Partial<Compra> & { numeroCompra?: string }) => {
-      const numero = data.numeroCompra || `CMP-${Date.now()}`;
       const fechaRaw = data.fecha != null ? String(data.fecha) : '';
       const fecha =
         fechaRaw.includes('T') ? fechaRaw.split('T')[0] : fechaRaw.slice(0, 10) || fechaRaw;
       const env = await apiFetch<{ id: number }>('/api/compras', {
         method: 'POST',
         json: {
-          numero_compra: numero,
           proveedor_id: data.proveedorId,
           fecha,
           subtotal: data.subtotal ?? 0,

@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { ShoppingCart, Menu, X, Search, User, Phone, Mail, MapPin, Facebook, Instagram, Plus, Minus, Trash2, ShoppingBag, FileEdit, LogOut, KeyRound, CreditCard, FileText } from 'lucide-react';
+import { ShoppingCart, Menu, X, Search, User, Phone, Mail, MapPin, Facebook, Instagram, Plus, Minus, Trash2, ShoppingBag, FileEdit, LogOut, KeyRound, CreditCard, FileText, House, LayoutGrid, ListFilter } from 'lucide-react';
 import { Button } from '../Button';
-import { AlertDialog } from '../AlertDialog';
+import { AlertDialog, toast } from '../AlertDialog';
 import { Modal } from '../Modal';
-import { Form, FormField, FormActions, FieldSuccess } from '../Form';
+import { Form, FormField, FormActions, FieldError, FieldHelper, FieldSuccess } from '../Form';
 import { api, newPasswordPolicyMessage } from '../../services/api';
-import { toast } from 'sonner';
+import { formatEntityCode } from '../../services/mappers';
 
 // Logo local - using favicon from public folder
 const LOGO_URL = '/favicon/apple-touch-icon.png';
@@ -15,6 +15,7 @@ interface Producto {
   nombre: string;
   categoria: string;
   precio: number;
+  stock: number;
   imagen: string;
   descripcion: string;
 }
@@ -62,6 +63,17 @@ const imagenesCarrusel = [
   }
 ];
 
+const GUEST_CART_STORAGE_KEY = 'grandmas_liquors_cart_guest';
+
+const getCartStorageKey = (user?: UserData) =>
+  user?.email ? `grandmas_liquors_cart_${String(user.email).trim().toLowerCase()}` : GUEST_CART_STORAGE_KEY;
+
+const buildCheckoutDefaults = (user?: UserData) => ({
+  direccion: String(user?.direccion || '').trim(),
+  telefono: String(user?.telefono || '').replace(/\D/g, '').slice(0, 10),
+  observaciones: '',
+});
+
 export function LandingPage({ onNavigateToLogin, onNavigateToRegister, onNavigateToNosotros, user, onLogout }: LandingPageProps) {
   const [isSideMenuOpen, setIsSideMenuOpen] = useState(false);
   const [isCarritoOpen, setIsCarritoOpen] = useState(false);
@@ -76,11 +88,7 @@ export function LandingPage({ onNavigateToLogin, onNavigateToRegister, onNavigat
   const [metodoPago, setMetodoPago] = useState<'efectivo' | 'transferencia'>('efectivo');
   const [porcentajePago, setPorcentajePago] = useState<'100' | '50'>('100');
   const [pedidos, setPedidos] = useState<any[]>([]);
-  const [checkoutData, setCheckoutData] = useState({
-    direccion: '',
-    telefono: '',
-    observaciones: '',
-  });
+  const [checkoutData, setCheckoutData] = useState(() => buildCheckoutDefaults(user));
   const [categoriaSeleccionada, setCategoriaSeleccionada] = useState<string>('Todos');
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
@@ -97,13 +105,6 @@ export function LandingPage({ onNavigateToLogin, onNavigateToRegister, onNavigat
   const [checkoutAttempted, setCheckoutAttempted] = useState(false);
   const [currentPwdOk, setCurrentPwdOk] = useState<boolean | null>(null);
   const [isLogoutDialogOpen, setIsLogoutDialogOpen] = useState(false);
-  const [alertState, setAlertState] = useState({
-    isOpen: false,
-    title: '',
-    description: '',
-    type: 'info' as 'warning' | 'info' | 'success' | 'danger',
-    onConfirm: () => {}
-  });
 
   // Estados para productos y categorías de la API
   const [productosAPI, setProductosAPI] = useState<any[]>([]);
@@ -167,6 +168,52 @@ export function LandingPage({ onNavigateToLogin, onNavigateToRegister, onNavigat
       .catch(() => setPedidos([]))
       .finally(() => setMisPedidosLoading(false));
   }, [user]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const guestKey = GUEST_CART_STORAGE_KEY;
+    const userKey = getCartStorageKey(user);
+    let raw = window.localStorage.getItem(userKey);
+
+    if (user?.email && !raw) {
+      const guestRaw = window.localStorage.getItem(guestKey);
+      if (guestRaw) {
+        raw = guestRaw;
+        window.localStorage.setItem(userKey, guestRaw);
+        window.localStorage.removeItem(guestKey);
+      }
+    }
+
+    if (!raw) {
+      setCarrito([]);
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) {
+        setCarrito([]);
+        return;
+      }
+
+      setCarrito(
+        parsed.filter((item) =>
+          item &&
+          item.producto &&
+          typeof item.producto.id !== 'undefined' &&
+          typeof item.cantidad === 'number'
+        )
+      );
+    } catch {
+      setCarrito([]);
+    }
+  }, [user?.email]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem(getCartStorageKey(user), JSON.stringify(carrito));
+  }, [carrito, user?.email]);
 
   useEffect(() => {
     if (!user || !showMisPedidos) return undefined;
@@ -233,6 +280,7 @@ export function LandingPage({ onNavigateToLogin, onNavigateToRegister, onNavigat
     nombre?: string;
     descripcion?: string;
     precio?: number;
+    stock?: number;
     imagen_url?: string;
     categoria?: string;
   }) => {
@@ -242,6 +290,7 @@ export function LandingPage({ onNavigateToLogin, onNavigateToRegister, onNavigat
       nombre: p.nombre || '',
       categoria: p.categoria || 'Sin categoría',
       precio: Number(p.precio ?? 0),
+      stock: Number(p.stock ?? 0),
       imagen: imagenUrl || imagenProductoFallback,
       descripcion: p.descripcion || '',
     };
@@ -250,8 +299,22 @@ export function LandingPage({ onNavigateToLogin, onNavigateToRegister, onNavigat
   const todosLosProductos = productosFromAPI;
   const categorias = [
     'Todos',
-    ...categoriasAPI.map((c: { nombre?: string }) => c.nombre).filter(Boolean),
+    ...categoriasAPI
+      .map((c: { nombre?: string }) => c.nombre)
+      .filter((nombre): nombre is string => Boolean(nombre)),
   ];
+
+  useEffect(() => {
+    if (!todosLosProductos.length) return;
+    setCarrito((prev) =>
+      prev
+        .map((item) => {
+          const productoActualizado = todosLosProductos.find((producto) => producto.id === item.producto.id);
+          return productoActualizado ? { ...item, producto: productoActualizado } : item;
+        })
+        .filter((item) => item.producto)
+    );
+  }, [productosAPI]);
 
   // Auto-avance del carrusel
   React.useEffect(() => {
@@ -261,11 +324,44 @@ export function LandingPage({ onNavigateToLogin, onNavigateToRegister, onNavigat
     return () => clearInterval(intervalo);
   }, []);
 
+  const resetCheckoutForm = () => {
+    setMetodoPago('efectivo');
+    setPorcentajePago('100');
+    setCheckoutData(buildCheckoutDefaults(user));
+    setCheckoutTouched({ direccion: false, telefono: false });
+    setCheckoutAttempted(false);
+  };
+
+  const getCartItemStockError = (item: { producto: Producto; cantidad: number }) => {
+    if (item.producto.stock <= 0) {
+      return 'Este producto no está disponible en este momento.';
+    }
+    if (item.cantidad > item.producto.stock) {
+      return 'La cantidad solicitada supera el stock disponible.';
+    }
+    return '';
+  };
+
+  const getCartItemStockHelper = (_item: { producto: Producto; cantidad: number }) => '';
+
   // Agregar al carrito
   const agregarAlCarrito = (producto: Producto) => {
+    if (producto.stock <= 0) {
+      toast.error('Producto sin stock', {
+        description: `${producto.nombre} no está disponible en este momento.`,
+      });
+      return;
+    }
+
     setCarrito((prev) => {
       const itemExistente = prev.find((item) => item.producto.id === producto.id);
       if (itemExistente) {
+        if (itemExistente.cantidad >= producto.stock) {
+          toast.error('Stock máximo alcanzado', {
+            description: `No puedes agregar más unidades de ${producto.nombre}.`,
+          });
+          return prev;
+        }
         return prev.map((item) =>
           item.producto.id === producto.id
             ? { ...item, cantidad: item.cantidad + 1 }
@@ -278,11 +374,16 @@ export function LandingPage({ onNavigateToLogin, onNavigateToRegister, onNavigat
 
   // Incrementar cantidad
   const incrementarCantidad = (productoId: string) => {
-    setCarrito((prev) => prev.map((item) =>
-      item.producto.id === productoId
-        ? { ...item, cantidad: item.cantidad + 1 }
-        : item
-    ));
+    setCarrito((prev) => prev.map((item) => {
+      if (item.producto.id !== productoId) return item;
+      if (item.producto.stock > 0 && item.cantidad >= item.producto.stock) {
+        toast.error('Stock máximo alcanzado', {
+          description: `No puedes pedir más unidades de ${item.producto.nombre}.`,
+        });
+        return item;
+      }
+      return { ...item, cantidad: item.cantidad + 1 };
+    }));
   };
 
   // Decrementar cantidad
@@ -312,39 +413,36 @@ export function LandingPage({ onNavigateToLogin, onNavigateToRegister, onNavigat
   // Calcular total del carrito
   const totalCarrito = carrito.reduce((total, item) => total + (item.producto.precio * item.cantidad), 0);
   const cantidadItemsCarrito = carrito.reduce((total, item) => total + item.cantidad, 0);
+  const hayErroresDeStock = carrito.some((item) => Boolean(getCartItemStockError(item)));
 
   // Realizar pedido
   const realizarPedido = () => {
     if (carrito.length === 0) {
-      setAlertState({
-        isOpen: true,
-        title: 'Carrito vacío',
-        description: 'Agrega productos al carrito para realizar un pedido',
-        type: 'warning',
-        onConfirm: () => setAlertState(prev => ({ ...prev, isOpen: false }))
+      toast.error('Carrito vacío', {
+        description: 'Agrega productos al carrito para realizar un pedido.',
+      });
+      return;
+    }
+
+    if (hayErroresDeStock) {
+      toast.error('Ajusta las cantidades del carrito', {
+        description: 'Hay productos con cantidades mayores al stock disponible.',
       });
       return;
     }
 
     if (!user) {
-      setAlertState({
-        isOpen: true,
-        title: 'Inicia sesión',
-        description: 'Debes iniciar sesión o registrarte para realizar un pedido',
-        type: 'info',
-        onConfirm: () => {
-          setAlertState(prev => ({ ...prev, isOpen: false }));
-          setIsCarritoOpen(false);
-          onNavigateToLogin();
-        }
+      toast('Inicia sesión para continuar', {
+        description: 'Debes iniciar sesión o registrarte para realizar un pedido.',
       });
+      setIsCarritoOpen(false);
+      onNavigateToLogin();
       return;
     }
 
     // Si hay usuario, mostrar checkout
     setIsCarritoOpen(false);
-    setCheckoutAttempted(false);
-    setCheckoutTouched({ direccion: false, telefono: false });
+    resetCheckoutForm();
     setShowCheckout(true);
   };
 
@@ -365,6 +463,16 @@ export function LandingPage({ onNavigateToLogin, onNavigateToRegister, onNavigat
       const productosSection = document.getElementById('productos');
       if (productosSection) {
         productosSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }, 100);
+  };
+
+  const handleSectionShortcut = (sectionId: 'inicio' | 'productos' | 'contacto') => {
+    setIsSideMenuOpen(false);
+    setTimeout(() => {
+      const section = document.getElementById(sectionId);
+      if (section) {
+        section.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }
     }, 100);
   };
@@ -416,7 +524,13 @@ export function LandingPage({ onNavigateToLogin, onNavigateToRegister, onNavigat
       });
       setCurrentPwdOk(null);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'No se pudo cambiar la contraseña';
+      const rawMsg = err instanceof Error ? err.message : 'No se pudo cambiar la contraseña';
+      const msg =
+        rawMsg.includes('ultimas 3')
+          ? 'La nueva contraseña no puede coincidir con ninguna de tus últimas 3 contraseñas.'
+          : rawMsg.includes('debe ser diferente a la contraseña actual')
+            ? 'La nueva contraseña no puede ser igual a tu contraseña actual.'
+            : rawMsg;
       toast.error(msg);
     } finally {
       setIsPasswordSubmitting(false);
@@ -437,10 +551,12 @@ export function LandingPage({ onNavigateToLogin, onNavigateToRegister, onNavigat
     : checkoutTelefonoDigits.length !== 10
       ? 'El teléfono de contacto debe tener exactamente 10 dígitos.'
       : '';
+  const checkoutStockError = carrito.find((item) => Boolean(getCartItemStockError(item)));
   const checkoutValid =
     carrito.length > 0 &&
     !checkoutDireccionError &&
-    !checkoutTelefonoError;
+    !checkoutTelefonoError &&
+    !checkoutStockError;
 
   const handleLogoutClick = () => {
     setIsLogoutDialogOpen(true);
@@ -468,25 +584,15 @@ export function LandingPage({ onNavigateToLogin, onNavigateToRegister, onNavigat
                 <Menu className="w-5 h-5 sm:w-6 sm:h-6" />
               </button>
 
-              {/* Barra de búsqueda con hover - Desktop */}
-              <div className="hidden md:block group">
-                <div className="relative">
-                  <button className="p-2 rounded-lg hover:bg-white/10 transition-colors">
-                    <Search className="w-5 h-5 text-white" />
-                  </button>
-                  <div className="absolute left-0 top-0 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-300">
-                    <div className="relative flex items-center">
-                      <input
-                        type="text"
-                        value={busqueda}
-                        onChange={(e) => setBusqueda(e.target.value)}
-                        placeholder="Buscar licores..."
-                        className="w-48 lg:w-64 px-4 py-2 pl-10 rounded-lg bg-white/10 text-white placeholder-white/60 focus:outline-none focus:ring-2 focus:ring-white/30 backdrop-blur-sm"
-                      />
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-white/60" />
-                    </div>
-                  </div>
-                </div>
+              <div className="hidden md:flex items-center rounded-lg bg-white/10 px-3 py-2 backdrop-blur-sm">
+                <Search className="mr-2 h-5 w-5 text-white/80" />
+                <input
+                  type="text"
+                  value={busqueda}
+                  onChange={(e) => setBusqueda(e.target.value)}
+                  placeholder="Buscar ..."
+                  className="w-48 lg:w-64 bg-transparent text-sm text-white placeholder-white/70 focus:outline-none"
+                />
               </div>
             </div>
 
@@ -563,9 +669,13 @@ export function LandingPage({ onNavigateToLogin, onNavigateToRegister, onNavigat
               >
                 <ShoppingCart className="w-5 h-5 sm:w-6 sm:h-6" />
                 {cantidadItemsCarrito > 0 && (
-                  <span className="absolute -top-1 -right-1 w-4 h-4 sm:w-5 sm:h-5 bg-white text-primary text-xs rounded-full flex items-center justify-center font-medium">
-                    {cantidadItemsCarrito}
-                  </span>
+                  <>
+                    <span className="absolute -right-0.5 -top-0.5 flex h-3.5 w-3.5">
+                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white/80 opacity-75" />
+                      <span className="relative inline-flex h-3.5 w-3.5 rounded-full border border-primary/20 bg-white" />
+                    </span>
+                    <span className="sr-only">Carrito con productos</span>
+                  </>
                 )}
               </button>
             </div>
@@ -578,7 +688,7 @@ export function LandingPage({ onNavigateToLogin, onNavigateToRegister, onNavigat
                 type="text"
                 value={busqueda}
                 onChange={(e) => setBusqueda(e.target.value)}
-                placeholder="Buscar licores..."
+                placeholder="Buscar ..."
                 className="w-full px-3 sm:px-4 py-1.5 sm:py-2 pl-9 sm:pl-10 rounded-lg bg-white/10 text-white placeholder-white/60 focus:outline-none focus:ring-2 focus:ring-white/30 text-sm"
               />
               <Search className="absolute left-2.5 sm:left-3 top-1/2 -translate-y-1/2 w-4 h-4 sm:w-5 sm:h-5 text-white/60" />
@@ -616,20 +726,31 @@ export function LandingPage({ onNavigateToLogin, onNavigateToRegister, onNavigat
               </div>
 
               <nav className="space-y-2">
-                <a href="#inicio" className="block px-4 py-3 rounded-lg hover:bg-white/10 transition-colors">
+                <button
+                  onClick={() => handleSectionShortcut('inicio')}
+                  className="flex w-full items-center gap-3 rounded-lg px-4 py-3 text-left hover:bg-white/10 transition-colors"
+                >
+                  <House className="h-5 w-5" />
                   Inicio
-                </a>
-                <a href="#productos" className="block px-4 py-3 rounded-lg hover:bg-white/10 transition-colors">
+                </button>
+                <button
+                  onClick={() => handleSectionShortcut('productos')}
+                  className="flex w-full items-center gap-3 rounded-lg px-4 py-3 text-left hover:bg-white/10 transition-colors"
+                >
+                  <LayoutGrid className="h-5 w-5" />
                   Productos
-                </a>
+                </button>
 
                 {/* Categorías expandibles */}
                 <div>
                   <button
                     onClick={() => setCategoriasExpanded(!categoriasExpanded)}
-                    className="w-full flex items-center justify-between px-4 py-3 rounded-lg hover:bg-white/10 transition-colors"
+                    className="w-full flex items-center justify-between rounded-lg px-4 py-3 hover:bg-white/10 transition-colors"
                   >
-                    <span>Categorías</span>
+                    <span className="flex items-center gap-3">
+                      <ListFilter className="h-5 w-5" />
+                      Categorías
+                    </span>
                     <svg
                       className={`w-5 h-5 transition-transform ${categoriasExpanded ? 'rotate-180' : ''}`}
                       fill="none"
@@ -643,72 +764,17 @@ export function LandingPage({ onNavigateToLogin, onNavigateToRegister, onNavigat
                   {/* Subcategorías */}
                   {categoriasExpanded && (
                     <div className="ml-4 mt-2 space-y-1">
-                      <button
-                        onClick={() => handleCategoriaClick('Todos')}
-                        className={`block w-full text-left px-4 py-2 rounded-lg hover:bg-white/10 transition-colors text-sm ${categoriaSeleccionada === 'Todos' ? 'bg-white/20' : ''}`}
-                      >
-                        Todas las categorías
-                      </button>
-                      <button
-                        onClick={() => handleCategoriaClick('Whiskies')}
-                        className={`block w-full text-left px-4 py-2 rounded-lg hover:bg-white/10 transition-colors text-sm ${categoriaSeleccionada === 'Whiskies' ? 'bg-white/20' : ''}`}
-                      >
-                        Whiskies
-                      </button>
-                      <button
-                        onClick={() => handleCategoriaClick('Rones')}
-                        className={`block w-full text-left px-4 py-2 rounded-lg hover:bg-white/10 transition-colors text-sm ${categoriaSeleccionada === 'Rones' ? 'bg-white/20' : ''}`}
-                      >
-                        Rones
-                      </button>
-                      <button
-                        onClick={() => handleCategoriaClick('Vinos')}
-                        className={`block w-full text-left px-4 py-2 rounded-lg hover:bg-white/10 transition-colors text-sm ${categoriaSeleccionada === 'Vinos' ? 'bg-white/20' : ''}`}
-                      >
-                        Vinos
-                      </button>
-                      <button
-                        onClick={() => handleCategoriaClick('Cervezas')}
-                        className={`block w-full text-left px-4 py-2 rounded-lg hover:bg-white/10 transition-colors text-sm ${categoriaSeleccionada === 'Cervezas' ? 'bg-white/20' : ''}`}
-                      >
-                        Cervezas
-                      </button>
-                      <button
-                        onClick={() => handleCategoriaClick('Tequilas')}
-                        className={`block w-full text-left px-4 py-2 rounded-lg hover:bg-white/10 transition-colors text-sm ${categoriaSeleccionada === 'Tequilas' ? 'bg-white/20' : ''}`}
-                      >
-                        Tequilas
-                      </button>
-                      <button
-                        onClick={() => handleCategoriaClick('Vodkas')}
-                        className={`block w-full text-left px-4 py-2 rounded-lg hover:bg-white/10 transition-colors text-sm ${categoriaSeleccionada === 'Vodkas' ? 'bg-white/20' : ''}`}
-                      >
-                        Vodkas
-                      </button>
-                      <button
-                        onClick={() => handleCategoriaClick('Ginebras')}
-                        className={`block w-full text-left px-4 py-2 rounded-lg hover:bg-white/10 transition-colors text-sm ${categoriaSeleccionada === 'Ginebras' ? 'bg-white/20' : ''}`}
-                      >
-                        Ginebras
-                      </button>
-                      <button
-                        onClick={() => handleCategoriaClick('Aguardientes')}
-                        className={`block w-full text-left px-4 py-2 rounded-lg hover:bg-white/10 transition-colors text-sm ${categoriaSeleccionada === 'Aguardientes' ? 'bg-white/20' : ''}`}
-                      >
-                        Aguardientes
-                      </button>
-                      <button
-                        onClick={() => handleCategoriaClick('Cócteles')}
-                        className={`block w-full text-left px-4 py-2 rounded-lg hover:bg-white/10 transition-colors text-sm ${categoriaSeleccionada === 'Cócteles' ? 'bg-white/20' : ''}`}
-                      >
-                        Cócteles
-                      </button>
-                      <button
-                        onClick={() => handleCategoriaClick('Bebidas Personalizadas')}
-                        className={`block w-full text-left px-4 py-2 rounded-lg hover:bg-white/10 transition-colors text-sm ${categoriaSeleccionada === 'Bebidas Personalizadas' ? 'bg-white/20' : ''}`}
-                      >
-                        Bebidas Personalizadas
-                      </button>
+                      {categorias.map((categoria) => (
+                        <button
+                          key={categoria}
+                          onClick={() => handleCategoriaClick(categoria)}
+                          className={`block w-full rounded-lg px-4 py-2 text-left text-sm transition-colors hover:bg-white/10 ${
+                            categoriaSeleccionada === categoria ? 'bg-white/20' : ''
+                          }`}
+                        >
+                          {categoria === 'Todos' ? 'Todas las categorías' : categoria}
+                        </button>
+                      ))}
                     </div>
                   )}
                 </div>
@@ -743,9 +809,10 @@ export function LandingPage({ onNavigateToLogin, onNavigateToRegister, onNavigat
 
                 <a
                   href="#contacto"
-                  onClick={() => setIsSideMenuOpen(false)}
-                  className="block px-4 py-3 rounded-lg hover:bg-white/10 transition-colors"
+                  onClick={() => handleSectionShortcut('contacto')}
+                  className="flex items-center gap-3 rounded-lg px-4 py-3 hover:bg-white/10 transition-colors"
                 >
+                  <Phone className="h-5 w-5" />
                   Contacto
                 </a>
                 <button
@@ -753,8 +820,9 @@ export function LandingPage({ onNavigateToLogin, onNavigateToRegister, onNavigat
                     setIsSideMenuOpen(false);
                     onNavigateToNosotros();
                   }}
-                  className="block w-full text-left px-4 py-3 rounded-lg hover:bg-white/10 transition-colors"
+                  className="flex w-full items-center gap-3 rounded-lg px-4 py-3 text-left hover:bg-white/10 transition-colors"
                 >
+                  <FileText className="h-5 w-5" />
                   Nosotros
                 </button>
 
@@ -906,6 +974,13 @@ export function LandingPage({ onNavigateToLogin, onNavigateToRegister, onNavigat
                               </button>
                             </div>
                           </div>
+                          <div className="mt-3 space-y-2">
+                            {getCartItemStockError(item) ? (
+                              <FieldError>{getCartItemStockError(item)}</FieldError>
+                            ) : (
+                              <FieldHelper>{getCartItemStockHelper(item)}</FieldHelper>
+                            )}
+                          </div>
                         </div>
                         <button
                           onClick={() => eliminarDelCarrito(item.producto.id)}
@@ -942,13 +1017,20 @@ export function LandingPage({ onNavigateToLogin, onNavigateToRegister, onNavigat
                     onClick={realizarPedido}
                     className="w-full bg-primary text-white py-3"
                     icon={<ShoppingBag className="w-5 h-5" />}
+                    disabled={hayErroresDeStock}
                   >
                     Realizar Pedido
                   </Button>
 
-                  <p className="text-xs text-center text-muted-foreground mt-4">
-                    Inicia sesión para completar tu compra
-                  </p>
+                  {hayErroresDeStock ? (
+                    <FieldError className="mt-4">
+                      Ajusta las cantidades antes de continuar. Hay productos que superan el stock disponible.
+                    </FieldError>
+                  ) : !user ? (
+                    <p className="text-xs text-center text-muted-foreground mt-4">
+                      Inicia sesión para completar tu compra
+                    </p>
+                  ) : null}
                 </>
               )}
             </div>
@@ -1002,6 +1084,21 @@ export function LandingPage({ onNavigateToLogin, onNavigateToRegister, onNavigat
             <p className="text-muted-foreground max-w-2xl mx-auto mb-4 sm:mb-6 text-sm sm:text-base px-4">
               Descubre nuestra selección premium de licores y bebidas de la más alta calidad
             </p>
+            <div className="mb-4 flex flex-wrap items-center justify-center gap-2">
+              {categorias.map((categoria) => (
+                <button
+                  key={categoria}
+                  onClick={() => setCategoriaSeleccionada(categoria)}
+                  className={`rounded-full border px-3 py-1.5 text-xs sm:text-sm transition-colors ${
+                    categoriaSeleccionada === categoria
+                      ? 'border-primary bg-primary text-white'
+                      : 'border-border bg-white text-foreground hover:border-primary/40 hover:bg-primary/5'
+                  }`}
+                >
+                  {categoria}
+                </button>
+              ))}
+            </div>
             {categoriaSeleccionada !== 'Todos' && (
               <div className="inline-flex items-center gap-2 px-3 sm:px-4 py-1.5 sm:py-2 bg-primary/10 text-primary rounded-lg">
                 <span className="text-xs sm:text-sm">Mostrando: <strong>{categoriaSeleccionada}</strong></span>
@@ -1016,11 +1113,11 @@ export function LandingPage({ onNavigateToLogin, onNavigateToRegister, onNavigat
             )}
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 sm:gap-4">
+          <div className="flex flex-wrap justify-center gap-3 sm:gap-4">
             {productosFiltrados.map((producto) => (
               <div
                 key={producto.id}
-                className="bg-card rounded-lg shadow-md hover:shadow-xl transition-shadow overflow-hidden group"
+                className="w-[160px] sm:w-[180px] md:w-[190px] bg-card rounded-lg shadow-md hover:shadow-xl transition-shadow overflow-hidden group"
               >
                 <div className="relative h-32 sm:h-36 md:h-40 overflow-hidden">
                   <img
@@ -1047,8 +1144,9 @@ export function LandingPage({ onNavigateToLogin, onNavigateToRegister, onNavigat
                       size="sm"
                       className="w-full text-[10px] sm:text-xs py-1 sm:py-1.5"
                       icon={<ShoppingCart className="w-3 h-3" />}
+                      disabled={producto.stock <= 0}
                     >
-                      Agregar
+                      {producto.stock > 0 ? 'Agregar' : 'Agotado'}
                     </Button>
                   </div>
                 </div>
@@ -1372,69 +1470,64 @@ export function LandingPage({ onNavigateToLogin, onNavigateToRegister, onNavigat
                 <div className="mb-6">
                   <h4 className="mb-4">Información de Entrega</h4>
                   <div className="space-y-4">
-                    <div>
-                      <label className="block mb-2 text-sm">Dirección de entrega</label>
-                      <input
-                        type="text"
-                        value={checkoutData.direccion}
-                        onChange={(e) => {
-                          setCheckoutTouched((prev) => ({ ...prev, direccion: true }));
-                          setCheckoutData((prev) => ({ ...prev, direccion: e.target.value }));
-                        }}
-                        onBlur={() => setCheckoutTouched((prev) => ({ ...prev, direccion: true }))}
-                        placeholder="Calle 104 # 79D - 65"
-                        className={`w-full px-4 py-3 rounded-lg bg-background border focus:outline-none focus:ring-2 ${
-                          shouldShowDireccionError && checkoutDireccionError
-                            ? 'border-destructive focus:ring-destructive/20'
-                            : 'border-border focus:ring-primary/20'
-                        }`}
-                      />
-                      {shouldShowDireccionError && checkoutDireccionError && (
-                        <p className="mt-2 text-sm text-destructive">{checkoutDireccionError}</p>
-                      )}
-                    </div>
+                    <FormField
+                      label="Dirección de entrega"
+                      name="checkout-direccion"
+                      value={checkoutData.direccion}
+                      onChange={(value) => {
+                        setCheckoutTouched((prev) => ({ ...prev, direccion: true }));
+                        setCheckoutData((prev) => ({ ...prev, direccion: value as string }));
+                      }}
+                      placeholder="Calle 104 # 79D - 65"
+                      required
+                      error={shouldShowDireccionError ? checkoutDireccionError : undefined}
+                      helperText={
+                        checkoutData.direccion.trim()
+                          ? 'Puedes editar esta dirección si deseas recibir el pedido en otra ubicación.'
+                          : undefined
+                      }
+                    />
 
-                    <div>
-                      <label className="block mb-2 text-sm">Teléfono de contacto</label>
-                      <input
-                        type="tel"
-                        inputMode="numeric"
-                        maxLength={10}
-                        value={checkoutData.telefono}
-                        onChange={(e) => {
-                          setCheckoutTouched((prev) => ({ ...prev, telefono: true }));
-                          setCheckoutData((prev) => ({
-                            ...prev,
-                            telefono: e.target.value.replace(/\D/g, '').slice(0, 10),
-                          }));
-                        }}
-                        onBlur={() => setCheckoutTouched((prev) => ({ ...prev, telefono: true }))}
-                        placeholder="3246102339"
-                        className={`w-full px-4 py-3 rounded-lg bg-background border focus:outline-none focus:ring-2 ${
-                          shouldShowTelefonoError && checkoutTelefonoError
-                            ? 'border-destructive focus:ring-destructive/20'
-                            : 'border-border focus:ring-primary/20'
-                        }`}
-                      />
-                      {shouldShowTelefonoError && checkoutTelefonoError && (
-                        <p className="mt-2 text-sm text-destructive">{checkoutTelefonoError}</p>
-                      )}
-                    </div>
+                    <FormField
+                      label="Teléfono de contacto"
+                      name="checkout-telefono"
+                      value={checkoutData.telefono}
+                      onChange={(value) => {
+                        setCheckoutTouched((prev) => ({ ...prev, telefono: true }));
+                        setCheckoutData((prev) => ({
+                          ...prev,
+                          telefono: value as string,
+                        }));
+                      }}
+                      placeholder="3246102339"
+                      required
+                      inputDigitRule="telefono10"
+                      error={shouldShowTelefonoError ? checkoutTelefonoError : undefined}
+                      helperText={
+                        checkoutTelefonoDigits
+                          ? 'Puedes editar este teléfono si quieres usar otro número de contacto.'
+                          : undefined
+                      }
+                    />
 
-                    <div>
-                      <label className="block mb-2 text-sm">Observaciones (Opcional)</label>
-                      <textarea
-                        rows={3}
-                        value={checkoutData.observaciones}
-                        onChange={(e) => setCheckoutData((prev) => ({ ...prev, observaciones: e.target.value }))}
-                        placeholder="Instrucciones especiales para la entrega..."
-                        className="w-full px-4 py-3 rounded-lg bg-background border border-border focus:outline-none focus:ring-2 focus:ring-primary/20 resize-none"
-                      ></textarea>
-                    </div>
+                    <FormField
+                      label="Observaciones (Opcional)"
+                      name="checkout-observaciones"
+                      type="textarea"
+                      rows={3}
+                      value={checkoutData.observaciones}
+                      onChange={(value) => setCheckoutData((prev) => ({ ...prev, observaciones: value as string }))}
+                      placeholder="Instrucciones especiales para la entrega..."
+                    />
                   </div>
                 </div>
 
                 {/* Botones */}
+                {checkoutStockError && (
+                  <FieldError className="mb-4">
+                    Ajusta el carrito antes de confirmar. {getCartItemStockError(checkoutStockError)}
+                  </FieldError>
+                )}
                 <div className="flex gap-3">
                   <Button
                     variant="outline"
@@ -1456,7 +1549,12 @@ export function LandingPage({ onNavigateToLogin, onNavigateToRegister, onNavigat
                         setCheckoutAttempted(true);
                         setCheckoutTouched({ direccion: true, telefono: true });
                         if (!checkoutValid) {
-                          throw new Error(checkoutDireccionError || checkoutTelefonoError || 'Completa los datos del pedido');
+                          throw new Error(
+                            checkoutDireccionError ||
+                              checkoutTelefonoError ||
+                              (checkoutStockError ? getCartItemStockError(checkoutStockError) : '') ||
+                              'Completa los datos del pedido'
+                          );
                         }
                         setIsSubmittingPedido(true);
 
@@ -1478,32 +1576,21 @@ export function LandingPage({ onNavigateToLogin, onNavigateToRegister, onNavigat
                           })),
                         } as any);
 
-                        const pedidosActualizados = await api.pedidos.getAllWithDetails();
-                        setPedidos(Array.isArray(pedidosActualizados) ? pedidosActualizados : []);
-
-                        setAlertState({
-                          isOpen: true,
-                          title: 'Pedido Confirmado',
-                          description: `¡Gracias por tu compra, ${user?.nombre}! Tu pedido ha sido registrado exitosamente.`,
-                          type: 'success',
-                          onConfirm: () => {
-                            setAlertState(prev => ({ ...prev, isOpen: false }));
-                            setShowCheckout(false);
-                            setCarrito([]);
-                            setMetodoPago('efectivo');
-                            setPorcentajePago('100');
-                            setCheckoutData({ direccion: '', telefono: '', observaciones: '' });
-                            setCheckoutTouched({ direccion: false, telefono: false });
-                            setCheckoutAttempted(false);
-                          }
+                        setCarrito([]);
+                        setShowCheckout(false);
+                        resetCheckoutForm();
+                        toast.success('Pedido confirmado', {
+                          description: `Gracias por tu compra, ${user?.nombre}. Tu pedido fue registrado exitosamente.`,
                         });
+                        try {
+                          const pedidosActualizados = await api.pedidos.getAllWithDetails();
+                          setPedidos(Array.isArray(pedidosActualizados) ? pedidosActualizados : []);
+                        } catch {
+                          // El pedido ya fue creado; si la recarga falla, no bloqueamos la confirmación al cliente.
+                        }
                       } catch (error: any) {
-                        setAlertState({
-                          isOpen: true,
-                          title: 'Error al crear pedido',
-                          description: error.message || 'No se pudo registrar el pedido',
-                          type: 'danger',
-                          onConfirm: () => setAlertState(prev => ({ ...prev, isOpen: false })),
+                        toast.error('Error al crear pedido', {
+                          description: error.message || 'No se pudo registrar el pedido.',
                         });
                       } finally {
                         setIsSubmittingPedido(false);
@@ -1579,7 +1666,7 @@ export function LandingPage({ onNavigateToLogin, onNavigateToRegister, onNavigat
                     >
                       <div className="flex items-start justify-between mb-3">
                         <div>
-                          <h4 className="text-sm mb-1">Pedido #{pedido.id}</h4>
+                          <h4 className="text-sm mb-1">Pedido {formatEntityCode('P', pedido.id)}</h4>
                           <p className="text-xs text-muted-foreground">
                             {new Date(pedido.fechaPedido || pedido.fecha || '').toLocaleDateString('es-CO', {
                               day: '2-digit',
@@ -1681,70 +1768,78 @@ export function LandingPage({ onNavigateToLogin, onNavigateToRegister, onNavigat
         size="lg"
       >
         <div className="space-y-6">
-          {/* Información del usuario */}
-          <div>
-            <div className="flex items-center gap-3 mb-6">
-              <div className="p-3 bg-primary/10 rounded-lg">
-                <User className="w-6 h-6 text-primary" />
+          <div className="rounded-2xl border border-border bg-accent/50 p-5 sm:p-6">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-center gap-4">
+                <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-primary text-white shadow-sm">
+                  <User className="h-8 w-8" />
+                </div>
+                <div>
+                  <h3 className="text-lg sm:text-xl">{user?.nombre} {user?.apellido}</h3>
+                  <p className="text-sm text-muted-foreground">{user?.email}</p>
+                  <div className="mt-2 inline-flex items-center rounded-full bg-white px-3 py-1 text-xs text-primary shadow-sm">
+                    Cuenta {user?.rol}
+                  </div>
+                </div>
               </div>
-              <div>
-                <h3>Información Personal</h3>
-                <p className="text-sm text-muted-foreground">Datos de tu cuenta</p>
+              <div className="rounded-xl bg-white px-4 py-3 shadow-sm">
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">Resumen</p>
+                <p className="text-sm text-foreground">Datos principales de tu cuenta y contacto</p>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-background p-6 rounded-lg">
-              <div className="flex items-start gap-3">
-                <User className="w-5 h-5 text-primary mt-0.5" />
+            <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="flex items-center gap-3 border-b border-border/60 pb-4 sm:pb-5">
+                <div className="rounded-lg bg-primary/10 p-2">
+                  <Mail className="h-5 w-5 text-primary" />
+                </div>
                 <div>
-                  <p className="text-xs text-muted-foreground mb-1">Nombre completo</p>
-                  <p className="text-sm">{user?.nombre} {user?.apellido}</p>
+                  <p className="text-xs text-muted-foreground">Correo electrónico</p>
+                  <p className="text-sm">{user?.email || 'No registrado'}</p>
                 </div>
               </div>
 
-              <div className="flex items-start gap-3">
-                <Mail className="w-5 h-5 text-primary mt-0.5" />
+              <div className="flex items-center gap-3 border-b border-border/60 pb-4 sm:pb-5">
+                <div className="rounded-lg bg-primary/10 p-2">
+                  <Phone className="h-5 w-5 text-primary" />
+                </div>
                 <div>
-                  <p className="text-xs text-muted-foreground mb-1">Correo electrónico</p>
-                  <p className="text-sm">{user?.email}</p>
+                  <p className="text-xs text-muted-foreground">Teléfono</p>
+                  <p className="text-sm">{user?.telefono || 'No registrado'}</p>
                 </div>
               </div>
 
-              {user?.tipoDocumento && user?.numeroDocumento && (
-                <div className="flex items-start gap-3">
-                  <CreditCard className="w-5 h-5 text-primary mt-0.5" />
-                  <div>
-                    <p className="text-xs text-muted-foreground mb-1">Documento</p>
-                    <p className="text-sm">{user.tipoDocumento} {user.numeroDocumento}</p>
-                  </div>
+              <div className="flex items-center gap-3 border-b border-border/60 pb-4 sm:pb-5">
+                <div className="rounded-lg bg-primary/10 p-2">
+                  <CreditCard className="h-5 w-5 text-primary" />
                 </div>
-              )}
-
-              {user?.telefono && (
-                <div className="flex items-start gap-3">
-                  <Phone className="w-5 h-5 text-primary mt-0.5" />
-                  <div>
-                    <p className="text-xs text-muted-foreground mb-1">Teléfono</p>
-                    <p className="text-sm">{user.telefono}</p>
-                  </div>
-                </div>
-              )}
-
-              {user?.direccion && (
-                <div className="flex items-start gap-3 md:col-span-2">
-                  <MapPin className="w-5 h-5 text-primary mt-0.5" />
-                  <div>
-                    <p className="text-xs text-muted-foreground mb-1">Dirección</p>
-                    <p className="text-sm">{user.direccion}</p>
-                  </div>
-                </div>
-              )}
-
-              <div className="flex items-start gap-3">
-                <FileText className="w-5 h-5 text-primary mt-0.5" />
                 <div>
-                  <p className="text-xs text-muted-foreground mb-1">Rol</p>
-                  <p className="text-sm">{user?.rol}</p>
+                  <p className="text-xs text-muted-foreground">Documento</p>
+                  <p className="text-sm">
+                    {user?.tipoDocumento && user?.numeroDocumento
+                      ? `${user.tipoDocumento} ${user.numeroDocumento}`
+                      : 'No registrado'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3 border-b border-border/60 pb-4 sm:pb-5">
+                <div className="rounded-lg bg-primary/10 p-2">
+                  <FileText className="h-5 w-5 text-primary" />
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Rol</p>
+                  <p className="text-sm">{user?.rol || 'Cliente'}</p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3 sm:col-span-2">
+                <div className="rounded-lg bg-primary/10 p-2">
+                  <MapPin className="h-5 w-5 text-primary" />
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Dirección</p>
+                  <p className="text-sm">{user?.direccion || 'No registrada'}</p>
                 </div>
               </div>
             </div>
@@ -1833,7 +1928,7 @@ export function LandingPage({ onNavigateToLogin, onNavigateToRegister, onNavigat
 
           <div className="p-4 bg-accent rounded-lg mb-4">
             <p className="text-xs text-muted-foreground">
-              <strong>Nota:</strong> Mínimo 8 caracteres, una mayúscula, una minúscula y un número.
+              <strong>Nota:</strong> Mínimo 8 caracteres, una mayúscula, una minúscula, un número y no repetir la actual ni ninguna de las últimas 3 contraseñas.
             </p>
           </div>
 
@@ -1856,18 +1951,6 @@ export function LandingPage({ onNavigateToLogin, onNavigateToRegister, onNavigat
           </FormActions>
         </Form>
       </Modal>
-
-      {/* AlertDialog */}
-      <AlertDialog
-        isOpen={alertState.isOpen}
-        onClose={() => setAlertState({ ...alertState, isOpen: false })}
-        onConfirm={alertState.onConfirm}
-        title={alertState.title}
-        description={alertState.description}
-        type={alertState.type}
-        confirmText="Aceptar"
-        cancelText="Cerrar"
-      />
 
       {/* Verificacion de mayoria de edad */}
       {mostrarVerificacionEdad && (

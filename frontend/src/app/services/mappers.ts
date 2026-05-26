@@ -15,6 +15,13 @@ import type {
 
 export const uiAct = (s?: string | null) => (String(s || '').trim().toLowerCase() === 'activo' ? 'activo' : 'inactivo');
 export const dbAct = (s: 'activo' | 'inactivo') => (s === 'activo' ? 'Activo' : 'Inactivo');
+export const formatEntityCode = (prefix: string, value: number | string | null | undefined) => {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue) || numericValue <= 0) {
+    return `${prefix}000`;
+  }
+  return `${prefix}${String(Math.trunc(numericValue)).padStart(3, '0')}`;
+};
 
 export const pedidoEstadoUi = (s?: string | null) => {
   const t = String(s || '').trim().toLowerCase();

@@ -17,6 +17,10 @@ export const authApi = {
         email: string;
         nombre: string;
         apellido: string;
+        tipo_documento?: string | null;
+        documento?: string | null;
+        telefono?: string | null;
+        direccion?: string | null;
         rol: string;
         permisos: string[];
         cliente_id?: number | null;
@@ -32,6 +36,10 @@ export const authApi = {
         email: d.email,
         nombre: d.nombre,
         apellido: d.apellido,
+        tipoDocumento: d.tipo_documento ?? undefined,
+        numeroDocumento: d.documento ?? undefined,
+        telefono: d.telefono ?? undefined,
+        direccion: d.direccion ?? undefined,
         rol: d.rol as Usuario['rol'],
         permisos: Array.isArray(d.permisos) ? d.permisos : [],
         clienteId: d.cliente_id ?? undefined,
@@ -46,12 +54,24 @@ export const authApi = {
       });
       return authApi.auth.login(String(data.email), String(data.password), false).catch(() => null);
     },
+    checkRegisterAvailability: async (params: { documento?: string; email?: string }) => {
+      const search = new URLSearchParams();
+      if (params.documento) search.set('documento', String(params.documento).replace(/\D/g, ''));
+      if (params.email) search.set('email', String(params.email).trim().toLowerCase());
+      return apiFetchData<{ documentoExists: boolean; emailExists: boolean }>(
+        `/api/auth/register-cliente/disponibilidad?${search.toString()}`
+      );
+    },
     me: async () => {
       const d = await apiFetchData<{
         id: number;
         email: string;
         nombre: string;
         apellido: string;
+        tipo_documento?: string | null;
+        documento?: string | null;
+        telefono?: string | null;
+        direccion?: string | null;
         rol: string;
         permisos: string[];
         cliente_id?: number | null;
@@ -63,6 +83,10 @@ export const authApi = {
         email: d.email,
         nombre: d.nombre,
         apellido: d.apellido,
+        tipoDocumento: d.tipo_documento ?? undefined,
+        numeroDocumento: d.documento ?? undefined,
+        telefono: d.telefono ?? undefined,
+        direccion: d.direccion ?? undefined,
         rol: d.rol as Usuario['rol'],
         permisos: Array.isArray(d.permisos) ? d.permisos : [],
         clienteId: d.cliente_id ?? undefined,

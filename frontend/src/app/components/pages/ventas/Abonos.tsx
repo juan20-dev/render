@@ -5,6 +5,7 @@ import { Form, FormField, FormActions } from '../../Form';
 import { Button } from '../../Button';
 import { Plus } from 'lucide-react';
 import { api } from '../../../services/api';
+import { formatEntityCode } from '../../../services/mappers';
 import { toast } from '../../AlertDialog';
 import type { Abono, Pedido, Cliente } from '../../../services/types';
 import { AlertDialog } from '../../AlertDialog';
@@ -72,7 +73,7 @@ export function Abonos() {
         const cliente = pedido ? clientesData.find(c => c.id === pedido.clienteId) : null;
         return {
           ...abono,
-          pedidoNumero: pedido ? `#${String(pedido.id).padStart(4, '0')}` : 'Desconocido',
+          pedidoNumero: pedido ? formatEntityCode('P', pedido.id) : 'Desconocido',
           clienteNombre: cliente ? `${cliente.nombre} ${cliente.apellido}` : 'Desconocido'
         };
       });
@@ -171,14 +172,15 @@ export function Abonos() {
     }));
     const cliente = clientes.find(c => c.id === pedido.clienteId);
     const saldoPendiente = pedido.total - pedido.montoAbonado;
-    setBusquedaPedido(`#${String(pedido.id).padStart(4, '0')} - ${cliente ? `${cliente.nombre} ${cliente.apellido}` : 'Desconocido'} - Saldo: ${formatCurrency(saldoPendiente)}`);
+    setBusquedaPedido(`${formatEntityCode('P', pedido.id)} - ${cliente ? `${cliente.nombre} ${cliente.apellido}` : 'Desconocido'} - Saldo: ${formatCurrency(saldoPendiente)}`);
     setMostrarListaPedidos(false);
   };
 
   const columns: Column[] = [
     {
-      key: 'pedidoNumero',
-      label: 'ID Pedido'
+      key: 'id',
+      label: 'ID Abono',
+      render: (value: number) => formatEntityCode('A', value)
     },
     {
       key: 'montoAbonado',
@@ -259,7 +261,7 @@ export function Abonos() {
    */
   const handleVerPdfAbono = (abono: AbonoView) => {
     const opened = openPrintablePdf({
-      title: `Abono #${String(abono.id).padStart(4, '0')}`,
+      title: `Abono ${formatEntityCode('A', abono.id)}`,
       subtitle: `Generado el ${new Date().toLocaleString('es-CO')}`,
       sections: [
         {
@@ -410,7 +412,7 @@ export function Abonos() {
               type="text"
               value={busqueda}
               onChange={(e) => setBusqueda(e.target.value)}
-              placeholder="Buscar... (mín. 2, máx. 50 caracteres)"
+              placeholder="Buscar ..."
               className="w-full px-4 py-2.5 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
               maxLength={50}
             />
@@ -450,13 +452,6 @@ export function Abonos() {
             </Button>
           </div>
         </div>
-      </div>
-
-      <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
-        <p className="text-sm text-blue-700">
-          <strong>Nota:</strong> Los abonos se crean automáticamente cuando se registra un pedido con porcentaje de abono.
-          También puedes crear abonos adicionales manualmente.
-        </p>
       </div>
 
       <DataTable
@@ -533,7 +528,7 @@ export function Abonos() {
                           onClick={() => seleccionarPedido(p)}
                           className="px-3 py-2 hover:bg-accent cursor-pointer border-b border-border last:border-b-0"
                         >
-                          <div className="font-medium">Pedido #{String(p.id).padStart(4, '0')}</div>
+                          <div className="font-medium">Pedido {formatEntityCode('P', p.id)}</div>
                           <div className="text-sm text-muted-foreground">
                             Cliente: {cliente ? `${cliente.nombre} ${cliente.apellido}` : 'Desconocido'} | Saldo: {formatCurrency(saldoPendiente)}
                           </div>
@@ -635,7 +630,7 @@ export function Abonos() {
           <div className="space-y-6">
             <div className="flex items-center justify-between p-4 bg-accent rounded-lg">
               <div>
-                <h3 className="text-lg">Abono #{String(selectedAbono.id).padStart(4, '0')}</h3>
+                <h3 className="text-lg">Abono {formatEntityCode('A', selectedAbono.id)}</h3>
                 <p className="text-sm text-muted-foreground">Pedido {selectedAbono.pedidoNumero}</p>
               </div>
               <span

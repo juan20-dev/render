@@ -111,7 +111,7 @@ interface SidebarProps {
 }
 
 export function Sidebar({ currentPath, onNavigate }: SidebarProps) {
-  const [expandedItems, setExpandedItems] = useState<string[]>(['Usuarios', 'Compras', 'Producción', 'Ventas', 'Configuración']);
+  const [expandedItems, setExpandedItems] = useState<string[]>([]);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [hoverCollapseEnabled, setHoverCollapseEnabled] = useState(false);
   const { hasPermission, user } = useAuth();

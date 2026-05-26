@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
 const config = require('../../config');
 const pool = require('../../db');
+const { getLatestUserStatusReason } = require('../models/shared/auditoria');
 
 // ============================================================
 // VALIDADORES CENTRALIZADOS DE ENTRADA
@@ -102,6 +103,20 @@ const authenticateJWT = async (req, res, next) => {
     const { isUserSessionActive, touchUserSession, revokeUserSession } = require('../models/shared/auditoria');
     const sessionActive = await isUserSessionActive(userId, sessionJti);
     if (!sessionActive) {
+      const userStateResult = await pool.query(
+        'SELECT estado FROM usuarios WHERE id = $1 LIMIT 1',
+        [userId]
+      );
+      const currentState = String(userStateResult.rows[0]?.estado || '').trim();
+      if (currentState && currentState !== 'Activo') {
+        const latestReason = await getLatestUserStatusReason(userId, 'Inactivo').catch(() => null);
+        return res.status(401).json({
+          success: false,
+          message: latestReason
+            ? `Tu cuenta fue desactivada y tu sesión se cerró. Motivo: ${latestReason}`
+            : 'Tu cuenta fue desactivada y tu sesión se cerró.',
+        });
+      }
       return res.status(401).json({ success: false, message: 'Sesion invalida o cerrada' });
     }
 
@@ -128,9 +143,12 @@ const authenticateJWT = async (req, res, next) => {
 
     if (String(currentUser.estado || '').trim() !== 'Activo') {
       await revokeUserSession(sessionJti).catch(() => {});
+      const latestReason = await getLatestUserStatusReason(userId, 'Inactivo').catch(() => null);
       return res.status(401).json({
         success: false,
-        message: 'Tu cuenta fue desactivada y tu sesion se cerro.',
+        message: latestReason
+          ? `Tu cuenta fue desactivada y tu sesión se cerró. Motivo: ${latestReason}`
+          : 'Tu cuenta fue desactivada y tu sesión se cerró.',
       });
     }
 

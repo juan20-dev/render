@@ -6,6 +6,7 @@
  * lo importa. La fuente activa es este archivo modular.
  */
 const pool = require('../../../db');
+const { reserveEntityIdAndCode } = require('../shared/auditoria');
 
 let domiciliosSchemaEnsured = false;
 let domiciliosSchemaPromise = null;
@@ -175,6 +176,7 @@ const Domicilios = {
   },
   create: async (data) => {
     await ensureDomiciliosSchema();
+    const reserved = await reserveEntityIdAndCode(pool, 'public.domicilios', 'D');
     const blocking = await pool.query(
       `SELECT id FROM domicilios
        WHERE pedido_id = $1
@@ -196,10 +198,11 @@ const Domicilios = {
     try {
       const result = await pool.query(
         `INSERT INTO domicilios (
-         numero_domicilio, pedido_id, cliente_id, direccion, repartidor, repartidor_id, fecha, hora, estado, detalle
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
+         id, numero_domicilio, pedido_id, cliente_id, direccion, repartidor, repartidor_id, fecha, hora, estado, detalle
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id`,
         [
-          data.numero_domicilio,
+          reserved.id,
+          reserved.code,
           data.pedido_id,
           data.cliente_id,
           data.direccion,
@@ -254,7 +257,8 @@ const Domicilios = {
          hora = COALESCE($4, hora),
          estado = COALESCE($5, estado),
          detalle = COALESCE($6, detalle),
-         motivo_cancelacion = COALESCE($7, motivo_cancelacion)
+         motivo_cancelacion = COALESCE($7, motivo_cancelacion),
+         updated_at = CURRENT_TIMESTAMP
        WHERE id = $8`,
       [
         data.repartidor !== undefined ? data.repartidor : current.repartidor,

@@ -535,7 +535,7 @@ export function Usuarios() {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Buscar por nombre, email o documento... (mín. 2, máx. 50 caracteres)"
+              placeholder="Buscar ..."
               className="w-full px-4 py-2.5 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
               maxLength={50}
             />
@@ -706,6 +706,7 @@ export function Usuarios() {
               <input
                 type="email"
                 value={formData.email}
+                maxLength={30}
                 onChange={(e) => {
                   const value = e.target.value;
                   setFormData({ ...formData, email: value });

@@ -7,7 +7,7 @@
  */
 const pool = require('../../../db');
 const { parseMoneyCO } = require('../../controllers/normalizador-http');
-const { ensureMotivoEstado } = require('../shared/auditoria');
+const { ensureMotivoEstado, reserveEntityIdAndCode } = require('../shared/auditoria');
 const Produccion = require('../produccion/produccion');
 
 const Pedidos = {
@@ -94,10 +94,12 @@ const Pedidos = {
     return result.rows;
   },
   create: async (data) => {
+    const reserved = await reserveEntityIdAndCode(pool, 'public.pedidos', 'P');
     const result = await pool.query(
-      'INSERT INTO pedidos (numero_pedido, cliente_id, fecha, fecha_entrega, detalles, direccion, telefono, total, estado, metodo_pago, esquema_abono, monto_abonado) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id',
+      'INSERT INTO pedidos (id, numero_pedido, cliente_id, fecha, fecha_entrega, detalles, direccion, telefono, total, estado, metodo_pago, esquema_abono, monto_abonado) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING id',
       [
-        data.numero_pedido,
+        reserved.id,
+        reserved.code,
         data.cliente_id,
         data.fecha,
         data.fecha_entrega,

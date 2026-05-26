@@ -63,7 +63,6 @@ export const salesApi = {
     },
     getById: async (id: number) => mapPedidoDetail(await apiFetchData(`/api/pedidos/${id}`)),
     create: async (data: Partial<Pedido>) => {
-      const numero = `PED-${Date.now()}`;
       const observaciones = String((data as Partial<Pedido> & { observaciones?: string }).observaciones || '').trim();
       const productos = (data.productos || []).map((p) => ({
         productoId: p.productoId,
@@ -74,7 +73,6 @@ export const salesApi = {
       await apiFetch('/api/pedidos', {
         method: 'POST',
         json: {
-          numero_pedido: numero,
           cliente_id: data.clienteId,
           fecha: data.fechaPedido,
           fecha_entrega: data.fechaEntrega,
@@ -266,7 +264,6 @@ export const salesApi = {
         estado: 'Pendiente',
         hora: null,
         detalle: null,
-        numero_domicilio: `DOM-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
       };
 
       if (nombreRep) {

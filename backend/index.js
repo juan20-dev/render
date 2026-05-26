@@ -165,6 +165,9 @@ app.use((err, req, res, next) => {
 
 // ===== INICIAR SERVIDOR =====
 const PORT = config.server.port;
+const publicBaseUrl =
+  process.env.PUBLIC_BASE_URL ||
+  (config.server.env === 'production' ? '(configure PUBLIC_BASE_URL para mostrar la URL publica)' : `http://localhost:${PORT}`);
 
 app.listen(PORT, async () => {
   await ensureAdminUnblocked();
@@ -193,7 +196,7 @@ app.listen(PORT, async () => {
   console.log(`   - GET    /api/entregas-insumos       (Listar entregas)`);
   console.log(`   - GET    /api/produccion             (Listar producción)`);
   console.log(`   - GET    /api/producto-insumos       (Recetas producto–insumo)`);
-  console.log(`\n🌐 URL Base: http://localhost:${PORT}`);
+  console.log(`\n🌐 URL Base: ${publicBaseUrl}`);
   console.log(`\n════════════════════════════════════════════════════════════\n`);
 });
 

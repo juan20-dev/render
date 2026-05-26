@@ -404,7 +404,7 @@ const Productos = {
       ORDER BY c.nombre
     `);
     const productos = await pool.query(`
-      SELECT p.id, p.nombre, p.descripcion, p.precio, p.imagen_url, c.nombre AS categoria
+      SELECT p.id, p.nombre, p.descripcion, p.precio, p.stock, p.imagen_url, c.nombre AS categoria
       FROM productos p
       INNER JOIN categorias c ON p.categoria_id = c.id
       WHERE p.estado = 'Activo' AND c.estado = 'Activo'

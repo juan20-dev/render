@@ -1,17 +1,25 @@
 -- ============================================================
 -- GRANDMA'S LIQUORS - BASE DE DATOS COMPLETA
 -- ============================================================
--- Script de inicialización con datos de ejemplo
+-- Script de inicialización completo compatible con pgAdmin 4
 -- Versión: 1.0
 -- 
--- INSTRUCCIONES:
--- 1. Crear BD vacía: createdb -U postgres grandma\'sdb
--- 2. Ejecutar este script: psql -U postgres -d grandma\'sdb -f db.pgsql
--- 3. El script incluye:
+-- INSTRUCCIONES EN PGADMIN 4:
+-- 1. Cree una base de datos vacía desde pgAdmin 4.
+-- 2. Seleccione esa base de datos y abra Query Tool.
+-- 3. Copie y pegue este archivo completo y ejecútelo.
+-- 4. Este script trabaja sobre la base actualmente seleccionada:
+--    elimina tablas previas del proyecto, recrea la estructura, funciones,
+--    triggers y carga los datos semilla solicitados.
+-- 5. También puede seguir usándose desde `npm run migrate` sin cambios.
+--
+-- El script incluye:
 --    - Estructura de tablas
 --    - Datos iniciales (roles, usuarios, categorías, productos)
 --    - Funciones y triggers
 -- ============================================================
+
+BEGIN;
 
 -- ============================================================
 -- PARTE 1: LIMPIAR TABLAS EXISTENTES
@@ -538,49 +546,132 @@ INSERT INTO roles (nombre, descripcion, permisos, estado) VALUES
   'Ver Mis Pedidos'
 ], 'Activo');
 
--- Insertar usuarios de ejemplo
--- Credenciales de prueba para cada rol.
--- Todos los usuarios sembrados usan la MISMA contraseña: password_123
--- (cada hash bcrypt es distinto porque usa un salt aleatorio).
--- Si cambias la contraseña aqui, regenerala con:
---   node -e "console.log(require('bcryptjs').hashSync('TU_NUEVA_PASSWORD', 10))"
+-- Insertar usuarios semilla
+-- Conteo solicitado: 10 usuarios internos
+--   * 1 Administrador
+--   * 3 Asesores
+--   * 3 Productores
+--   * 3 Repartidores
+-- Todos los usuarios sembrados usan la misma contraseña: password_123
 INSERT INTO usuarios (nombre, apellido, tipo_documento, documento, email, telefono, direccion, password_hash, rol_id, estado) VALUES
-('Admin', 'Sistema', 'CC', '100012345678', 'admin@grandmas.com', '3001234567', 'Oficina Central', '$2b$10$npauCy3OmoZRWSMfDCfLGO1AfbaCFv54unyLryPZ6SsX0gFPhVuqC', 1, 'Activo'),
-('Asesor', 'Principal', 'CC', '100012345679', 'asesor@grandmas.com', '3001234568', 'Calle Principal 123', '$2b$10$8fx3CRh2IIpl9vNwIv8boOYbGqz/icOA9gSAgIhrLPc.RsnfURA82', 2, 'Activo'),
-('Productor', 'Jefe', 'CC', '100012345680', 'productor@grandmas.com', '3001234569', 'Zona Producción', '$2b$10$rWgS3I.pvEufCPfROeD2Z.zIu6fHhLXkEdXeJRaIKbQTLJoWtD8kS', 3, 'Activo'),
-('Repartidor', 'Uno', 'CC', '100012345681', 'repartidor@grandmas.com', '3001234570', 'Zona Reparto', '$2b$10$YknQN7.nCpARsA9iFEO4SuGfdfy6Dpd1waPkY0hJSaTLNDN0.Gso6', 4, 'Activo'),
-('Cliente', 'Ejemplo', 'CC', '100012345682', 'cliente@grandmas.com', '3001234571', 'Calle Secundaria 456', '$2b$10$y6M/McjUalqdNBvZ3y.gOeVEAXXgGrlml3ZdUdquX6BlB0f12EXmi', 5, 'Activo');
+('Admin', 'Sistema', 'CC', '100012345600', 'admin@grandmas.com', '3001234500', 'Oficina Central', '$2b$10$npauCy3OmoZRWSMfDCfLGO1AfbaCFv54unyLryPZ6SsX0gFPhVuqC', 1, 'Activo'),
+('Laura', 'Gomez', 'CC', '100012345601', 'asesor1@grandmas.com', '3001234501', 'Sucursal Norte', '$2b$10$npauCy3OmoZRWSMfDCfLGO1AfbaCFv54unyLryPZ6SsX0gFPhVuqC', 2, 'Activo'),
+('Mateo', 'Rios', 'CC', '100012345602', 'asesor2@grandmas.com', '3001234502', 'Sucursal Centro', '$2b$10$npauCy3OmoZRWSMfDCfLGO1AfbaCFv54unyLryPZ6SsX0gFPhVuqC', 2, 'Activo'),
+('Sara', 'Lopez', 'CC', '100012345603', 'asesor3@grandmas.com', '3001234503', 'Sucursal Sur', '$2b$10$npauCy3OmoZRWSMfDCfLGO1AfbaCFv54unyLryPZ6SsX0gFPhVuqC', 2, 'Activo'),
+('Daniel', 'Mora', 'CC', '100012345604', 'productor1@grandmas.com', '3001234504', 'Planta 1', '$2b$10$npauCy3OmoZRWSMfDCfLGO1AfbaCFv54unyLryPZ6SsX0gFPhVuqC', 3, 'Activo'),
+('Paula', 'Vargas', 'CC', '100012345605', 'productor2@grandmas.com', '3001234505', 'Planta 2', '$2b$10$npauCy3OmoZRWSMfDCfLGO1AfbaCFv54unyLryPZ6SsX0gFPhVuqC', 3, 'Activo'),
+('Julian', 'Castro', 'CC', '100012345606', 'productor3@grandmas.com', '3001234506', 'Planta 3', '$2b$10$npauCy3OmoZRWSMfDCfLGO1AfbaCFv54unyLryPZ6SsX0gFPhVuqC', 3, 'Activo'),
+('Nicolas', 'Perez', 'CC', '100012345607', 'repartidor1@grandmas.com', '3001234507', 'Zona Occidente', '$2b$10$npauCy3OmoZRWSMfDCfLGO1AfbaCFv54unyLryPZ6SsX0gFPhVuqC', 4, 'Activo'),
+('Valentina', 'Reyes', 'CC', '100012345608', 'repartidor2@grandmas.com', '3001234508', 'Zona Oriente', '$2b$10$npauCy3OmoZRWSMfDCfLGO1AfbaCFv54unyLryPZ6SsX0gFPhVuqC', 4, 'Activo'),
+('Camilo', 'Torres', 'CC', '100012345609', 'repartidor3@grandmas.com', '3001234509', 'Zona Metropolitana', '$2b$10$npauCy3OmoZRWSMfDCfLGO1AfbaCFv54unyLryPZ6SsX0gFPhVuqC', 4, 'Activo');
 
--- Insertar categorías de productos
+INSERT INTO usuarios_password_historial (usuario_id, password_hash)
+SELECT id, password_hash
+FROM usuarios;
+
+-- Insertar categorías de productos (12)
 INSERT INTO categorias (nombre, descripcion, estado) VALUES
-('Cervezas', 'Cervezas nacionales e internacionales', 'Activo'),
-('Licores', 'Licores destilados premium', 'Activo'),
-('Vinos', 'Vinos nacionales e importados', 'Activo'),
-('Ron', 'Rones variados de diferentes regiones', 'Activo'),
-('Tequila', 'Tequilas artesanales y industriales', 'Activo'),
-('Vodka', 'Vodkas de diferentes marcas', 'Activo');
+('Whiskies', 'Whiskies nacionales e importados para venta directa', 'Activo'),
+('Rones', 'Rones blancos, dorados y anejo premium', 'Activo'),
+('Vinos', 'Vinos tintos, blancos y espumosos', 'Activo'),
+('Cervezas', 'Cervezas artesanales y comerciales listas para venta', 'Activo'),
+('Tequilas', 'Tequilas y mezcales de distintas gamas', 'Activo'),
+('Vodkas', 'Vodkas tradicionales y saborizados', 'Activo'),
+('Cremas', 'Cremas licorosas listas para consumo', 'Activo'),
+('Ginebras', 'Ginebras botanicas y citricas', 'Activo'),
+('Aguardientes', 'Aguardientes clasicos y sin azucar', 'Activo'),
+('Cocteleria lista', 'Bebidas y mezclas listas para servir', 'Activo'),
+('Preparaciones', 'Bases y macerados de elaboracion interna', 'Activo'),
+('Insumos de produccion', 'Materias primas y suministros para elaboracion', 'Activo');
 
--- Insertar productos de ejemplo
+-- Insertar productos (45)
+-- 20 terminados, 15 de preparación, 10 tipo insumo
 INSERT INTO productos (nombre, categoria_id, descripcion, precio, stock, stock_minimo, estado, tipo_producto) VALUES
-('Cerveza Pilsen 330ml', 1, 'Cerveza clara refrescante', 2500.00, 100, 20, 'Activo', 'terminado'),
-('Cerveza Negra 330ml', 1, 'Cerveza oscura robusta', 3000.00, 75, 15, 'Activo', 'terminado'),
-('Ron Bacardi 750ml', 4, 'Ron blanco premium', 35000.00, 25, 5, 'Activo', 'terminado'),
-('Vodka Smirnoff 750ml', 6, 'Vodka internacional', 38000.00, 20, 5, 'Activo', 'terminado'),
-('Vino Tinto Reserva 750ml', 3, 'Vino tinto con cuerpo', 45000.00, 30, 10, 'Activo', 'terminado'),
-('Tequila Patrón 750ml', 5, 'Tequila 100% agave', 52000.00, 15, 5, 'Activo', 'terminado');
+('Whisky Andino 750ml', 1, 'Whisky suave con notas de roble y vainilla', 68000.00, 24, 6, 'Activo', 'terminado'),
+('Whisky Reserva Roble 750ml', 1, 'Whisky madurado con perfil intenso y especiado', 82000.00, 18, 5, 'Activo', 'terminado'),
+('Ron Caribe Dorado 750ml', 2, 'Ron dorado ideal para cocteleria y consumo solo', 42000.00, 32, 8, 'Activo', 'terminado'),
+('Ron Anejo Gran Barrica 750ml', 2, 'Ron anejo con final largo y aroma tostado', 59000.00, 20, 6, 'Activo', 'terminado'),
+('Vino Tinto Casa Vieja 750ml', 3, 'Vino tinto afrutado de cuerpo medio', 36000.00, 28, 8, 'Activo', 'terminado'),
+('Vino Blanco Monteluna 750ml', 3, 'Vino blanco fresco con notas citricas', 34000.00, 22, 6, 'Activo', 'terminado'),
+('Espumoso Brisa Rosa 750ml', 3, 'Espumoso semidulce para celebraciones', 39000.00, 16, 5, 'Activo', 'terminado'),
+('Cerveza Rubia Artesanal 330ml', 4, 'Cerveza ligera con amargor balanceado', 6500.00, 72, 18, 'Activo', 'terminado'),
+('Cerveza Roja Artesanal 330ml', 4, 'Cerveza maltosa con notas caramelizadas', 6900.00, 65, 15, 'Activo', 'terminado'),
+('Cerveza Negra Porter 330ml', 4, 'Cerveza oscura con notas a cacao y cafe', 7200.00, 54, 14, 'Activo', 'terminado'),
+('Tequila Agave Azul 750ml', 5, 'Tequila joven 100 por ciento agave', 76000.00, 14, 4, 'Activo', 'terminado'),
+('Tequila Reposado Sierra 750ml', 5, 'Tequila reposado con notas de miel y madera', 89000.00, 12, 4, 'Activo', 'terminado'),
+('Vodka Cristal 700ml', 6, 'Vodka clasico de perfil limpio y neutro', 47000.00, 26, 7, 'Activo', 'terminado'),
+('Vodka Citrus 700ml', 6, 'Vodka saborizado con limon y cascara de naranja', 49000.00, 19, 5, 'Activo', 'terminado'),
+('Crema de Cafe 700ml', 7, 'Licor cremoso con notas intensas de cafe', 41000.00, 18, 5, 'Activo', 'terminado'),
+('Crema de Coco 700ml', 7, 'Licor cremoso de coco para postres y cocteles', 43000.00, 17, 5, 'Activo', 'terminado'),
+('Ginebra Botanica 750ml', 8, 'Ginebra artesanal con botanicos colombianos', 78000.00, 15, 4, 'Activo', 'terminado'),
+('Ginebra Limonaria 750ml', 8, 'Ginebra citrica con final herbal', 80000.00, 13, 4, 'Activo', 'terminado'),
+('Aguardiente Tradicion 750ml', 9, 'Aguardiente clasico anisado de venta continua', 33000.00, 40, 10, 'Activo', 'terminado'),
+('Aguardiente Sin Azucar 750ml', 9, 'Aguardiente suave sin azucar adicionada', 35000.00, 34, 8, 'Activo', 'terminado'),
 
--- Insertar proveedores de ejemplo
-INSERT INTO proveedores (tipo_persona, nombre_empresa, nit, nombre, apellido, tipo_documento, numero_documento, email, telefono, direccion, estado) VALUES
-('Juridica', 'Distribuidora Licores S.A.', '900800123456', 'Juan', 'López', NULL, NULL, 'contacto@distribuidora.com', '6015551000', 'Cra. 5 #10-50, Bogotá', 'Activo'),
-('Natural', NULL, NULL, 'Carlos', 'Martínez', 'CC', '100012345998', 'carlos@licores.com', '3105551234', 'Calle 20 #5-30, Medellín', 'Activo'),
-('Juridica', 'Importadores Premium Ltd', '901900654321', 'María', 'Rodríguez', NULL, NULL, 'info@importadores.com', '6015556789', 'Av. Carrera 7 #100-50, Bogotá', 'Activo');
+('Base de Limoncello', 11, 'Preparacion macerada de limon para embotellado', 22000.00, 0, 0, 'Activo', 'preparacion'),
+('Base de Crema Irlandesa', 11, 'Preparacion cremosa para licor estilo irlandes', 28000.00, 0, 0, 'Activo', 'preparacion'),
+('Macerado de Frutos Rojos', 11, 'Base macerada de frutos rojos para licor', 24000.00, 0, 0, 'Activo', 'preparacion'),
+('Macerado de Cafe', 11, 'Preparacion de cafe para licor artesanal', 23000.00, 0, 0, 'Activo', 'preparacion'),
+('Preparacion Pina Colada', 11, 'Base de pina y coco para cocteleria lista', 26000.00, 0, 0, 'Activo', 'preparacion'),
+('Preparacion Mojito Artesanal', 11, 'Preparacion con hierbabuena y limon', 21000.00, 0, 0, 'Activo', 'preparacion'),
+('Preparacion Maracuya', 11, 'Base tropical para licor frutal', 22500.00, 0, 0, 'Activo', 'preparacion'),
+('Preparacion Naranja Especiada', 11, 'Macerado citrico con clavo y canela', 21500.00, 0, 0, 'Activo', 'preparacion'),
+('Preparacion Hierbabuena', 11, 'Base herbal para bebidas refrescantes', 20500.00, 0, 0, 'Activo', 'preparacion'),
+('Preparacion Canelazo', 11, 'Base especiada para licor caliente', 23500.00, 0, 0, 'Activo', 'preparacion'),
+('Preparacion Crema de Whisky', 11, 'Base cremosa para licor de whisky', 29500.00, 0, 0, 'Activo', 'preparacion'),
+('Preparacion Licor de Coco', 11, 'Preparacion dulce de coco para embotellar', 25500.00, 0, 0, 'Activo', 'preparacion'),
+('Preparacion Tamarindo', 11, 'Base concentrada de tamarindo', 22500.00, 0, 0, 'Activo', 'preparacion'),
+('Preparacion Jamaica', 11, 'Macerado de flor de jamaica', 21800.00, 0, 0, 'Activo', 'preparacion'),
+('Preparacion Frambuesa', 11, 'Base de frambuesa para licor artesanal', 24800.00, 0, 0, 'Activo', 'preparacion'),
 
--- Insertar cliente de ejemplo
+('Alcohol Etilico Food Grade', 12, 'Alcohol base para elaboracion de licores artesanales', 95000.00, 60, 15, 'Activo', 'insumo'),
+('Azucar Refinada x 25kg', 12, 'Azucar refinada para preparaciones y jarabes', 82000.00, 48, 12, 'Activo', 'insumo'),
+('Botella Transparente 750ml', 12, 'Botella de vidrio para productos terminados', 4200.00, 220, 60, 'Activo', 'insumo'),
+('Tapa Rosca Dorada', 12, 'Tapa metalica de seguridad para botella 750ml', 450.00, 500, 120, 'Activo', 'insumo'),
+('Etiqueta Premium', 12, 'Etiqueta adhesiva resistente a humedad', 380.00, 480, 120, 'Activo', 'insumo'),
+('Esencia de Vainilla x 1L', 12, 'Esencia concentrada para perfiles dulces y cremosos', 36000.00, 26, 8, 'Activo', 'insumo'),
+('Pulpa de Mora x 5kg', 12, 'Pulpa congelada para macerados de fruta', 54000.00, 18, 6, 'Activo', 'insumo'),
+('Pulpa de Maracuya x 5kg', 12, 'Pulpa tropical para preparaciones frutales', 56000.00, 16, 6, 'Activo', 'insumo'),
+('Jarabe Simple x 5L', 12, 'Jarabe base para cocteleria y mezclas', 29000.00, 22, 7, 'Activo', 'insumo'),
+('Glicerina Alimentaria x 1L', 12, 'Glicerina para ajustar textura en cremas licorosas', 31000.00, 14, 5, 'Activo', 'insumo');
+
+UPDATE categorias c
+SET cantidad_productos = (
+    SELECT COUNT(*)
+    FROM productos p
+    WHERE p.categoria_id = c.id
+);
+
+-- Insertar proveedores (12)
+INSERT INTO proveedores (tipo_persona, nombre_empresa, nit, nombre, apellido, tipo_documento, numero_documento, email, telefono, direccion, estado, preferente, rating, observaciones) VALUES
+('Juridica', 'Distribuidora Andina SAS', '900800123401', 'Laura', 'Suarez', NULL, NULL, 'contacto@andina.com', '6015551101', 'Bogota, Centro logistico 12', 'Activo', TRUE, 4.80, 'Proveedor principal de destilados'),
+('Juridica', 'Casa del Ron SAS', '900800123402', 'Andres', 'Nieto', NULL, NULL, 'ventas@casadelron.com', '6015551102', 'Barranquilla, Via 40 bodega 8', 'Activo', TRUE, 4.70, 'Especialista en rones importados'),
+('Juridica', 'Importadora Premium Ltda', '900800123403', 'Paola', 'Mendez', NULL, NULL, 'info@premiumltda.com', '6015551103', 'Bogota, Zona Franca modulo 5', 'Activo', FALSE, 4.50, 'Portafolio premium de whiskies y ginebras'),
+('Juridica', 'Bebidas del Valle SAS', '900800123404', 'Felipe', 'Guerra', NULL, NULL, 'comercial@bebidasdelvalle.com', '6025551104', 'Cali, Parque industrial Yumbo', 'Activo', FALSE, 4.40, 'Licores nacionales y cocteleria'),
+('Juridica', 'Vidrios y Envases SAS', '900800123405', 'Monica', 'Ortiz', NULL, NULL, 'servicio@vidriosenvases.com', '6045551105', 'Medellin, Autopista sur km 4', 'Activo', TRUE, 4.90, 'Envases y tapas para produccion'),
+('Juridica', 'Sabores y Esencias SAS', '900800123406', 'Karen', 'Pardo', NULL, NULL, 'pedidos@saboresyesencias.com', '6015551106', 'Bogota, Fontibon bodega 14', 'Activo', FALSE, 4.60, 'Esencias y aditivos alimentarios'),
+('Natural', NULL, NULL, 'Carlos', 'Martinez', 'CC', '100012349001', 'carlos.martinez@proveedores.com', '3105551107', 'Medellin, barrio Laureles', 'Activo', FALSE, 4.20, 'Proveedor independiente de frutas'),
+('Natural', NULL, NULL, 'Marta', 'Rojas', 'CC', '100012349002', 'marta.rojas@proveedores.com', '3115551108', 'Bogota, barrio Kennedy', 'Activo', FALSE, 4.30, 'Suministro de insumos secos'),
+('Natural', NULL, NULL, 'Jorge', 'Bernal', 'CC', '100012349003', 'jorge.bernal@proveedores.com', '3125551109', 'Cali, barrio San Fernando', 'Activo', FALSE, 4.10, 'Proveedor ocasional de botellas'),
+('Natural', NULL, NULL, 'Liliana', 'Acosta', 'CC', '100012349004', 'liliana.acosta@proveedores.com', '3135551110', 'Pereira, sector industrial', 'Activo', FALSE, 4.00, 'Suministro regional de empaques'),
+('Natural', NULL, NULL, 'Oscar', 'Forero', 'CC', '100012349005', 'oscar.forero@proveedores.com', '3145551111', 'Bucaramanga, centro empresarial', 'Activo', FALSE, 4.35, 'Proveedor de insumos de cocteleria'),
+('Natural', NULL, NULL, 'Diana', 'Moreno', 'CC', '100012349006', 'diana.moreno@proveedores.com', '3155551112', 'Manizales, avenida Santander', 'Activo', FALSE, 4.25, 'Proveedor de pulpas y frutas congeladas');
+
+-- Insertar clientes (10)
 INSERT INTO clientes (usuario_id, nombre, apellido, tipo_documento, documento, email, telefono, direccion, estado) VALUES
-(5, 'Cliente', 'Ejemplo', 'CC', '100012345682', 'cliente@grandmas.com', '3001234571', 'Calle Secundaria 456', 'Activo');
+(NULL, 'Sofia', 'Ramirez', 'CC', '100045670001', 'sofia.ramirez@clientes.com', '3205552001', 'Medellin, Calle 10 25 41', 'Activo'),
+(NULL, 'Juan', 'Herrera', 'CC', '100045670002', 'juan.herrera@clientes.com', '3205552002', 'Bogota, Carrera 15 99 21', 'Activo'),
+(NULL, 'Valeria', 'Quintero', 'CC', '100045670003', 'valeria.quintero@clientes.com', '3205552003', 'Cali, Avenida 3 norte 45 18', 'Activo'),
+(NULL, 'Sebastian', 'Ospina', 'CC', '100045670004', 'sebastian.ospina@clientes.com', '3205552004', 'Pereira, Calle 22 14 09', 'Activo'),
+(NULL, 'Camila', 'Restrepo', 'CC', '100045670005', 'camila.restrepo@clientes.com', '3205552005', 'Envigado, Transversal 34 28 55', 'Activo'),
+(NULL, 'Andres', 'Luna', 'CC', '100045670006', 'andres.luna@clientes.com', '3205552006', 'Barranquilla, Calle 84 51 10', 'Activo'),
+(NULL, 'Mariana', 'Salazar', 'CC', '100045670007', 'mariana.salazar@clientes.com', '3205552007', 'Bucaramanga, Carrera 33 52 18', 'Activo'),
+(NULL, 'Felipe', 'Cano', 'CC', '100045670008', 'felipe.cano@clientes.com', '3205552008', 'Manizales, Avenida Paralela 61 44', 'Activo'),
+(NULL, 'Daniela', 'Rincon', 'CC', '100045670009', 'daniela.rincon@clientes.com', '3205552009', 'Bogota, Calle 134 19 77', 'Activo'),
+(NULL, 'Tomas', 'Arango', 'CC', '100045670010', 'tomas.arango@clientes.com', '3205552010', 'Medellin, Circular 5 70 12', 'Activo');
 
--- La tabla insumos permanece vacía en el seed: el inventario de insumos en pantalla
--- proviene de productos tipo insumo (Gestión de productos + compras).
+-- La tabla insumos permanece vacía en el seed porque el modulo de inventario
+-- de insumos trabaja principalmente sobre productos de tipo "insumo".
 
 -- ============================================================
 -- PARTE 4: FUNCIONES Y TRIGGERS (Sin cambios)
@@ -609,6 +700,8 @@ AFTER INSERT OR UPDATE ON usuarios
 FOR EACH ROW
 EXECUTE FUNCTION sync_cliente_from_usuario();
 
+COMMIT;
+
 -- ============================================================
 -- FIN DEL SCRIPT
 -- ============================================================
@@ -617,13 +710,13 @@ EXECUTE FUNCTION sync_cliente_from_usuario();
 -- CREDENCIALES DE PRUEBA (todas comparten la misma contrasena):
 --   Contrasena: password_123
 --
---   Rol           | Email                       | Documento
---   --------------+-----------------------------+--------------
---   Administrador | admin@grandmas.com          | 100012345678
---   Asesor        | asesor@grandmas.com         | 100012345679
---   Productor     | productor@grandmas.com      | 100012345680
---   Repartidor    | repartidor@grandmas.com     | 100012345681
---   Cliente       | cliente@grandmas.com        | 100012345682
+--   Usuarios internos sembrados:
+--     Administrador: admin@grandmas.com
+--     Asesores: asesor1@grandmas.com, asesor2@grandmas.com, asesor3@grandmas.com
+--     Productores: productor1@grandmas.com, productor2@grandmas.com, productor3@grandmas.com
+--     Repartidores: repartidor1@grandmas.com, repartidor2@grandmas.com, repartidor3@grandmas.com
+--   Nota: los 10 registros de clientes se siembran en la tabla `clientes`
+--   para pruebas funcionales de ventas, pedidos y domicilios.
 --
 -- Para regenerar las contrasenas con un valor distinto, edita la seccion
 -- "Insertar usuarios de ejemplo" arriba y ejecuta:

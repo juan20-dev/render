@@ -434,8 +434,15 @@ module.exports = {
     }
 
     const clienteId = Number(req.params.id);
+    const motivo = typeof req.body?.motivo === 'string' ? req.body.motivo.trim() : '';
     if (!Number.isFinite(clienteId) || clienteId <= 0) {
       return res.status(400).json({ success: false, message: 'ID de cliente invalido' });
+    }
+    if (!motivo || motivo.length < 10 || motivo.length > 50) {
+      return res.status(400).json({
+        success: false,
+        message: 'El motivo de eliminacion es obligatorio y debe tener entre 10 y 50 caracteres',
+      });
     }
 
     // 1) Bloquear si el cliente tiene trabajo pendiente (pedidos/ventas/domicilios en operacion).

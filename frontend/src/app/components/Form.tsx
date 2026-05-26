@@ -80,8 +80,10 @@ interface FormFieldProps {
   helperText?: React.ReactNode;
   /** Deshabilita el control. */
   disabled?: boolean;
-  /** Solo dígitos: teléfono 10, documento/NIT 12 (validación en vivo) o NIT/Documento 6–12 (sin error en vivo). */
-  inputDigitRule?: 'telefono10' | 'documento12' | 'documento6to12';
+  /** Solo dígitos: teléfono 10, documento/NIT 12, NIT/Documento 6–12 o 6–15. */
+  inputDigitRule?: 'telefono10' | 'documento12' | 'documento6to12' | 'documento6to15';
+  /** Oculta los textos auxiliares automáticos generados por reglas internas. */
+  hideAutoHelper?: boolean;
 }
 
 // Devuelve la fecha actual en formato YYYY-MM-DD (zona horaria local).
@@ -120,6 +122,7 @@ export function FormField({
   helperText,
   disabled = false,
   inputDigitRule,
+  hideAutoHelper = false,
 }: FormFieldProps) {
   const [internalError, setInternalError] = useState<string>('');
   const [touched, setTouched] = useState(false);
@@ -127,9 +130,30 @@ export function FormField({
   const error = externalError !== undefined && externalError !== '' ? externalError : internalError;
   const setError = setInternalError;
   const digitStr = inputDigitRule ? String(value ?? '').replace(/\D/g, '') : '';
-  // documento6to12 NO muestra el error mientras se escribe; sólo tras blur o submit (touched).
+  const normalizedName = String(name || '').toLowerCase();
+  const isEmailLikeField =
+    type === 'email' || normalizedName.includes('email') || normalizedName.includes('correo');
+  const autoCapAtSixty =
+    maxLength === undefined &&
+    !inputDigitRule &&
+    isEmailLikeField;
+  const autoCapAtThirty =
+    maxLength === undefined &&
+    !inputDigitRule &&
+    (type === 'text' || type === 'textarea') &&
+    (
+      normalizedName.includes('nombre') ||
+      normalizedName.includes('apellido') ||
+      normalizedName.includes('direccion') ||
+      normalizedName.includes('razonsocial')
+    );
+  const effectiveMaxLength = autoCapAtSixty ? 60 : autoCapAtThirty ? 30 : maxLength;
+  // Los identificadores flexibles no muestran error parcial mientras se escribe; sólo tras blur/submit.
   const showDigitPartial = Boolean(
-    inputDigitRule && inputDigitRule !== 'documento6to12' && digitStr.length > 0
+    inputDigitRule &&
+      inputDigitRule !== 'documento6to12' &&
+      inputDigitRule !== 'documento6to15' &&
+      digitStr.length > 0
   );
   const showError =
     externalError !== undefined && externalError !== ''
@@ -208,6 +232,23 @@ export function FormField({
       return;
     }
 
+    if (inputDigitRule === 'documento6to15') {
+      if (required && digits.length === 0) {
+        setError(touched ? 'Este campo es obligatorio' : '');
+        return;
+      }
+      if (!required && digits.length === 0) {
+        setError('');
+        return;
+      }
+      if (digits.length < 6 || digits.length > 15) {
+        setError('El NIT/Documento debe tener entre 6 y 15 dígitos');
+        return;
+      }
+      setError('');
+      return;
+    }
+
     if (!touched) return;
 
     // Validaciones básicas
@@ -280,8 +321,17 @@ export function FormField({
     let next: string | number = newValue;
     if (inputDigitRule) {
       const d = String(newValue).replace(/\D/g, '');
-      next = inputDigitRule === 'telefono10' ? d.slice(0, 10) : d.slice(0, 12);
-      if (inputDigitRule === 'documento6to12' ? d.length > 0 : true) {
+      next =
+        inputDigitRule === 'telefono10'
+          ? d.slice(0, 10)
+          : inputDigitRule === 'documento6to15'
+            ? d.slice(0, 15)
+            : d.slice(0, 12);
+      if (
+        inputDigitRule === 'documento6to12' || inputDigitRule === 'documento6to15'
+          ? d.length > 0
+          : true
+      ) {
         setTouched(true);
       }
     } else if (type === 'email' || type === 'password') {
@@ -313,7 +363,7 @@ export function FormField({
           required={required}
           rows={rows}
           disabled={disabled}
-          maxLength={maxLength}
+          maxLength={effectiveMaxLength}
           minLength={minLength}
           className={baseInputClasses}
         />
@@ -364,7 +414,7 @@ export function FormField({
             placeholder={placeholder}
             required={required}
             disabled={disabled}
-            maxLength={maxLength}
+            maxLength={effectiveMaxLength}
             minLength={minLength}
             pattern={pattern}
             autoComplete={name === 'password' || String(name || '').includes('Password') ? 'current-password' : undefined}
@@ -399,9 +449,11 @@ export function FormField({
           maxLength={
             inputDigitRule === 'telefono10'
               ? 10
-              : inputDigitRule === 'documento12' || inputDigitRule === 'documento6to12'
+              : inputDigitRule === 'documento6to15'
+                ? 15
+                : inputDigitRule === 'documento12' || inputDigitRule === 'documento6to12'
                 ? 12
-                : maxLength
+                : effectiveMaxLength
           }
           minLength={minLength}
           className={baseInputClasses}
@@ -412,12 +464,14 @@ export function FormField({
         <FieldError>{error}</FieldError>
       ) : helperText ? (
         <FieldHelper>{helperText}</FieldHelper>
-      ) : inputDigitRule === 'telefono10' ? (
+      ) : !hideAutoHelper && inputDigitRule === 'telefono10' ? (
         <FieldHelper>Exactamente 10 dígitos (solo números).</FieldHelper>
-      ) : inputDigitRule === 'documento12' ? (
+      ) : !hideAutoHelper && inputDigitRule === 'documento12' ? (
         <FieldHelper>Exactamente 12 dígitos (solo números).</FieldHelper>
-      ) : inputDigitRule === 'documento6to12' ? (
+      ) : !hideAutoHelper && inputDigitRule === 'documento6to12' ? (
         <FieldHelper>Entre 6 y 12 dígitos (solo números).</FieldHelper>
+      ) : !hideAutoHelper && inputDigitRule === 'documento6to15' ? (
+        <FieldHelper>Entre 6 y 15 dígitos (solo números).</FieldHelper>
       ) : (minLength || maxLength) && (type === 'text' || type === 'textarea') ? (
         <FieldHelper>
           {(() => {

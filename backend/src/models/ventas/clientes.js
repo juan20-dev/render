@@ -13,6 +13,8 @@ const {
   checkInactivacionDependencias,
   registerClienteAudit,
   getActiveUserSessionCount,
+  revokeAllUserSessions,
+  registerUserAudit,
 } = require('../shared/auditoria');
 
 /**
@@ -281,20 +283,21 @@ const Clientes = {
     }
 
     ensureMotivoEstado(data?.motivo);
+    const motivo = typeof data?.motivo === 'string' ? data.motivo.trim() : null;
 
     if (current.estado === estado) {
       return current;
     }
 
+    let activeSessions = 0;
+    let revokedSessions = 0;
+    let currentUser = null;
+
     if (current.estado !== 'Inactivo' && estado === 'Inactivo') {
       if (current.usuario_id) {
-        const activeSessions = await getActiveUserSessionCount(current.usuario_id);
-        if (activeSessions > 0) {
-          const error = new Error('No se puede desactivar un cliente con sesion activa');
-          error.statusCode = 409;
-          error.details = { activeSessions, usuario_id: current.usuario_id };
-          throw error;
-        }
+        activeSessions = await getActiveUserSessionCount(current.usuario_id);
+        const userResult = await pool.query('SELECT * FROM usuarios WHERE id = $1 LIMIT 1', [current.usuario_id]);
+        currentUser = userResult.rows[0] || null;
       }
 
       const work = await getClientePendingWork(id);
@@ -322,6 +325,28 @@ const Clientes = {
          WHERE id = $2`,
         [estado, current.usuario_id]
       );
+
+      if (estado === 'Inactivo' && activeSessions > 0) {
+        revokedSessions = await revokeAllUserSessions(current.usuario_id);
+      }
+
+      const updatedUserResult = await pool.query('SELECT * FROM usuarios WHERE id = $1 LIMIT 1', [current.usuario_id]);
+      const updatedUser = updatedUserResult.rows[0] || null;
+
+      await registerUserAudit({
+        usuarioId: Number(current.usuario_id),
+        accion: 'UPDATE',
+        actorId: data?.actor_id ?? null,
+        cambios: {
+          before: currentUser ? { estado: currentUser.estado } : { estado: current.estado },
+          after: updatedUser ? { estado: updatedUser.estado } : { estado },
+          reason: motivo,
+          statusChange: true,
+          activeSessions,
+          revokedSessions,
+          synchronizedFromClienteId: Number(id),
+        },
+      });
     }
 
     await registerClienteAudit({
@@ -331,8 +356,10 @@ const Clientes = {
       cambios: {
         before: { estado: current.estado },
         after: { estado },
-        motivo: typeof data?.motivo === 'string' ? data.motivo.trim() : null,
+        motivo,
         usuario_id_sincronizado: current.usuario_id || null,
+        activeSessions,
+        revokedSessions,
       },
     });
 

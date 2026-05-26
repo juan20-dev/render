@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Card } from '../Card';
 import { Form, FormField, FormActions } from '../Form';
 import { Button } from '../Button';
@@ -96,6 +96,8 @@ export function Login({ onLogin, initialTab = 'login', onBackToLanding }: LoginP
     password: '', 
     confirmPassword: ''
   });
+  const [registerDocumentoDuplicate, setRegisterDocumentoDuplicate] = useState('');
+  const [registerEmailDuplicate, setRegisterEmailDuplicate] = useState('');
 
   const loginEmailErr = validateEmail(loginData.email);
   const loginPasswordErr = validateLoginPassword(loginData.password);
@@ -104,6 +106,78 @@ export function Login({ onLogin, initialTab = 'login', onBackToLanding }: LoginP
     registerData.password !== registerData.confirmPassword
       ? 'Las contraseñas no coinciden'
       : undefined;
+
+  useEffect(() => {
+    if (activeTab !== 'register') {
+      setRegisterDocumentoDuplicate('');
+      return;
+    }
+
+    const documento = String(registerData.numeroDocumento || '').replace(/\D/g, '');
+    if (documento.length < 6 || documento.length > 12) {
+      setRegisterDocumentoDuplicate('');
+      return;
+    }
+
+    let cancelled = false;
+    const timeoutId = window.setTimeout(async () => {
+      try {
+        const availability = await api.auth.checkRegisterAvailability({ documento });
+        if (!cancelled) {
+          setRegisterDocumentoDuplicate(
+            availability.documentoExists
+              ? 'Este documento ya está registrado. Usa otro número o inicia sesión con tu cuenta existente.'
+              : ''
+          );
+        }
+      } catch {
+        if (!cancelled) {
+          setRegisterDocumentoDuplicate('');
+        }
+      }
+    }, 350);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeoutId);
+    };
+  }, [activeTab, registerData.numeroDocumento]);
+
+  useEffect(() => {
+    if (activeTab !== 'register') {
+      setRegisterEmailDuplicate('');
+      return;
+    }
+
+    const email = String(registerData.email || '').trim().toLowerCase();
+    if (!email || validateEmail(email)) {
+      setRegisterEmailDuplicate('');
+      return;
+    }
+
+    let cancelled = false;
+    const timeoutId = window.setTimeout(async () => {
+      try {
+        const availability = await api.auth.checkRegisterAvailability({ email });
+        if (!cancelled) {
+          setRegisterEmailDuplicate(
+            availability.emailExists
+              ? 'Este correo ya está registrado. Usa otro correo o inicia sesión con tu cuenta existente.'
+              : ''
+          );
+        }
+      } catch {
+        if (!cancelled) {
+          setRegisterEmailDuplicate('');
+        }
+      }
+    }, 350);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeoutId);
+    };
+  }, [activeTab, registerData.email]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -127,6 +201,7 @@ export function Login({ onLogin, initialTab = 'login', onBackToLanding }: LoginP
     } catch (error: any) {
       // Bloqueo por demasiados intentos: el backend devuelve status 429 con mensaje claro.
       const status = Number(error?.status || 0);
+      const code = String(error?.code || '');
       const details = (error && typeof error === 'object' ? (error as any).details : null) || {};
       const isBlocked = status === 429 || details?.blocked === true;
 
@@ -144,10 +219,36 @@ export function Login({ onLogin, initialTab = 'login', onBackToLanding }: LoginP
         return;
       }
 
+      if (status === 403 || code === 'INACTIVE_ACCOUNT') {
+        setAlertState({
+          isOpen: true,
+          title: 'Cuenta inactiva',
+          description:
+            error.message ||
+            'Tu cuenta está inactiva. Comunícate con los administradores de la aplicación para reactivar el acceso.',
+          type: 'warning',
+          onConfirm: () => {},
+        });
+        return;
+      }
+
+      if (status === 401 || code === 'INVALID_CREDENTIALS') {
+        setAlertState({
+          isOpen: true,
+          title: 'Credenciales no válidas',
+          description:
+            error.message ||
+            'No encontramos un usuario activo con esas credenciales. Verifica tus datos o regístrate en la aplicación.',
+          type: 'danger',
+          onConfirm: () => {},
+        });
+        return;
+      }
+
       setAlertState({
         isOpen: true,
         title: 'Error de autenticación',
-        description: error.message || 'Credenciales incorrectas. Por favor verifica tu email y contraseña.',
+        description: error.message || 'No fue posible completar el inicio de sesión.',
         type: 'danger',
         onConfirm: () => {}
       });
@@ -169,12 +270,12 @@ export function Login({ onLogin, initialTab = 'login', onBackToLanding }: LoginP
     });
 
     const regErrors = [
-      validateDocumento(registerData.numeroDocumento),
+      registerDocumentoDuplicate || validateDocumento(registerData.numeroDocumento),
       validateName(registerData.nombre, 'El nombre'),
       validateName(registerData.apellido, 'El apellido'),
       validateDireccion(registerData.direccion),
       validateTelefono(registerData.telefono),
-      validateEmail(registerData.email),
+      registerEmailDuplicate || validateEmail(registerData.email),
       validateRegisterPassword(registerData.password),
       registerConfirmErr,
     ].filter(Boolean);
@@ -405,12 +506,14 @@ export function Login({ onLogin, initialTab = 'login', onBackToLanding }: LoginP
                   value={registerData.numeroDocumento}
                   onChange={(value) => {
                     markTouched('regNumeroDocumento');
+                    setRegisterDocumentoDuplicate('');
                     setRegisterData({ ...registerData, numeroDocumento: value as string });
                   }}
-                  placeholder="Entre 6 y 12 dígitos"
+                  placeholder="Ingresa tu documento"
                   required
                   inputDigitRule="documento6to12"
-                  error={fieldError('regNumeroDocumento', validateDocumento(registerData.numeroDocumento))}
+                  hideAutoHelper
+                  error={fieldError('regNumeroDocumento', registerDocumentoDuplicate || validateDocumento(registerData.numeroDocumento))}
                 />
 
                 <FormField
@@ -423,7 +526,6 @@ export function Login({ onLogin, initialTab = 'login', onBackToLanding }: LoginP
                   }}
                   placeholder="Juan"
                   required
-                  minLength={2}
                   error={fieldError('regNombre', validateName(registerData.nombre, 'El nombre'))}
                 />
                 
@@ -437,7 +539,6 @@ export function Login({ onLogin, initialTab = 'login', onBackToLanding }: LoginP
                   }}
                   placeholder="Pérez"
                   required
-                  minLength={2}
                   error={fieldError('regApellido', validateName(registerData.apellido, 'El apellido'))}
                 />
 
@@ -465,6 +566,7 @@ export function Login({ onLogin, initialTab = 'login', onBackToLanding }: LoginP
                   placeholder="3001234567"
                   required
                   inputDigitRule="telefono10"
+                  hideAutoHelper
                   error={fieldError('regTelefono', validateTelefono(registerData.telefono))}
                 />
 
@@ -475,11 +577,12 @@ export function Login({ onLogin, initialTab = 'login', onBackToLanding }: LoginP
                   value={registerData.email}
                   onChange={(value) => {
                     markTouched('regEmail');
+                    setRegisterEmailDuplicate('');
                     setRegisterData({ ...registerData, email: value as string });
                   }}
                   placeholder="usuario@example.com"
                   required
-                  error={fieldError('regEmail', validateEmail(registerData.email))}
+                  error={fieldError('regEmail', registerEmailDuplicate || validateEmail(registerData.email))}
                 />
 
                 <FormField
@@ -518,6 +621,8 @@ export function Login({ onLogin, initialTab = 'login', onBackToLanding }: LoginP
                       className="w-full"
                       icon={<UserPlus className="w-5 h-5" />}
                       disabled={Boolean(
+                        registerDocumentoDuplicate ||
+                        registerEmailDuplicate ||
                         validateDocumento(registerData.numeroDocumento) ||
                         validateName(registerData.nombre, 'El nombre') ||
                         validateName(registerData.apellido, 'El apellido') ||

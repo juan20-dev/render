@@ -41,13 +41,47 @@ export function DataTable({
   data,
   actions = [],
   onSearch,
-  searchPlaceholder = "Buscar...",
+  searchPlaceholder = "Buscar ...",
   getRowKey,
   rowClassName,
-  pageSize,
+  pageSize = 10,
 }: DataTableProps) {
   const [searchQuery, setSearchQuery] = React.useState('');
   const [page, setPage] = React.useState(1);
+
+  const getRowSortTimestamp = React.useCallback((row: any) => {
+    const candidates = [
+      row?.updated_at,
+      row?.updatedAt,
+      row?.fechaUltimaModificacion,
+      row?.fecha_ultima_modificacion,
+      row?.created_at,
+      row?.createdAt,
+      row?.fecha_creacion,
+      row?.fechaCreacion,
+      row?.fecha,
+    ];
+    for (const value of candidates) {
+      if (!value) continue;
+      const time = new Date(value).getTime();
+      if (Number.isFinite(time)) return time;
+    }
+    return null;
+  }, []);
+
+  const getRowSortNumericId = React.useCallback((row: any) => {
+    const candidates = [row?.id, row?.idOrden, row?.id_orden];
+    for (const value of candidates) {
+      if (value === undefined || value === null) continue;
+      if (typeof value === 'number' && Number.isFinite(value)) return value;
+      const digits = String(value).match(/\d+/g);
+      if (digits && digits.length > 0) {
+        const parsed = Number(digits.join(''));
+        if (Number.isFinite(parsed)) return parsed;
+      }
+    }
+    return 0;
+  }, []);
 
   const total = data.length;
   const usePagination = typeof pageSize === 'number' && pageSize > 0;
@@ -64,8 +98,23 @@ export function DataTable({
     }
   }, [page, totalPages, usePagination]);
 
+  const sortedRows = React.useMemo(() => {
+    const rows = Array.isArray(data) ? [...data] : [];
+    rows.sort((a, b) => {
+      const bTime = getRowSortTimestamp(b);
+      const aTime = getRowSortTimestamp(a);
+      if (bTime !== null || aTime !== null) {
+        if (bTime === null) return -1;
+        if (aTime === null) return 1;
+        if (bTime !== aTime) return bTime - aTime;
+      }
+      return getRowSortNumericId(b) - getRowSortNumericId(a);
+    });
+    return rows;
+  }, [data, getRowSortNumericId, getRowSortTimestamp]);
+
   const sliceStart = usePagination ? (safePage - 1) * pageSize! : 0;
-  const pageRows = usePagination ? data.slice(sliceStart, sliceStart + pageSize!) : data;
+  const pageRows = usePagination ? sortedRows.slice(sliceStart, sliceStart + pageSize!) : sortedRows;
 
   const handleSearch = (value: string) => {
     setSearchQuery(value);
@@ -91,8 +140,70 @@ export function DataTable({
         </div>
       )}
 
-      {/* Table */}
-      <div className="overflow-x-auto">
+      {/* Vista móvil */}
+      <div className="grid gap-3 p-3 md:hidden">
+        {pageRows.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-border px-4 py-8 text-center text-muted-foreground">
+            No hay datos disponibles
+          </div>
+        ) : (
+          pageRows.map((row, index) => (
+            <div
+              key={getRowKey ? getRowKey(row) : index}
+              className={`rounded-lg border border-border bg-white p-4 shadow-sm ${rowClassName?.(row) ?? ''}`.trim()}
+            >
+              <div className="space-y-3">
+                {columns.map((column) => (
+                  <div key={column.key} className="flex flex-col gap-1 border-b border-border/60 pb-2 last:border-b-0 last:pb-0">
+                    <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                      {column.label}
+                    </span>
+                    <div className="text-sm">
+                      {column.render ? column.render(row[column.key], row) : row[column.key]}
+                    </div>
+                  </div>
+                ))}
+
+                {actions.length > 0 && (
+                  <div className="pt-2">
+                    <p className="mb-2 text-[11px] uppercase tracking-wide text-muted-foreground">Acciones</p>
+                    <div className="flex flex-wrap gap-2">
+                      {actions.map((action, actionIndex) => {
+                        const isDisabled = action.disabled ? !!action.disabled(row) : false;
+                        return (
+                          <button
+                            key={actionIndex}
+                            onClick={() => {
+                              if (isDisabled) return;
+                              action.onClick(row);
+                            }}
+                            disabled={isDisabled}
+                            aria-disabled={isDisabled || undefined}
+                            className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors ${
+                              action.variant === 'destructive'
+                                ? 'border-destructive/20 text-destructive hover:bg-destructive/10'
+                                : action.variant === 'primary'
+                                  ? 'border-primary/20 text-primary hover:bg-primary/10'
+                                  : 'border-border hover:bg-accent'
+                            } ${isDisabled ? 'pointer-events-none opacity-40' : ''}`}
+                            title={isDisabled ? (action.disabledTitle || `${action.label} (no disponible)`) : action.label}
+                          >
+                            {action.icon}
+                            <span>{action.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* Table desktop/tablet */}
+      <div className="hidden overflow-x-auto md:block">
         <table className="w-full">
           <thead className="bg-muted">
             <tr>

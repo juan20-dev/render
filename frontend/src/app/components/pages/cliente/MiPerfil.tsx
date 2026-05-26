@@ -1,13 +1,12 @@
-﻿import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Card } from '../../Card';
 import { Button } from '../../Button';
 import { Form, FormField, FormActions, FieldSuccess } from '../../Form';
 import { User, Mail, Phone, MapPin, Upload, Lock } from 'lucide-react';
-import { useAlertDialog } from '../../AlertDialog';
+import { toast } from '../../AlertDialog';
 import { Modal } from '../../Modal';
 import { api, newPasswordPolicyMessage } from '../../../services/api';
 import { useAuth } from '../../AuthContext';
-import { toast } from 'sonner';
 
 interface PerfilCliente {
   nombre: string;
@@ -39,8 +38,6 @@ export function MiPerfil() {
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
   const [passwordData, setPasswordData] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
   const [currentPwdOk, setCurrentPwdOk] = useState<boolean | null>(null);
-
-  const { showAlert, AlertComponent } = useAlertDialog();
 
   useEffect(() => {
     const load = async () => {
@@ -126,20 +123,12 @@ export function MiPerfil() {
       } as any);
       setPerfil({ ...formData, foto: fotoPreview || formData.foto });
       setIsEditing(false);
-      showAlert({
-        title: 'Perfil actualizado',
-        description: 'Tu información ha sido actualizada exitosamente',
-        type: 'success',
-        confirmText: 'Entendido',
-        onConfirm: () => {},
+      toast.success('Perfil actualizado', {
+        description: 'Tu información fue actualizada exitosamente.',
       });
     } catch (error: any) {
-      showAlert({
-        title: 'Error',
-        description: error.message || 'No se pudo actualizar el perfil',
-        type: 'danger',
-        confirmText: 'Entendido',
-        onConfirm: () => {},
+      toast.error('Error al actualizar el perfil', {
+        description: error.message || 'No se pudo actualizar el perfil.',
       });
     }
   };
@@ -182,15 +171,19 @@ export function MiPerfil() {
       setPasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
       setCurrentPwdOk(null);
     } catch (error: any) {
-      toast.error(error.message || 'No se pudo cambiar la contraseña');
-      showAlert({ title: 'Error', description: error.message || 'No se pudo cambiar la contraseña', type: 'danger', confirmText: 'Entendido', onConfirm: () => {} });
+      const rawMsg = error?.message || 'No se pudo cambiar la contraseña';
+      const msg =
+        rawMsg.includes('ultimas 3')
+          ? 'La nueva contraseña no puede coincidir con ninguna de tus últimas 3 contraseñas.'
+          : rawMsg.includes('debe ser diferente a la contraseña actual')
+            ? 'La nueva contraseña no puede ser igual a tu contraseña actual.'
+            : rawMsg;
+      toast.error(msg);
     }
   };
 
   return (
     <div className="space-y-6">
-      {AlertComponent}
-
       <div className="flex items-center justify-between">
         <div>
           <h2>Mi Perfil</h2>
@@ -284,7 +277,7 @@ export function MiPerfil() {
           ) : null}
           <FormField label="Nueva Contraseña" name="newPassword" type="password" value={passwordData.newPassword} onChange={(value) => setPasswordData({ ...passwordData, newPassword: value as string })} placeholder="••••••••" required error={passwordData.newPassword.trim() ? newPwdErr || undefined : undefined} />
           <FormField label="Confirmar Nueva Contraseña" name="confirmPassword" type="password" value={passwordData.confirmPassword} onChange={(value) => setPasswordData({ ...passwordData, confirmPassword: value as string })} placeholder="••••••••" required error={confirmErr || undefined} />
-          <div className="p-4 bg-accent rounded-lg mb-4"><p className="text-xs text-muted-foreground">Mínimo 8 caracteres, una mayúscula, una minúscula y un número.</p></div>
+          <div className="p-4 bg-accent rounded-lg mb-4"><p className="text-xs text-muted-foreground">Mínimo 8 caracteres, una mayúscula, una minúscula, un número y no repetir la actual ni ninguna de las últimas 3 contraseñas.</p></div>
           <FormActions>
             <Button variant="outline" onClick={() => { setIsChangePasswordOpen(false); setPasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' }); setCurrentPwdOk(null); }}>Cancelar</Button>
             <Button type="submit" disabled={passwordSubmitDisabled} icon={<Lock className="w-5 h-5" />}>Cambiar Contraseña</Button>

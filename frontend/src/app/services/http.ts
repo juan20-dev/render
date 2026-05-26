@@ -57,11 +57,18 @@ export async function apiFetch<T = unknown>(
         })
       );
     }
-    throw Object.assign(new Error(msg), { status: res.status, details: json.details });
+    throw Object.assign(new Error(msg), {
+      status: res.status,
+      details: json.details,
+      code: (json as { code?: string }).code,
+    });
   }
   if (json.success === false) {
     const msg = typeof json.message === 'string' ? json.message : 'Error en la solicitud';
-    throw Object.assign(new Error(msg), { details: json.details });
+    throw Object.assign(new Error(msg), {
+      details: json.details,
+      code: (json as { code?: string }).code,
+    });
   }
   return json;
 }

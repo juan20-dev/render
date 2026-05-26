@@ -7,7 +7,7 @@
  */
 const pool = require('../../../db');
 const { parseMoneyCO } = require('../../controllers/normalizador-http');
-const { groupRowsBy } = require('../shared/auditoria');
+const { groupRowsBy, reserveEntityIdAndCode } = require('../shared/auditoria');
 
 const ensureComprasSchema = async () => {
   await pool.query(`
@@ -134,6 +134,7 @@ const Compras = {
   },
   create: async (data, options = {}) => {
     await ensureComprasSchema();
+    const reserved = await reserveEntityIdAndCode(pool, 'public.compras', 'C');
 
     if (!data.proveedor_id) {
       const error = new Error('El proveedor es obligatorio para crear la compra');
@@ -165,10 +166,11 @@ const Compras = {
 
     const result = await pool.query(
       `INSERT INTO compras (
-         numero_compra, proveedor_id, fecha, fecha_creacion, subtotal, iva, total, estado, observaciones, requiere_aprobacion, aprobacion_extraordinaria, motivo_aprobacion
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id`,
+         id, numero_compra, proveedor_id, fecha, fecha_creacion, subtotal, iva, total, estado, observaciones, requiere_aprobacion, aprobacion_extraordinaria, motivo_aprobacion
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING id`,
       [
-        data.numero_compra,
+        reserved.id,
+        reserved.code,
         data.proveedor_id,
         data.fecha,
         data.fecha_creacion || data.fecha || new Date().toISOString().split('T')[0],
@@ -375,7 +377,9 @@ const Compras = {
         throw error;
       }
 
-      const motivoCancelacion = typeof data.motivo_cancelacion === 'string' ? data.motivo_cancelacion.trim() : '';
+      const motivoCancelacion = typeof data.motivo_cancelacion === 'string'
+        ? data.motivo_cancelacion.trim()
+        : (typeof data.motivo === 'string' ? data.motivo.trim() : '');
 
       if (requestedStatus === 'Cancelada' && (!motivoCancelacion || motivoCancelacion.length < 10)) {
         const error = new Error('El motivo de cancelación es obligatorio y debe tener mínimo 10 caracteres');

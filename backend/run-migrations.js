@@ -17,7 +17,7 @@
  * Uso:
  *   - Desde la carpeta `backend/`: `npm run migrate`
  *   - Variables de entorno usadas: DB_HOST, DB_PORT, DB_USER, DB_PASSWORD,
- *     DB_DATABASE (todas con valores por defecto del config local).
+ *     DB_DATABASE (todas tomadas del entorno actual/config.js).
  *   - IMPORTANTE: la base de datos debe existir antes de correr este script.
  *     Si no existe, se imprime el comando exacto para crearla.
  */
@@ -36,7 +36,7 @@ const dbConfig = {
   port: config.db.port || 5432,
   user: config.db.user || 'postgres',
   password: dbPassword || 'password',
-  database: config.db.database || "grandma'sdb",
+  database: config.db.database || 'grandmasliquorsdb',
   ssl: config.db.ssl,
 };
 

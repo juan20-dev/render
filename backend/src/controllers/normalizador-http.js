@@ -408,9 +408,9 @@ const normalizeProveedorPayload = (payload = {}) => {
         : '';
     if (docRaw) {
       const { cleaned: formattedIdentifier, digits: docDigits } = normalizeProveedorIdentifier(docRaw);
-      if (docDigits.length < 6 || docDigits.length > 12) {
+      if (docDigits.length < 6 || docDigits.length > 15) {
         return {
-          error: 'El NIT/Documento debe tener entre 6 y 12 digitos.',
+          error: 'El NIT/Documento debe tener entre 6 y 15 digitos.',
         };
       }
       if (data.tipoPersona === 'Juridica') {

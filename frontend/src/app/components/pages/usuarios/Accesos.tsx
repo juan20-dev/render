@@ -5,7 +5,7 @@ import { Button } from '../../Button';
 import { LogIn, Lock, Mail } from 'lucide-react';
 import { useAuth } from '../../AuthContext';
 import { api, newPasswordPolicyMessage } from '../../../services/api';
-import { toast } from 'sonner';
+import { toast } from '../../AlertDialog';
 
 export function Accesos() {
   const { user } = useAuth();
@@ -85,7 +85,13 @@ export function Accesos() {
       setChangePasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
       setCurrentPwdOk(null);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'No se pudo cambiar la contraseña';
+      const rawMsg = err instanceof Error ? err.message : 'No se pudo cambiar la contraseña';
+      const msg =
+        rawMsg.includes('ultimas 3')
+          ? 'La nueva contraseña no puede coincidir con ninguna de tus últimas 3 contraseñas.'
+          : rawMsg.includes('debe ser diferente a la contraseña actual')
+            ? 'La nueva contraseña no puede ser igual a tu contraseña actual.'
+            : rawMsg;
       toast.error(msg);
     }
   };

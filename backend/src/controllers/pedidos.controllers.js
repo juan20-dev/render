@@ -15,7 +15,6 @@ const {
 
 const normalizeEstado = (value) => String(value || '').trim().toLowerCase();
 
-const buildDomicilioNumber = () => `DOM-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
 const recentPedidoCreateCache = new Map();
 const PEDIDO_DUPLICATE_WINDOW_MS = 15000;
 
@@ -198,9 +197,7 @@ module.exports = {
             const clienteId = Number(pedidoRow.cliente_id);
             const total = Number(pedidoRow.total || 0);
             const monto = Math.round(total * 0.5);
-            const numero_abono = `ABO-${Date.now()}`;
             await models.Abonos.create({
-              numero_abono,
               pedido_id: id,
               cliente_id: clienteId,
               monto,

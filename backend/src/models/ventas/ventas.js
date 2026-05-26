@@ -10,10 +10,12 @@ const { parseMoneyCO } = require('../../controllers/normalizador-http');
 const {
   ensureVentasMoneyColumns,
   ensureProductoTipoColumn,
-  nextNumeroVenta,
+  reserveEntityIdAndCode,
   groupRowsBy,
 } = require('../shared/auditoria');
 const Clientes = require('./clientes');
+
+const ALLOWED_PAYMENT_METHODS = ['Efectivo', 'Tarjeta', 'Transferencia', 'Contraentrega', 'Nequi', 'Daviplata'];
 
 /**
  * Quita inventario del producto y registra línea en detalle_ventas (uso dentro de transacción).
@@ -244,10 +246,7 @@ const Ventas = {
         throw error;
       }
 
-      const numero_venta =
-        typeof data.numero_venta === 'string' && String(data.numero_venta).trim().length > 0
-          ? String(data.numero_venta).trim()
-          : nextNumeroVenta();
+      const reserved = await reserveEntityIdAndCode(pool, 'public.ventas', 'V');
 
       const totalGuardado = parseMoneyCO(data.total);
       if (totalGuardado === undefined || !Number.isFinite(totalGuardado) || totalGuardado < 0) {
@@ -256,9 +255,9 @@ const Ventas = {
         throw error;
       }
 
-      // Validar método de pago
+      // Validar método de pago con el mismo catálogo aceptado por el normalizador HTTP.
       const metodo_pago = String(data?.metodo_pago || data?.metodopago || 'Efectivo').trim();
-      if (!['Efectivo', 'Transferencia'].includes(metodo_pago)) {
+      if (!ALLOWED_PAYMENT_METHODS.includes(metodo_pago)) {
         const error = new Error(`Método de pago inválido: ${metodo_pago}`);
         error.statusCode = 400;
         throw error;
@@ -270,9 +269,10 @@ const Ventas = {
       const fechaVenta = fechaRaw ? fechaRaw.split('T')[0] : new Date().toISOString().split('T')[0];
 
       const result = await pool.query(
-        'INSERT INTO ventas (numero_venta, tipo, cliente_id, pedido_id, fecha, metodopago, total, estado, metodo_pago, abono_recibido) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id',
+        'INSERT INTO ventas (id, numero_venta, tipo, cliente_id, pedido_id, fecha, metodopago, total, estado, metodo_pago, abono_recibido) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id',
         [
-          numero_venta,
+          reserved.id,
+          reserved.code,
           data.tipo,
           data.cliente_id,
           data.pedido_id || null,
@@ -297,11 +297,6 @@ const Ventas = {
     await ensureVentasMoneyColumns();
     await Ventas.validateClienteActivo(data.cliente_id);
 
-    const numero_venta =
-      typeof data.numero_venta === 'string' && String(data.numero_venta).trim().length > 0
-        ? String(data.numero_venta).trim()
-        : nextNumeroVenta();
-
     if (!Array.isArray(detailLines) || detailLines.length === 0) {
       const error = new Error('La venta debe incluir al menos un producto.');
       error.statusCode = 400;
@@ -322,6 +317,11 @@ const Ventas = {
     const metodo_pago = String(data?.metodo_pago || data?.metodopago || metodopagoCol || 'Efectivo').trim();
     if (!metodo_pago) {
       const error = new Error('Método de pago obligatorio');
+      error.statusCode = 400;
+      throw error;
+    }
+    if (!ALLOWED_PAYMENT_METHODS.includes(metodo_pago)) {
+      const error = new Error(`Método de pago inválido: ${metodo_pago}`);
       error.statusCode = 400;
       throw error;
     }
@@ -377,13 +377,15 @@ const Ventas = {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
+      const reserved = await reserveEntityIdAndCode(client, 'public.ventas', 'V');
 
       const inserted = await client.query(
-        `INSERT INTO ventas (numero_venta, tipo, cliente_id, pedido_id, fecha, metodopago, total, estado, metodo_pago, abono_recibido)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        `INSERT INTO ventas (id, numero_venta, tipo, cliente_id, pedido_id, fecha, metodopago, total, estado, metodo_pago, abono_recibido)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
          RETURNING id`,
         [
-          numero_venta,
+          reserved.id,
+          reserved.code,
           data.tipo,
           data.cliente_id,
           data.pedido_id ?? null,
@@ -464,7 +466,7 @@ const Ventas = {
     };
 
     await pool.query(
-      'UPDATE ventas SET numero_venta = $1, tipo = $2, cliente_id = $3, pedido_id = $4, fecha = $5, metodopago = $6, total = $7, estado = $8 WHERE id = $9',
+      'UPDATE ventas SET numero_venta = $1, tipo = $2, cliente_id = $3, pedido_id = $4, fecha = $5, metodopago = $6, total = $7, estado = $8, updated_at = CURRENT_TIMESTAMP WHERE id = $9',
       [mergedData.numero_venta, mergedData.tipo, mergedData.cliente_id, mergedData.pedido_id, mergedData.fecha, mergedData.metodopago, mergedData.total, mergedData.estado, id]
     );
     return true;

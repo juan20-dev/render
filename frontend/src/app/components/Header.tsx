@@ -1,11 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, User, LogOut, KeyRound, Mail, Phone, MapPin, FileText, CreditCard } from 'lucide-react';
+import { User, LogOut, KeyRound, Mail, Phone, MapPin, FileText, CreditCard, Info, X } from 'lucide-react';
 import { Modal } from './Modal';
 import { Form, FormField, FormActions, FieldSuccess } from './Form';
 import { api, newPasswordPolicyMessage } from '../services/api';
-import { toast } from 'sonner';
 import { Button } from './Button';
-import { AlertDialog } from './AlertDialog';
+import { AlertDialog, toast } from './AlertDialog';
 
 interface UserData {
   email: string;
@@ -20,17 +19,38 @@ interface UserData {
 
 interface HeaderProps {
   title: string;
+  currentPath?: string;
   userName?: string;
   userRole?: string;
   userData?: UserData;
   onLogout?: () => void;
 }
 
-export function Header({ title, userName = 'Usuario', userRole = 'Rol', userData, onLogout }: HeaderProps) {
+const managementGuides: Record<string, string> = {
+  '/configuracion/roles': 'Organiza los permisos del sistema desde los roles antes de asignarlos a los usuarios.',
+  '/usuarios/roles': 'Organiza los permisos del sistema desde los roles antes de asignarlos a los usuarios.',
+  '/usuarios/usuarios': 'Gestiona usuarios, datos personales, estado de la cuenta y control de acceso en un solo lugar.',
+  '/usuarios/accesos': 'Usa esta gestión para validar credenciales, cambiar contraseñas y apoyar procesos de recuperación.',
+  '/compras/proveedores': 'Registra proveedores y mantén al día sus datos para facilitar compras y reposición.',
+  '/compras/compras': 'Crea compras, revisa su estado y confirma la recepción para actualizar el inventario.',
+  '/compras/productos': 'Administra catálogo, precios, stock y estado de los productos disponibles en el sistema.',
+  '/compras/categorias': 'Agrupa los productos por categoría para mejorar la organización y la búsqueda del catálogo.',
+  '/produccion/produccion': 'Crea y sigue órdenes de producción controlando pedido vinculado, productor e insumos usados.',
+  '/produccion/entrega-insumos': 'Registra cada entrega de insumos al productor para mantener trazabilidad del inventario.',
+  '/produccion/insumos': 'Consulta existencias, movimientos recientes y responsables para evitar faltantes en producción.',
+  '/ventas/clientes': 'Mantén actualizados los datos de los clientes para agilizar ventas, pedidos y domicilios.',
+  '/ventas/ventas': 'Registra ventas directas o por pedido y verifica el impacto en stock, cliente y pago.',
+  '/ventas/abonos': 'Consulta y registra abonos asociados a pedidos para dar seguimiento claro a los pagos parciales.',
+  '/ventas/pedidos': 'Gestiona pedidos desde su creación hasta su cierre con control de productos, pago y entrega.',
+  '/ventas/domicilios': 'Cuando un domicilio se completa, también se sincronizan automáticamente el pedido, la venta y el abono vinculados.',
+};
+
+export function Header({ title, currentPath = '', userName = 'Usuario', userRole = 'Rol', userData, onLogout }: HeaderProps) {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
   const [isLogoutDialogOpen, setIsLogoutDialogOpen] = useState(false);
   const [isPasswordSubmitting, setIsPasswordSubmitting] = useState(false);
+  const [isGuideVisible, setIsGuideVisible] = useState(false);
   const [passwordData, setPasswordData] = useState({
     currentPassword: '',
     newPassword: '',
@@ -114,7 +134,13 @@ export function Header({ title, userName = 'Usuario', userRole = 'Rol', userData
       });
       setCurrentPwdOk(null);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'No se pudo cambiar la contraseña';
+      const rawMsg = err instanceof Error ? err.message : 'No se pudo cambiar la contraseña';
+      const msg =
+        rawMsg.includes('ultimas 3')
+          ? 'La nueva contraseña no puede coincidir con ninguna de tus últimas 3 contraseñas.'
+          : rawMsg.includes('debe ser diferente a la contraseña actual')
+            ? 'La nueva contraseña no puede ser igual a tu contraseña actual.'
+            : rawMsg;
       toast.error(msg);
     } finally {
       setIsPasswordSubmitting(false);
@@ -131,6 +157,25 @@ export function Header({ title, userName = 'Usuario', userRole = 'Rol', userData
       onLogout();
     }
   };
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (!currentPath || !managementGuides[currentPath]) {
+      setIsGuideVisible(false);
+      return;
+    }
+    const storageKey = `grandmas:guide:dismissed:${currentPath}`;
+    setIsGuideVisible(window.sessionStorage.getItem(storageKey) !== '1');
+  }, [currentPath]);
+
+  const handleDismissGuide = () => {
+    if (typeof window !== 'undefined' && currentPath) {
+      window.sessionStorage.setItem(`grandmas:guide:dismissed:${currentPath}`, '1');
+    }
+    setIsGuideVisible(false);
+  };
+
+  const currentGuide = managementGuides[currentPath];
 
   return (
     <>
@@ -165,6 +210,24 @@ export function Header({ title, userName = 'Usuario', userRole = 'Rol', userData
           </div>
         </div>
       </header>
+      {currentGuide && isGuideVisible ? (
+        <div className="border-b border-blue-200 bg-blue-50 px-3 py-3 sm:px-4 md:px-6">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-start gap-2 text-sm text-blue-700">
+              <Info className="mt-0.5 h-4 w-4 flex-shrink-0" />
+              <p>{currentGuide}</p>
+            </div>
+            <button
+              type="button"
+              onClick={handleDismissGuide}
+              className="rounded-md p-1 text-blue-700 transition-colors hover:bg-blue-100"
+              aria-label="Cerrar mensaje de ayuda"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       {/* Modal de Perfil */}
       <Modal
@@ -326,7 +389,7 @@ export function Header({ title, userName = 'Usuario', userRole = 'Rol', userData
 
           <div className="p-4 bg-accent rounded-lg mb-4">
             <p className="text-xs text-muted-foreground">
-              <strong>Nota:</strong> Mínimo 8 caracteres, una mayúscula, una minúscula y un número.
+              <strong>Nota:</strong> Mínimo 8 caracteres, una mayúscula, una minúscula, un número y no repetir la actual ni ninguna de las últimas 3 contraseñas.
             </p>
           </div>
 

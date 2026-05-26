@@ -422,7 +422,7 @@ export function Roles() {
               type="text"
               value={busqueda}
               onChange={(e) => setBusqueda(e.target.value)}
-              placeholder="Buscar... (mín. 2, máx. 50 caracteres)"
+              placeholder="Buscar ..."
               className="w-full px-4 py-2.5 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
               maxLength={50}
             />
@@ -545,7 +545,7 @@ export function Roles() {
             type="textarea"
             value={formData.descripcion}
             onChange={(value) => setFormData({ ...formData, descripcion: value as string })}
-            placeholder="Describa el rol (10-50 caracteres)"
+            placeholder="Describa el rol"
             rows={3}
             required
             minLength={10}
@@ -695,7 +695,7 @@ export function Roles() {
             type="textarea"
             value={formData.descripcion}
             onChange={(value) => setFormData({ ...formData, descripcion: value as string })}
-            placeholder="Describa el rol (10-50 caracteres)"
+            placeholder="Describa el rol"
             rows={3}
             required
             minLength={10}

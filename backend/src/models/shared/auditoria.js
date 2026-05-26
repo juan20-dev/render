@@ -31,7 +31,35 @@ const ensureVentasMoneyColumns = async () => {
   }
 };
 
-const nextNumeroVenta = () => `VTA-${Date.now()}-${Math.floor(Math.random() * 9000 + 1000)}`;
+const formatPrefixedCode = (prefix, numericValue, padLength = 3) => {
+  const safeNumber = Number(numericValue);
+  if (!Number.isFinite(safeNumber) || safeNumber <= 0) {
+    return `${prefix}${'0'.repeat(padLength)}`;
+  }
+  return `${prefix}${String(Math.trunc(safeNumber)).padStart(padLength, '0')}`;
+};
+
+const reserveEntityIdAndCode = async (clientOrPool, tableName, prefix, padLength = 3) => {
+  const executor = clientOrPool || pool;
+  const sequenceResult = await executor.query(
+    `SELECT pg_get_serial_sequence($1, 'id') AS seq`,
+    [tableName]
+  );
+  const sequenceName = sequenceResult.rows[0]?.seq;
+  if (!sequenceName) {
+    const error = new Error(`No se encontró la secuencia serial para ${tableName}.`);
+    error.statusCode = 500;
+    throw error;
+  }
+  const nextIdResult = await executor.query(`SELECT nextval($1::regclass) AS id`, [sequenceName]);
+  const id = Number(nextIdResult.rows[0]?.id);
+  if (!Number.isFinite(id) || id <= 0) {
+    const error = new Error(`No se pudo reservar un consecutivo válido para ${tableName}.`);
+    error.statusCode = 500;
+    throw error;
+  }
+  return { id, code: formatPrefixedCode(prefix, id, padLength) };
+};
 
 let productoImageColumnReady = null;
 let categoriaProductCountColumnReady = null;
@@ -654,6 +682,45 @@ const revokeUserSession = async (jti) => {
   );
 };
 
+const revokeAllUserSessions = async (usuarioId) => {
+  if (!Number.isFinite(Number(usuarioId))) return 0;
+  await ensureUserSessionTable();
+  const result = await pool.query(
+    `UPDATE usuarios_sesiones
+        SET revoked_at = CURRENT_TIMESTAMP,
+            last_seen_at = CURRENT_TIMESTAMP
+      WHERE usuario_id = $1
+        AND revoked_at IS NULL
+        AND expires_at > CURRENT_TIMESTAMP`,
+    [Number(usuarioId)]
+  );
+  return Number(result.rowCount || 0);
+};
+
+const getLatestUserStatusReason = async (usuarioId, estado = null) => {
+  if (!Number.isFinite(Number(usuarioId))) return null;
+  await ensureUserAuditTable();
+  const params = [Number(usuarioId)];
+  let estadoFilter = '';
+  if (typeof estado === 'string' && estado.trim()) {
+    params.push(String(estado).trim().toLowerCase());
+    estadoFilter =
+      ` AND LOWER(COALESCE(ua.cambios->'after'->>'estado', '')) = $${params.length}`;
+  }
+  const result = await pool.query(
+    `SELECT COALESCE(ua.cambios->>'reason', ua.cambios->>'motivo', '') AS reason
+       FROM usuarios_auditoria ua
+      WHERE ua.usuario_id = $1
+        AND COALESCE((ua.cambios->>'statusChange')::boolean, false) = true
+        ${estadoFilter}
+      ORDER BY ua.created_at DESC
+      LIMIT 1`,
+    params
+  );
+  const reason = String(result.rows[0]?.reason || '').trim();
+  return reason || null;
+};
+
 const isUserSessionActive = async (usuarioId, jti) => {
   if (!jti || !Number.isFinite(Number(usuarioId))) return false;
   await ensureUserSessionTable();
@@ -1033,7 +1100,8 @@ module.exports = {
   ensureCategoriaProductCountColumn,
   syncCategoriaProductCount,
   // helpers genericos
-  nextNumeroVenta,
+  formatPrefixedCode,
+  reserveEntityIdAndCode,
   normalizeProductoTipoValue,
   groupRowsBy,
   ensureMotivoEstado,
@@ -1067,9 +1135,11 @@ module.exports = {
   isLoginBlocked,
   getLoginBlockInfo,
   revokeUserSession,
+  revokeAllUserSessions,
   isUserSessionActive,
   touchUserSession,
   getActiveUserSessionCount,
+  getLatestUserStatusReason,
   getLinkedClienteForUsuario,
   getUserDeletionBlockers,
   buildUserFilterQuery,

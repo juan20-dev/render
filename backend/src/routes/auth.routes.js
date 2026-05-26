@@ -12,6 +12,11 @@ const {
 
 const router = express.Router();
 
+router.get(
+  '/register-cliente/disponibilidad',
+  simpleRateLimit(60, 15 * 60 * 1000, 'register-cliente-disponibilidad'),
+  controller.checkRegisterClienteAvailability
+);
 router.post('/login', simpleRateLimit(5, 15 * 60 * 1000, 'login'), validate(loginBody), controller.login);
 router.get('/me', authenticateJWT, controller.me);
 router.post('/logout', authenticateJWT, controller.logout);

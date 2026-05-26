@@ -333,32 +333,53 @@ const sendWelcomeEmail = async ({ to, name, email, password = null, emailCredent
 };
 
 const sendUserStatusChangeNotification = async ({ to, name, estado, motivo, changedBy }) => {
+  const statusLabel = String(estado || '').trim() || 'Actualizado';
+  const isInactive = statusLabel.toLowerCase() === 'inactivo';
+  const title = isInactive ? 'Cuenta inactivada' : 'Estado de cuenta actualizado';
   const inner = `
     <p style="margin:0 0 12px 0">Hola <strong>${String(name || '').trim() || 'usuario'}</strong>,</p>
-    <p style="margin:0 0 12px 0">El estado de su cuenta en <strong>Grandma's Liquors</strong> fue actualizado.</p>
-    <p style="margin:0 0 8px 0"><strong>Nuevo estado:</strong> ${escapeHtml(estado)}</p>
+    <p style="margin:0 0 12px 0">
+      ${
+        isInactive
+          ? 'Le informamos que su cuenta en <strong>Grandma\'s Liquors</strong> fue inactivada.'
+          : 'El estado de su cuenta en <strong>Grandma\'s Liquors</strong> fue actualizado.'
+      }
+    </p>
+    <p style="margin:0 0 8px 0"><strong>Nuevo estado:</strong> ${escapeHtml(statusLabel)}</p>
     <ul style="margin:0;padding-left:20px;color:#334155">
       ${changedBy ? `<li style="margin:6px 0"><strong>Registrado por:</strong> ${escapeHtml(changedBy)}</li>` : ''}
-      ${motivo ? `<li style="margin:6px 0"><strong>Observación:</strong> ${escapeHtml(motivo)}</li>` : ''}
+      ${motivo ? `<li style="margin:6px 0"><strong>Motivo:</strong> ${escapeHtml(motivo)}</li>` : ''}
     </ul>
-    <p style="margin:16px 0 0 0">Si no reconoce este cambio, contacte de inmediato al administrador.</p>
+    <p style="margin:16px 0 0 0">
+      ${
+        isInactive
+          ? 'Si necesita más información o considera que hubo un error, comuníquese con los administradores de la aplicación.'
+          : 'Si no reconoce este cambio, contacte de inmediato al administrador.'
+      }
+    </p>
   `;
   const message = {
     from: config.mail.from,
     to,
-    subject: "Grandma's Liquors — Notificación de cuenta",
+    subject: isInactive
+      ? "Grandma's Liquors — Cuenta inactivada"
+      : "Grandma's Liquors — Estado de cuenta actualizado",
     text: [
       `Hola ${name || ''}`.trim(),
       '',
-      `El estado de su cuenta fue actualizado a: ${estado}`,
+      isInactive
+        ? 'Su cuenta en Grandma\'s Liquors fue inactivada.'
+        : `El estado de su cuenta fue actualizado a: ${statusLabel}`,
       changedBy ? `Realizado por: ${changedBy}` : null,
       motivo ? `Motivo: ${motivo}` : null,
       '',
-      'Si no reconoce este cambio, contacte al administrador.',
+      isInactive
+        ? 'Si necesita más información, contacte a los administradores de la aplicación.'
+        : 'Si no reconoce este cambio, contacte al administrador.',
     ]
       .filter(Boolean)
       .join('\n'),
-    html: wrapBrandedHtml('Estado de cuenta', inner),
+    html: wrapBrandedHtml(title, inner),
   };
 
   return sendWithLogging(message, 'statusChange');
