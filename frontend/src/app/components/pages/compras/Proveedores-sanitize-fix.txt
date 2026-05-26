@@ -1,0 +1,13 @@
+// CORREGIR EN Proveedores.tsx línea 48:
+// La función sanitizeNitInput debe permitir: números, guiones, comas, slash, asteriscos
+
+  const sanitizeNitInput = (value: string) => {
+    const str = String(value || '');
+    // Permitir: dígitos 0-9, coma, slash, asterisco, guión, punto
+    const allowed = str.replace(/[^0-9,\/\-*.]/g, '');
+    // Evitar múltiples caracteres especiales consecutivos
+    const normalized = allowed.replace(/([,\/\-*.]){2,}/g, '$1');
+    // Eliminar caracteres especiales al inicio y final
+    const trimmed = normalized.replace(/^[,\/\-*.]+|[,\/\-*.]+$/g, '');
+    return trimmed.slice(0, 30);
+  };

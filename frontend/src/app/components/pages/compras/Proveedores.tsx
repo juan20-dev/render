@@ -47,11 +47,12 @@ export function Proveedores() {
   const [isSavingProveedor, setIsSavingProveedor] = useState(false);
 
   const sanitizeNitInput = (value: string) => {
+    // Permite escribir desde teclado: números, guiones, comas, slash, asteriscos
     return String(value || '')
-      .replace(/[^0-9,/*-]/g, '')
+      .replace(/[^0-9,/*\-.\s]/g, '')
       .replace(/([,/*-]){2,}/g, '$1')
       .replace(/^[,/*-]+|[,/*-]+$/g, '')
-      .slice(0, 25);
+      .slice(0, 30);
   };
 
   useEffect(() => {

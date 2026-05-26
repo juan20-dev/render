@@ -161,7 +161,7 @@ CREATE TABLE proveedores (
     id SERIAL PRIMARY KEY,
     tipo_persona VARCHAR(20) NOT NULL,
     nombre_empresa VARCHAR(150),
-    nit VARCHAR(20),
+    nit VARCHAR(30),
     nombre VARCHAR(100),
     apellido VARCHAR(100),
     tipo_documento VARCHAR(20),

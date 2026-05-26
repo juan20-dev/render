@@ -141,6 +141,7 @@ const Pedidos = {
     }
     const tipoLower = String(p.tipo_producto || '').toLowerCase();
     const esPreparacion = tipoLower === 'preparacion' || tipoLower.includes('prepar');
+    // Solo validar stock para productos terminados, no para productos de preparación
     if (!esPreparacion) {
       const available = Number(p.stock || 0);
       if (!Number.isFinite(available) || available <= 0) {
