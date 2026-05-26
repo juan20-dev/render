@@ -8,6 +8,8 @@ import { api } from '../../../services/api';
 import type { Proveedor } from '../../../services/types';
 import { toast } from '../../AlertDialog';
 
+const getEstadoPriority = (estado: string) => (String(estado || '').trim().toLowerCase() === 'activo' ? 0 : 1);
+
 export function Proveedores() {
   const [proveedores, setProveedores] = useState<Proveedor[]>([]);
   const [loading, setLoading] = useState(true);
@@ -47,7 +49,11 @@ export function Proveedores() {
   const [isSavingProveedor, setIsSavingProveedor] = useState(false);
 
   const sanitizeNitInput = (value: string) => {
-    return String(value || '').replace(/\D/g, '').slice(0, 15);
+    return String(value || '')
+      .replace(/[^0-9,/*-]/g, '')
+      .replace(/([,/*-]){2,}/g, '$1')
+      .replace(/^[,/*-]+|[,/*-]+$/g, '')
+      .slice(0, 25);
   };
 
   useEffect(() => {
@@ -67,22 +73,30 @@ export function Proveedores() {
   };
 
   // Filtrar proveedores
-  const proveedoresFiltrados = proveedores.filter(p => {
-    const matchBusqueda = searchQuery.length < 2 ||
-      p.nombreRazonSocial.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      String(p.nit || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.email.toLowerCase().includes(searchQuery.toLowerCase());
+  const proveedoresFiltrados = useMemo(() => (
+    [...proveedores]
+      .filter(p => {
+        const matchBusqueda = searchQuery.length < 2 ||
+          p.nombreRazonSocial.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          String(p.nit || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+          p.email.toLowerCase().includes(searchQuery.toLowerCase());
 
-    const matchTipo = filtroTipo === 'Todos' || p.tipo === filtroTipo;
-    const matchEstado = filtroEstado === 'Todos' ||
-      (filtroEstado === 'Activo' && p.estado === 'activo') ||
-      (filtroEstado === 'Inactivo' && p.estado === 'inactivo');
-    const matchPreferente = filtroPreferente === 'Todos' ||
-      (filtroPreferente === 'Si' && p.preferente) ||
-      (filtroPreferente === 'No' && !p.preferente);
+        const matchTipo = filtroTipo === 'Todos' || p.tipo === filtroTipo;
+        const matchEstado = filtroEstado === 'Todos' ||
+          (filtroEstado === 'Activo' && p.estado === 'activo') ||
+          (filtroEstado === 'Inactivo' && p.estado === 'inactivo');
+        const matchPreferente = filtroPreferente === 'Todos' ||
+          (filtroPreferente === 'Si' && p.preferente) ||
+          (filtroPreferente === 'No' && !p.preferente);
 
-    return matchBusqueda && matchTipo && matchEstado && matchPreferente;
-  });
+        return matchBusqueda && matchTipo && matchEstado && matchPreferente;
+      })
+      .sort((a, b) => {
+        const estadoDiff = getEstadoPriority(a.estado) - getEstadoPriority(b.estado);
+        if (estadoDiff !== 0) return estadoDiff;
+        return Number(b.id) - Number(a.id);
+      })
+  ), [proveedores, searchQuery, filtroTipo, filtroEstado, filtroPreferente]);
 
   const nitDigits = String(formData.nit || '').replace(/\D/g, '');
   const nitDuplicadoEnLista = useMemo(() => {
@@ -583,11 +597,11 @@ export function Proveedores() {
               if (selectedProveedor) return;
               setFormData({ ...formData, nit: sanitizeNitInput(value as string) });
             }}
-            placeholder="Ej: 9001234567"
+            placeholder="Ej: 900-123/456*7"
             required
             disabled={!!selectedProveedor}
             error={nitDuplicadoEnLista || undefined}
-            inputDigitRule="documento6to15"
+            maxLength={25}
           />
 
           {selectedProveedor && (

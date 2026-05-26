@@ -77,6 +77,11 @@ const moduloPorPermiso = (permiso: string) => {
   return 'Otros';
 };
 
+const getEstadoPriorityRoles = (estado: string) => {
+  const normalizado = String(estado || '').trim().toLowerCase();
+  return normalizado === 'activo' ? 0 : 1;
+};
+
 export function Roles() {
   const [roles, setRoles] = useState<Role[]>([]);
   const [loading, setLoading] = useState(true);
@@ -357,17 +362,25 @@ export function Roles() {
   };
 
   // Filtrar roles
-  const rolesFiltrados = roles.filter(rol => {
-    const matchBusqueda = busqueda.length === 0 ||
-      busqueda.length >= 2 &&
-      (rol.nombre.toLowerCase().includes(busqueda.toLowerCase()) ||
-       rol.descripcion.toLowerCase().includes(busqueda.toLowerCase()));
+  const rolesFiltrados = useMemo(() => (
+    [...roles]
+      .filter(rol => {
+        const matchBusqueda = busqueda.length === 0 ||
+          busqueda.length >= 2 &&
+          (rol.nombre.toLowerCase().includes(busqueda.toLowerCase()) ||
+           rol.descripcion.toLowerCase().includes(busqueda.toLowerCase()));
 
-    const matchRol = filtroRol === 'Todos' || rol.nombre === filtroRol;
-    const matchEstado = filtroEstado === 'Todos' || rol.estado === filtroEstado;
+        const matchRol = filtroRol === 'Todos' || rol.nombre === filtroRol;
+        const matchEstado = filtroEstado === 'Todos' || rol.estado === filtroEstado;
 
-    return matchBusqueda && matchRol && matchEstado;
-  });
+        return matchBusqueda && matchRol && matchEstado;
+      })
+      .sort((a, b) => {
+        const estadoDiff = getEstadoPriorityRoles(a.estado) - getEstadoPriorityRoles(b.estado);
+        if (estadoDiff !== 0) return estadoDiff;
+        return Number(b.id) - Number(a.id);
+      })
+  ), [roles, busqueda, filtroRol, filtroEstado]);
 
   const permisosDisponibles = useMemo(() => {
     const backendPerms = roles.flatMap((r) => r.permisos || []);

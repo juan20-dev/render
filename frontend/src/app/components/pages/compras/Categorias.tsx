@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect, useMemo } from 'react';
 import { DataTable, Column } from '../../DataTable';
 import { Modal } from '../../Modal';
 import { Form, FormField, FormActions, FieldError, FieldHelper } from '../../Form';
@@ -7,6 +7,8 @@ import { Plus, Eye, Edit, Trash2 } from 'lucide-react';
 import { api } from '../../../services/api';
 import type { Categoria } from '../../../services/types';
 import { toast } from '../../AlertDialog';
+
+const getEstadoPriority = (estado: string) => (String(estado || '').trim().toLowerCase() === 'activo' ? 0 : 1);
 
 export function Categorias() {
   const [categorias, setCategorias] = useState<Categoria[]>([]);
@@ -61,17 +63,25 @@ export function Categorias() {
   };
 
   // Filtrar categorías
-  const categoriasFiltradas = categorias.filter(c => {
-    const matchBusqueda = searchQuery.length < 2 ||
-      c.nombre.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      c.descripcion.toLowerCase().includes(searchQuery.toLowerCase());
+  const categoriasFiltradas = useMemo(() => (
+    [...categorias]
+      .filter(c => {
+        const matchBusqueda = searchQuery.length < 2 ||
+          c.nombre.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          c.descripcion.toLowerCase().includes(searchQuery.toLowerCase());
 
-    const matchEstado = filtroEstado === 'Todos' ||
-      (filtroEstado === 'Activo' && c.estado === 'activo') ||
-      (filtroEstado === 'Inactivo' && c.estado === 'inactivo');
+        const matchEstado = filtroEstado === 'Todos' ||
+          (filtroEstado === 'Activo' && c.estado === 'activo') ||
+          (filtroEstado === 'Inactivo' && c.estado === 'inactivo');
 
-    return matchBusqueda && matchEstado;
-  });
+        return matchBusqueda && matchEstado;
+      })
+      .sort((a, b) => {
+        const estadoDiff = getEstadoPriority(a.estado) - getEstadoPriority(b.estado);
+        if (estadoDiff !== 0) return estadoDiff;
+        return Number(b.id) - Number(a.id);
+      })
+  ), [categorias, searchQuery, filtroEstado]);
 
   const columns: Column[] = [
     { key: 'nombre', label: 'Categoría' },

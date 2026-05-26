@@ -14,6 +14,7 @@ interface Producto {
   id: string;
   nombre: string;
   categoria: string;
+  tipo: 'terminado' | 'de preparacion';
   precio: number;
   stock: number;
   imagen: string;
@@ -281,14 +282,17 @@ export function LandingPage({ onNavigateToLogin, onNavigateToRegister, onNavigat
     descripcion?: string;
     precio?: number;
     stock?: number;
+    tipo_producto?: string;
     imagen_url?: string;
     categoria?: string;
   }) => {
     const imagenUrl = String(p.imagen_url || '').trim();
+    const tipoRaw = String(p.tipo_producto || '').toLowerCase();
     return {
       id: String(p.id),
       nombre: p.nombre || '',
       categoria: p.categoria || 'Sin categoría',
+      tipo: tipoRaw === 'preparacion' || tipoRaw.includes('prepar') ? 'de preparacion' : 'terminado',
       precio: Number(p.precio ?? 0),
       stock: Number(p.stock ?? 0),
       imagen: imagenUrl || imagenProductoFallback,
@@ -332,7 +336,14 @@ export function LandingPage({ onNavigateToLogin, onNavigateToRegister, onNavigat
     setCheckoutAttempted(false);
   };
 
+  const esProductoDePreparacion = (producto: Producto) => producto.tipo === 'de preparacion';
+  const productoDisponibleParaPedido = (producto: Producto) =>
+    esProductoDePreparacion(producto) || Number(producto.stock || 0) > 0;
+
   const getCartItemStockError = (item: { producto: Producto; cantidad: number }) => {
+    if (esProductoDePreparacion(item.producto)) {
+      return '';
+    }
     if (item.producto.stock <= 0) {
       return 'Este producto no está disponible en este momento.';
     }
@@ -346,7 +357,7 @@ export function LandingPage({ onNavigateToLogin, onNavigateToRegister, onNavigat
 
   // Agregar al carrito
   const agregarAlCarrito = (producto: Producto) => {
-    if (producto.stock <= 0) {
+    if (!productoDisponibleParaPedido(producto)) {
       toast.error('Producto sin stock', {
         description: `${producto.nombre} no está disponible en este momento.`,
       });
@@ -356,7 +367,7 @@ export function LandingPage({ onNavigateToLogin, onNavigateToRegister, onNavigat
     setCarrito((prev) => {
       const itemExistente = prev.find((item) => item.producto.id === producto.id);
       if (itemExistente) {
-        if (itemExistente.cantidad >= producto.stock) {
+        if (!esProductoDePreparacion(producto) && itemExistente.cantidad >= producto.stock) {
           toast.error('Stock máximo alcanzado', {
             description: `No puedes agregar más unidades de ${producto.nombre}.`,
           });
@@ -376,7 +387,7 @@ export function LandingPage({ onNavigateToLogin, onNavigateToRegister, onNavigat
   const incrementarCantidad = (productoId: string) => {
     setCarrito((prev) => prev.map((item) => {
       if (item.producto.id !== productoId) return item;
-      if (item.producto.stock > 0 && item.cantidad >= item.producto.stock) {
+      if (!esProductoDePreparacion(item.producto) && item.producto.stock > 0 && item.cantidad >= item.producto.stock) {
         toast.error('Stock máximo alcanzado', {
           description: `No puedes pedir más unidades de ${item.producto.nombre}.`,
         });
@@ -1144,9 +1155,9 @@ export function LandingPage({ onNavigateToLogin, onNavigateToRegister, onNavigat
                       size="sm"
                       className="w-full text-[10px] sm:text-xs py-1 sm:py-1.5"
                       icon={<ShoppingCart className="w-3 h-3" />}
-                      disabled={producto.stock <= 0}
+                      disabled={!productoDisponibleParaPedido(producto)}
                     >
-                      {producto.stock > 0 ? 'Agregar' : 'Agotado'}
+                      {productoDisponibleParaPedido(producto) ? 'Agregar' : 'Agotado'}
                     </Button>
                   </div>
                 </div>

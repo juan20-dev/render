@@ -6,6 +6,11 @@ const config = require('../../config');
 let cachedTransporter = null;
 let cachedTransporterMode = null;
 let cachedLogoDataUri = null;
+const PRIORITY_HEADERS = {
+  'X-Priority': '1',
+  'X-MSMail-Priority': 'High',
+  Importance: 'High',
+};
 
 const hasSmtpConfig = () =>
   Boolean(config.mail.host && config.mail.user && config.mail.password);
@@ -71,6 +76,9 @@ const createTransporter = () => {
 
   if (hasSmtpConfig()) {
     cachedTransporter = nodemailer.createTransport({
+      pool: true,
+      maxConnections: 5,
+      maxMessages: 100,
       host: config.mail.host,
       port: config.mail.port,
       secure: config.mail.secure,
@@ -98,22 +106,30 @@ const createTransporter = () => {
 
 const sendWithLogging = async (message, label) => {
   const transporter = createTransporter();
+  const prioritizedMessage = {
+    ...message,
+    priority: 'high',
+    headers: {
+      ...PRIORITY_HEADERS,
+      ...(message?.headers || {}),
+    },
+  };
   try {
-    const result = await transporter.sendMail(message);
+    const result = await transporter.sendMail(prioritizedMessage);
     if (cachedTransporterMode === 'json') {
       console.warn(
-        `[mail] (${label}) NO ENVIADO (jsonTransport activo). Destinatario: ${message.to}. ` +
+        `[mail] (${label}) NO ENVIADO (jsonTransport activo). Destinatario: ${prioritizedMessage.to}. ` +
           'Configura MAIL_* en backend/.env para entregar correos reales.'
       );
     } else {
       console.log(
-        `[mail] (${label}) Enviado a ${message.to} (messageId=${result?.messageId || 'n/d'})`
+        `[mail] (${label}) Enviado a ${prioritizedMessage.to} (messageId=${result?.messageId || 'n/d'})`
       );
     }
     return result;
   } catch (error) {
     console.error(
-      `[mail] (${label}) Fallo al enviar a ${message.to}: ${error?.message || error}`
+      `[mail] (${label}) Fallo al enviar a ${prioritizedMessage.to}: ${error?.message || error}`
     );
     throw error;
   }

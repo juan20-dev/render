@@ -22,6 +22,7 @@ exports.getCatalogo = async (_req, res) => {
       descripcion: truncateDescription(row.descripcion),
       precio: row.precio != null ? Number(row.precio) : 0,
       stock: row.stock != null ? Number(row.stock) : 0,
+      tipo_producto: row.tipo_producto || 'terminado',
       imagen_url: row.imagen_url || '',
       categoria: row.categoria || '',
     }));

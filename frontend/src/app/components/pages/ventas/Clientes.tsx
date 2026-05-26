@@ -9,6 +9,8 @@ import { api } from '../../../services/api';
 import { toast } from '../../AlertDialog';
 import type { Cliente } from '../../../services/types';
 
+const getEstadoPriority = (estado: string) => (String(estado || '').trim().toLowerCase() === 'activo' ? 0 : 1);
+
 export function Clientes() {
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -306,19 +308,27 @@ export function Clientes() {
     }
   };
 
-  const clientesFiltrados = clientes.filter(cliente => {
-    const matchBusqueda = busqueda.length === 0 ||
-      busqueda.length >= 2 &&
-      (cliente.nombre.toLowerCase().includes(busqueda.toLowerCase()) ||
-       cliente.apellido.toLowerCase().includes(busqueda.toLowerCase()) ||
-       cliente.email.toLowerCase().includes(busqueda.toLowerCase()) ||
-       cliente.numeroDocumento.includes(busqueda));
+  const clientesFiltrados = useMemo(() => (
+    [...clientes]
+      .filter(cliente => {
+        const matchBusqueda = busqueda.length === 0 ||
+          busqueda.length >= 2 &&
+          (cliente.nombre.toLowerCase().includes(busqueda.toLowerCase()) ||
+           cliente.apellido.toLowerCase().includes(busqueda.toLowerCase()) ||
+           cliente.email.toLowerCase().includes(busqueda.toLowerCase()) ||
+           cliente.numeroDocumento.includes(busqueda));
 
-    const matchTipoDoc = !filtroTipoDoc || cliente.tipoDocumento === filtroTipoDoc;
-    const matchEstado = !filtroEstado || cliente.estado === filtroEstado;
+        const matchTipoDoc = !filtroTipoDoc || cliente.tipoDocumento === filtroTipoDoc;
+        const matchEstado = !filtroEstado || cliente.estado === filtroEstado;
 
-    return matchBusqueda && matchTipoDoc && matchEstado;
-  });
+        return matchBusqueda && matchTipoDoc && matchEstado;
+      })
+      .sort((a, b) => {
+        const estadoDiff = getEstadoPriority(a.estado) - getEstadoPriority(b.estado);
+        if (estadoDiff !== 0) return estadoDiff;
+        return Number(b.id) - Number(a.id);
+      })
+  ), [clientes, busqueda, filtroTipoDoc, filtroEstado]);
 
   return (
     <div className="space-y-6">
