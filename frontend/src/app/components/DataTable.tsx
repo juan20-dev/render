@@ -49,40 +49,6 @@ export function DataTable({
   const [searchQuery, setSearchQuery] = React.useState('');
   const [page, setPage] = React.useState(1);
 
-  const getRowSortTimestamp = React.useCallback((row: any) => {
-    const candidates = [
-      row?.updated_at,
-      row?.updatedAt,
-      row?.fechaUltimaModificacion,
-      row?.fecha_ultima_modificacion,
-      row?.created_at,
-      row?.createdAt,
-      row?.fecha_creacion,
-      row?.fechaCreacion,
-      row?.fecha,
-    ];
-    for (const value of candidates) {
-      if (!value) continue;
-      const time = new Date(value).getTime();
-      if (Number.isFinite(time)) return time;
-    }
-    return null;
-  }, []);
-
-  const getRowSortNumericId = React.useCallback((row: any) => {
-    const candidates = [row?.id, row?.idOrden, row?.id_orden];
-    for (const value of candidates) {
-      if (value === undefined || value === null) continue;
-      if (typeof value === 'number' && Number.isFinite(value)) return value;
-      const digits = String(value).match(/\d+/g);
-      if (digits && digits.length > 0) {
-        const parsed = Number(digits.join(''));
-        if (Number.isFinite(parsed)) return parsed;
-      }
-    }
-    return 0;
-  }, []);
-
   const total = data.length;
   const usePagination = typeof pageSize === 'number' && pageSize > 0;
   const totalPages = usePagination ? Math.max(1, Math.ceil(total / pageSize!)) : 1;
@@ -98,23 +64,8 @@ export function DataTable({
     }
   }, [page, totalPages, usePagination]);
 
-  const sortedRows = React.useMemo(() => {
-    const rows = Array.isArray(data) ? [...data] : [];
-    rows.sort((a, b) => {
-      const bTime = getRowSortTimestamp(b);
-      const aTime = getRowSortTimestamp(a);
-      if (bTime !== null || aTime !== null) {
-        if (bTime === null) return -1;
-        if (aTime === null) return 1;
-        if (bTime !== aTime) return bTime - aTime;
-      }
-      return getRowSortNumericId(b) - getRowSortNumericId(a);
-    });
-    return rows;
-  }, [data, getRowSortNumericId, getRowSortTimestamp]);
-
   const sliceStart = usePagination ? (safePage - 1) * pageSize! : 0;
-  const pageRows = usePagination ? sortedRows.slice(sliceStart, sliceStart + pageSize!) : sortedRows;
+  const pageRows = usePagination ? data.slice(sliceStart, sliceStart + pageSize!) : data;
 
   const handleSearch = (value: string) => {
     setSearchQuery(value);

@@ -8,8 +8,6 @@ import { api } from '../../../services/api';
 import type { Proveedor } from '../../../services/types';
 import { toast } from '../../AlertDialog';
 
-const getEstadoPriority = (estado: string) => (String(estado || '').trim().toLowerCase() === 'activo' ? 0 : 1);
-
 export function Proveedores() {
   const [proveedores, setProveedores] = useState<Proveedor[]>([]);
   const [loading, setLoading] = useState(true);
@@ -74,28 +72,22 @@ export function Proveedores() {
 
   // Filtrar proveedores
   const proveedoresFiltrados = useMemo(() => (
-    [...proveedores]
-      .filter(p => {
-        const matchBusqueda = searchQuery.length < 2 ||
-          p.nombreRazonSocial.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          String(p.nit || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-          p.email.toLowerCase().includes(searchQuery.toLowerCase());
+    proveedores.filter(p => {
+      const matchBusqueda = searchQuery.length < 2 ||
+        p.nombreRazonSocial.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        String(p.nit || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        p.email.toLowerCase().includes(searchQuery.toLowerCase());
 
-        const matchTipo = filtroTipo === 'Todos' || p.tipo === filtroTipo;
-        const matchEstado = filtroEstado === 'Todos' ||
-          (filtroEstado === 'Activo' && p.estado === 'activo') ||
-          (filtroEstado === 'Inactivo' && p.estado === 'inactivo');
-        const matchPreferente = filtroPreferente === 'Todos' ||
-          (filtroPreferente === 'Si' && p.preferente) ||
-          (filtroPreferente === 'No' && !p.preferente);
+      const matchTipo = filtroTipo === 'Todos' || p.tipo === filtroTipo;
+      const matchEstado = filtroEstado === 'Todos' ||
+        (filtroEstado === 'Activo' && p.estado === 'activo') ||
+        (filtroEstado === 'Inactivo' && p.estado === 'inactivo');
+      const matchPreferente = filtroPreferente === 'Todos' ||
+        (filtroPreferente === 'Si' && p.preferente) ||
+        (filtroPreferente === 'No' && !p.preferente);
 
-        return matchBusqueda && matchTipo && matchEstado && matchPreferente;
-      })
-      .sort((a, b) => {
-        const estadoDiff = getEstadoPriority(a.estado) - getEstadoPriority(b.estado);
-        if (estadoDiff !== 0) return estadoDiff;
-        return Number(b.id) - Number(a.id);
-      })
+      return matchBusqueda && matchTipo && matchEstado && matchPreferente;
+    })
   ), [proveedores, searchQuery, filtroTipo, filtroEstado, filtroPreferente]);
 
   const nitDigits = String(formData.nit || '').replace(/\D/g, '');

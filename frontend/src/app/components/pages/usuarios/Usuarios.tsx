@@ -10,7 +10,6 @@ import type { Usuario } from '../../../services/types';
 import { toast } from '../../AlertDialog';
 
 type RolCatalogo = { id: number; nombre: string; estado: string };
-const getEstadoPriority = (estado: string) => (String(estado || '').trim().toLowerCase() === 'activo' ? 0 : 1);
 
 export function Usuarios() {
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
@@ -158,13 +157,7 @@ export function Usuarios() {
   // se muestren si por algún motivo llegaran en la respuesta.
   const usuariosFiltrados = useMemo(
     () =>
-      [...usuarios]
-        .filter((u) => String(u.rol || '').toLowerCase() !== 'cliente')
-        .sort((a, b) => {
-          const estadoDiff = getEstadoPriority(a.estado) - getEstadoPriority(b.estado);
-          if (estadoDiff !== 0) return estadoDiff;
-          return Number(b.id) - Number(a.id);
-        }),
+      usuarios.filter((u) => String(u.rol || '').toLowerCase() !== 'cliente'),
     [usuarios]
   );
 

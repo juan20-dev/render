@@ -9,8 +9,6 @@ import type { Producto, Categoria } from '../../../services/types';
 import { INSUMO_UNIDADES_API } from '../../../services/types';
 import { toast } from '../../AlertDialog';
 
-const getEstadoPriority = (estado: string) => (String(estado || '').trim().toLowerCase() === 'activo' ? 0 : 1);
-
 export function Productos() {
   const [productos, setProductos] = useState<Producto[]>([]);
   const [categorias, setCategorias] = useState<Categoria[]>([]);
@@ -95,31 +93,25 @@ export function Productos() {
 
   // Filtrar productos
   const productosFiltrados = useMemo(() => (
-    [...productos]
-      .filter(p => {
-        const categoria = categorias.find(c => c.id === p.categoriaId);
+    productos.filter(p => {
+      const categoria = categorias.find(c => c.id === p.categoriaId);
 
-        const matchBusqueda = searchQuery.length < 2 ||
-          p.nombre.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          p.descripcion.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          categoria?.nombre.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchBusqueda = searchQuery.length < 2 ||
+        p.nombre.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        p.descripcion.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        categoria?.nombre.toLowerCase().includes(searchQuery.toLowerCase());
 
-        const matchCategoria = filtroCategoria === 'Todos' ||
-          categoria?.id.toString() === filtroCategoria;
+      const matchCategoria = filtroCategoria === 'Todos' ||
+        categoria?.id.toString() === filtroCategoria;
 
-        const matchEstado = filtroEstado === 'Todos' ||
-          (filtroEstado === 'Activo' && p.estado === 'activo') ||
-          (filtroEstado === 'Inactivo' && p.estado === 'inactivo');
+      const matchEstado = filtroEstado === 'Todos' ||
+        (filtroEstado === 'Activo' && p.estado === 'activo') ||
+        (filtroEstado === 'Inactivo' && p.estado === 'inactivo');
 
-        const matchTipo = filtroTipo === 'Todos' || p.typo === filtroTipo;
+      const matchTipo = filtroTipo === 'Todos' || p.typo === filtroTipo;
 
-        return matchBusqueda && matchCategoria && matchEstado && matchTipo;
-      })
-      .sort((a, b) => {
-        const estadoDiff = getEstadoPriority(a.estado) - getEstadoPriority(b.estado);
-        if (estadoDiff !== 0) return estadoDiff;
-        return Number(b.id) - Number(a.id);
-      })
+      return matchBusqueda && matchCategoria && matchEstado && matchTipo;
+    })
   ), [productos, categorias, searchQuery, filtroCategoria, filtroEstado, filtroTipo]);
 
   const columns: Column[] = [
