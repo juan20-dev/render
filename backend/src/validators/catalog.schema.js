@@ -87,6 +87,7 @@ const updateCompraBody = createCompraBody.partial().passthrough();
 const updateCompraEstadoBody = z.object({
   estado: z.string().trim().min(1),
   motivo: z.string().trim().optional(),
+  motivo_cancelacion: z.string().trim().optional(),
 });
 
 const addProductoCompraBody = z.object({

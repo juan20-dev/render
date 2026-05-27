@@ -22,7 +22,7 @@ export const salesApi = {
         json: {
           nombre: data.nombre,
           apellido: data.apellido,
-          tipoDocumento: data.tipoDocumento,
+          tipo_documento: data.tipoDocumento,
           documento: data.numeroDocumento,
           telefono: data.telefono?.replace(/\D/g, ''),
           email: data.email,
@@ -37,7 +37,7 @@ export const salesApi = {
         json: {
           nombre: updates.nombre,
           apellido: updates.apellido,
-          tipoDocumento: updates.tipoDocumento,
+          tipo_documento: updates.tipoDocumento,
           documento: updates.numeroDocumento,
           telefono: updates.telefono?.replace(/\D/g, ''),
           email: updates.email,

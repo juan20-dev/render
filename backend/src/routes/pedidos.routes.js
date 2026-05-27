@@ -47,7 +47,7 @@ router.get('/', authorizePermissions('Ver Pedidos', 'Ver Mis Pedidos'), denyRole
 router.get('/:id', authorizePermissions('Ver Pedidos', 'Ver Mis Pedidos'), validate(idParam, 'params'), controller.getById);
 router.post(
   '/',
-  simpleRateLimit(1, 3000, 'create-pedido'),
+  simpleRateLimit(10, 2000, 'create-pedido'),
   authorizePermissions('Crear Pedidos', 'Ver Mis Pedidos'),
   validate(createPedidoBody),
   controller.create

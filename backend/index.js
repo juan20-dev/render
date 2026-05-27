@@ -3,7 +3,9 @@ const express = require('express');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
 const rateLimit = require('express-rate-limit');
+const jwt = require('jsonwebtoken');
 const path = require('path');
+const { z } = require('zod');
 const config = require('./config');
 const db = require('./db');
 const routes = require('./src/routes');
@@ -49,6 +51,21 @@ const ensureAdminUnblocked = async () => {
 };
 
 const app = express();
+const UNLIMITED_RATE_LIMIT_ROLES = new Set(['Administrador', 'Asesor']);
+const ApiResponseSchema = z
+  .object({
+    success: z.boolean(),
+    message: z.string().optional(),
+    data: z.unknown().optional(),
+    id: z.union([z.number(), z.string()]).optional(),
+    code: z.string().optional(),
+    details: z.unknown().optional(),
+    path: z.string().optional(),
+    timestamp: z.string().optional(),
+    retryAfter: z.number().optional(),
+    stack: z.array(z.string()).optional(),
+  })
+  .passthrough();
 
 if (config.server.env === 'production') {
   app.set('trust proxy', 1);
@@ -88,11 +105,38 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.use(cookieParser());
 
+const getTokenFromRequest = (req) => {
+  const cookieToken = req.cookies?.[config.auth.cookieName];
+  if (cookieToken) return cookieToken;
+  const authHeader = String(req.headers.authorization || '');
+  if (authHeader.startsWith('Bearer ')) {
+    return authHeader.slice('Bearer '.length).trim();
+  }
+  return null;
+};
+
+const isUnlimitedRoleRequest = (req) => {
+  try {
+    const token = getTokenFromRequest(req);
+    if (!token) return false;
+    const payload = jwt.verify(token, config.auth.jwtSecret, {
+      algorithms: ['HS256'],
+      issuer: config.auth.jwtIssuer,
+      audience: config.auth.jwtAudience,
+    });
+    const role = String(payload?.rol || '').trim();
+    return UNLIMITED_RATE_LIMIT_ROLES.has(role);
+  } catch (_error) {
+    return false;
+  }
+};
+
 const globalApiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 600,
+  max: config.server.env === 'production' ? 1200 : 10000,
   standardHeaders: true,
   legacyHeaders: false,
+  skip: isUnlimitedRoleRequest,
   message: { success: false, message: 'Demasiadas solicitudes. Intenta de nuevo más tarde.' },
 });
 app.use('/api', globalApiLimiter);
@@ -100,6 +144,31 @@ app.use('/api', globalApiLimiter);
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ limit: '2mb', extended: true }));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
+// Contrato formal de salida: todas las respuestas JSON deben cumplir un esquema base.
+app.use((req, res, next) => {
+  const originalJson = res.json.bind(res);
+  res.json = (body) => {
+    let payload = body;
+    if (payload === null || payload === undefined || typeof payload !== 'object' || Array.isArray(payload)) {
+      payload = { success: res.statusCode < 400, data: payload };
+    }
+    if (typeof payload.success !== 'boolean') {
+      payload = { ...payload, success: res.statusCode < 400 };
+    }
+    const validated = ApiResponseSchema.safeParse(payload);
+    if (!validated.success) {
+      return originalJson({
+        success: false,
+        code: 'RESPONSE_SCHEMA_ERROR',
+        message: 'La respuesta del servidor no cumple el contrato esperado.',
+        details: validated.error.flatten(),
+      });
+    }
+    return originalJson(validated.data);
+  };
+  return next();
+});
 
 // ===== RUTAS =====
 // Ruta de health check

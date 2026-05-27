@@ -40,7 +40,7 @@ router.post('/perfil/foto', uploadProfilePhotoHandler, authorizePermissions('Edi
 router.get('/:id', authorizePermissions('Ver Clientes', 'Cliente'), validate(idParam, 'params'), controller.getById);
 router.post(
   '/',
-  simpleRateLimit(1, 3000, 'create-cliente'),
+  simpleRateLimit(10, 2000, 'create-cliente'),
   authorizePermissions('Crear Clientes'),
   denyRoles(...OPERATIONAL_DENY_ROLES),
   validate(createClienteBody),

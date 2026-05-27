@@ -15,7 +15,7 @@ router.get('/', authorizePermissions('Ver Proveedores'), controller.getAll);
 router.get('/:id', authorizePermissions('Ver Proveedores'), validate(idParam, 'params'), controller.getById);
 router.post(
   '/',
-  simpleRateLimit(1, 3000, 'create-proveedor'),
+  simpleRateLimit(10, 2000, 'create-proveedor'),
   authorizePermissions('Crear Proveedores'),
   validate(createProveedorBody),
   controller.create

@@ -347,6 +347,31 @@ const Compras = {
       }
     };
 
+    const revertReceiptStock = async (compraId) => {
+      const detalleResult = await client.query(
+        `SELECT dc.producto_id,
+                dc.cantidad
+         FROM detalle_compras dc
+         WHERE dc.compra_id = $1
+         ORDER BY dc.id ASC`,
+        [compraId]
+      );
+
+      if (!detalleResult.rows.length) {
+        return;
+      }
+
+      for (const row of detalleResult.rows) {
+        await client.query(
+          `UPDATE productos
+             SET stock = GREATEST(0, COALESCE(stock, 0) - $1),
+                 updated_at = CURRENT_TIMESTAMP
+           WHERE id = $2`,
+          [Number(row.cantidad || 0), row.producto_id]
+        );
+      }
+    };
+
     try {
       await client.query('BEGIN');
 
@@ -365,16 +390,9 @@ const Compras = {
         throw error;
       }
 
-      if (normalizeStatus(compra.estado) === 'Recibida') {
-        const error = new Error('La compra ya fue recibida y no puede modificarse');
-        error.statusCode = 409;
-        throw error;
-      }
-
-      if (normalizeStatus(compra.estado) === 'Cancelada' && requestedStatus !== 'Cancelada') {
-        const error = new Error('La compra ya fue cancelada y no puede reactivarse');
-        error.statusCode = 409;
-        throw error;
+      const previousStatus = normalizeStatus(compra.estado);
+      if (previousStatus === requestedStatus) {
+        return compra;
       }
 
       const motivoCancelacion = typeof data.motivo_cancelacion === 'string'
@@ -395,10 +413,11 @@ const Compras = {
         return previous ? `${previous}\n${entry}` : entry;
       })();
 
-      const previousStatus = normalizeStatus(compra.estado);
-
-      if (requestedStatus === 'Recibida') {
+      if (previousStatus !== 'Recibida' && requestedStatus === 'Recibida') {
         await applyReceiptStock(id);
+      }
+      if (previousStatus === 'Recibida' && requestedStatus !== 'Recibida') {
+        await revertReceiptStock(id);
       }
 
       await client.query(

@@ -20,7 +20,7 @@ router.get('/', authorizePermissions('Ver Compras'), controller.getAll);
 router.get('/:id', authorizePermissions('Ver Compras'), validate(idParam, 'params'), controller.getById);
 router.post(
   '/',
-  simpleRateLimit(1, 3000, 'create-compra'),
+  simpleRateLimit(10, 2000, 'create-compra'),
   authorizePermissions('Crear Compras'),
   validate(createCompraBody),
   controller.create

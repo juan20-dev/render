@@ -184,6 +184,19 @@ const authorizeRoles = (...roles) => (req, res, next) => {
 };
 
 const CLIENT_API_PERMISSIONS = ['Cliente', 'Ver Mis Pedidos', 'Ver Tienda'];
+const PERMISSION_ALIASES = {
+  'Crear Compras': ['Registrar Compras'],
+  'Crear Ventas': ['Registrar Ventas'],
+  'Crear Abonos': ['Registrar Abonos'],
+  'Editar Domicilios': ['Gestionar Domicilios'],
+  'Eliminar Compras': ['Anular Compras'],
+  'Eliminar Ventas': ['Anular Ventas'],
+};
+
+const getEquivalentPermissions = (permission) => {
+  const aliases = PERMISSION_ALIASES[permission] || [];
+  return [permission, ...aliases];
+};
 
 // Middleware para validar permisos específicos basados en el rol del usuario
 const authorizePermissions = (...requiredPermissions) => async (req, res, next) => {
@@ -225,7 +238,9 @@ const authorizePermissions = (...requiredPermissions) => async (req, res, next) 
     const userPermissions = Array.isArray(rol.permisos) ? rol.permisos : [];
 
     // Verificar que el usuario tenga al menos uno de los permisos requeridos
-    const hasPermission = requiredPermissions.some(perm => userPermissions.includes(perm));
+    const hasPermission = requiredPermissions.some((perm) =>
+      getEquivalentPermissions(perm).some((candidate) => userPermissions.includes(candidate))
+    );
 
     if (!hasPermission) {
       return res.status(403).json({
@@ -243,52 +258,78 @@ const authorizePermissions = (...requiredPermissions) => async (req, res, next) 
   }
 };
 
-// Middleware de Rate Limiting simple en memoria para endpoints sensibles
-const requestLog = new Map();
+// Middleware de Rate Limiting para endpoints sensibles (persistido en BD).
+let rateLimitTableReady = false;
 
-const simpleRateLimit = (maxRequests = 5, windowMs = 15 * 60 * 1000, routeKey = 'default') => (
+const ensureRateLimitTable = async () => {
+  if (rateLimitTableReady) return;
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS api_rate_limit_log (
+      id BIGSERIAL PRIMARY KEY,
+      route_key VARCHAR(120) NOT NULL,
+      identifier VARCHAR(255) NOT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  await pool.query(
+    'CREATE INDEX IF NOT EXISTS idx_api_rate_limit_route_identifier_created_at ON api_rate_limit_log (route_key, identifier, created_at)'
+  );
+  rateLimitTableReady = true;
+};
+
+const simpleRateLimit = (maxRequests = 5, windowMs = 15 * 60 * 1000, routeKey = 'default') => async (
   req,
   res,
   next
 ) => {
-  const identifier = `${routeKey}:${req.ip || req.socket?.remoteAddress || 'unknown'}`;
-  const now = Date.now();
+  try {
+    await ensureRateLimitTable();
 
-  if (!requestLog.has(identifier)) {
-    requestLog.set(identifier, []);
-  }
+    const identifier = `${routeKey}:${req.ip || req.socket?.remoteAddress || 'unknown'}`;
+    const nowMs = Date.now();
+    const windowStart = new Date(nowMs - windowMs);
 
-  const userRequests = requestLog.get(identifier);
-  const recentRequests = userRequests.filter((time) => now - time < windowMs);
+    await pool.query(
+      `DELETE FROM api_rate_limit_log
+       WHERE route_key = $1 AND identifier = $2 AND created_at < $3`,
+      [routeKey, identifier, windowStart]
+    );
 
-  if (recentRequests.length >= maxRequests) {
-    const oldestRequest = Math.min(...recentRequests);
-    const resetIn = Math.ceil((oldestRequest + windowMs - now) / 1000);
-    return res.status(429).json({
-      success: false,
-      message: `Demasiadas solicitudes. Intenta de nuevo en ${resetIn} segundos.`,
-      retryAfter: resetIn,
-    });
-  }
+    const countResult = await pool.query(
+      `SELECT COUNT(*)::int AS count
+       FROM api_rate_limit_log
+       WHERE route_key = $1 AND identifier = $2 AND created_at >= $3`,
+      [routeKey, identifier, windowStart]
+    );
 
-  recentRequests.push(now);
-  requestLog.set(identifier, recentRequests);
-
-  return next();
-};
-
-// Limpiar logs antiguos cada 10 minutos
-setInterval(() => {
-  const now = Date.now();
-  for (const [identifier, requests] of requestLog.entries()) {
-    const recent = requests.filter(time => now - time < 15 * 60 * 1000);
-    if (recent.length === 0) {
-      requestLog.delete(identifier);
-    } else {
-      requestLog.set(identifier, recent);
+    const count = Number(countResult.rows[0]?.count || 0);
+    if (count >= maxRequests) {
+      const oldestResult = await pool.query(
+        `SELECT MIN(created_at) AS oldest
+         FROM api_rate_limit_log
+         WHERE route_key = $1 AND identifier = $2 AND created_at >= $3`,
+        [routeKey, identifier, windowStart]
+      );
+      const oldest = oldestResult.rows[0]?.oldest ? new Date(oldestResult.rows[0].oldest).getTime() : nowMs;
+      const resetIn = Math.max(1, Math.ceil((oldest + windowMs - nowMs) / 1000));
+      return res.status(429).json({
+        success: false,
+        message: `Demasiadas solicitudes. Intenta de nuevo en ${resetIn} segundos.`,
+        retryAfter: resetIn,
+      });
     }
+
+    await pool.query(
+      'INSERT INTO api_rate_limit_log (route_key, identifier) VALUES ($1, $2)',
+      [routeKey, identifier]
+    );
+
+    return next();
+  } catch (error) {
+    console.error('Error en simpleRateLimit:', error);
+    return next();
   }
-}, 10 * 60 * 1000);
+};
 
 const { authorizeAdministrador } = require('./scopeAccess');
 

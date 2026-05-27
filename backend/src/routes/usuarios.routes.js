@@ -13,7 +13,7 @@ router.get('/documento/:documento', authorizePermissions('Ver Usuarios'), contro
 router.get('/telefono/:telefono', authorizePermissions('Ver Usuarios'), controller.getByTelefono);
 router.post(
   '/',
-  simpleRateLimit(1, 3000, 'create-usuario'),
+  simpleRateLimit(10, 2000, 'create-usuario'),
   authorizePermissions('Crear Usuarios'),
   validate(createUsuarioBody),
   controller.create

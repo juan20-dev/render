@@ -169,25 +169,25 @@ export function LandingPage({
         onCategoriaClick={handleCategoriaClick}
         onSectionShortcut={handleSectionShortcut}
         onOpenProfile={() => {
-          setIsSideMenuOpen(false);
+                        setIsSideMenuOpen(false);
           openProfile();
         }}
         onOpenOrders={() => {
-          setIsSideMenuOpen(false);
-          setShowMisPedidos(true);
-        }}
+                        setIsSideMenuOpen(false);
+                        setShowMisPedidos(true);
+                      }}
         onNavigateToNosotros={() => {
-          setIsSideMenuOpen(false);
-          onNavigateToNosotros();
-        }}
+                    setIsSideMenuOpen(false);
+                    onNavigateToNosotros();
+                  }}
         onNavigateToLogin={() => {
-          setIsSideMenuOpen(false);
-          onNavigateToLogin();
-        }}
+                          setIsSideMenuOpen(false);
+                          onNavigateToLogin();
+                        }}
         onNavigateToRegister={() => {
-          setIsSideMenuOpen(false);
-          onNavigateToRegister();
-        }}
+                          setIsSideMenuOpen(false);
+                          onNavigateToRegister();
+                        }}
         onLogout={() => {
           setIsSideMenuOpen(false);
           handleLogoutClick();
@@ -253,11 +253,11 @@ export function LandingPage({
         onMetodoPagoChange={setMetodoPago}
         onPorcentajePagoChange={setPorcentajePago}
         onDireccionChange={(value) => {
-          setCheckoutTouched((prev) => ({ ...prev, direccion: true }));
+                        setCheckoutTouched((prev) => ({ ...prev, direccion: true }));
           setCheckoutData((prev) => ({ ...prev, direccion: value }));
         }}
         onTelefonoChange={(value) => {
-          setCheckoutTouched((prev) => ({ ...prev, telefono: true }));
+                        setCheckoutTouched((prev) => ({ ...prev, telefono: true }));
           setCheckoutData((prev) => ({ ...prev, telefono: value }));
         }}
         onObservacionesChange={(value) => {

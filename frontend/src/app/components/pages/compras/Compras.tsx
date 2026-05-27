@@ -44,6 +44,7 @@ export function Compras() {
   const [busquedaProducto, setBusquedaProducto] = useState('');
   const [mostrarListaProductos, setMostrarListaProductos] = useState(false);
   const [isSubmittingCompra, setIsSubmittingCompra] = useState(false);
+  const [isSubmittingEstado, setIsSubmittingEstado] = useState(false);
 
   useEffect(() => {
     cargarDatos();
@@ -86,9 +87,16 @@ export function Compras() {
     setMostrarListaProductos(false);
   };
 
-  const cargarDatos = async () => {
+  const cargarDatos = async (options?: { soloCompras?: boolean; silencioso?: boolean }) => {
     try {
-      setLoading(true);
+      if (!options?.silencioso) {
+        setLoading(true);
+      }
+      if (options?.soloCompras) {
+        const comprasData = await api.compras.getAll();
+        setCompras(comprasData);
+        return;
+      }
       const [comprasData, productosData, proveedoresData] = await Promise.all([
         api.compras.getAll(),
         api.productos.getAll(),
@@ -98,10 +106,24 @@ export function Compras() {
       setProductos(productosData.filter((p) => p.estado === 'activo' && p.typo !== 'de preparacion'));
       setProveedores(proveedoresData.filter(p => p.estado === 'activo'));
     } catch (error: any) {
-      toast.error('Error al cargar datos', { description: error.message });
+      if (!options?.silencioso) {
+        toast.error('Error al cargar datos', { description: error.message });
+      }
+      throw error;
     } finally {
-      setLoading(false);
+      if (!options?.silencioso) {
+        setLoading(false);
+      }
     }
+  };
+
+  const actualizarEstadoCompraLocal = (
+    compraId: number,
+    estado: Compra['estado']
+  ) => {
+    setCompras((prev) =>
+      prev.map((c) => (c.id === compraId ? { ...c, estado } : c))
+    );
   };
 
   const formatCurrency = (value: number) => {
@@ -159,15 +181,11 @@ export function Compras() {
     return matchBusqueda && matchEstado;
   });
 
-  const opcionesEstadoCompra = (row: Compra): { v: Compra['estado']; l: string }[] => {
-    if (row.estado === 'recibida') return [{ v: 'recibida', l: 'Recibida' }];
-    if (row.estado === 'cancelada') return [{ v: 'cancelada', l: 'Cancelada' }];
-    return [
-      { v: 'pendiente', l: 'Pendiente' },
-      { v: 'recibida', l: 'Recibida' },
-      { v: 'cancelada', l: 'Cancelada' }
-    ];
-  };
+  const opcionesEstadoCompra = (_row: Compra): { v: Compra['estado']; l: string }[] => [
+    { v: 'pendiente', l: 'Pendiente' },
+    { v: 'recibida', l: 'Recibida' },
+    { v: 'cancelada', l: 'Cancelada' }
+  ];
 
   const columns: Column[] = [
     {
@@ -207,7 +225,6 @@ export function Compras() {
       label: 'Estado',
       render: (_: any, row: Compra) => {
         const opts = opcionesEstadoCompra(row);
-        const locked = opts.length === 1;
         const bg =
           row.estado === 'recibida' ? '#dcfce7' :
           row.estado === 'pendiente' ? '#fef9c3' : '#fee2e2';
@@ -218,7 +235,6 @@ export function Compras() {
           <select
             value={row.estado}
             onChange={(e) => handleEstadoChange(row, e.target.value as 'pendiente' | 'recibida' | 'cancelada')}
-            disabled={locked}
             className="px-3 py-1 rounded-full text-xs border-0 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             style={{ backgroundColor: bg, color: fg }}
             onClick={(e) => e.stopPropagation()}
@@ -236,42 +252,50 @@ export function Compras() {
 
   const handleEstadoChange = (compra: Compra, estado: 'pendiente' | 'recibida' | 'cancelada') => {
     if (compra.estado === estado) return;
-    if (compra.estado === 'recibida' || compra.estado === 'cancelada') {
-      toast.warning('No se puede modificar el estado de una compra finalizada');
-      return;
-    }
+    setSelectedCompra(compra);
+    setNuevoEstado(estado);
+    setMotivoCancelacion('');
+
     if (estado === 'recibida') {
       setCompraRecibidaPendiente(compra);
       return;
     }
     if (estado === 'cancelada') {
-      setSelectedCompra(compra);
-      setNuevoEstado('cancelada');
-      setMotivoCancelacion('');
       setIsEstadoModalOpen(true);
+      return;
     }
+    void confirmarCambioEstado(compra, 'pendiente', '');
   };
 
   const confirmarRecibidaCompra = async () => {
-    if (!compraRecibidaPendiente) return;
+    if (!compraRecibidaPendiente || isSubmittingEstado) return;
     try {
+      setIsSubmittingEstado(true);
       await api.compras.changeEstado(compraRecibidaPendiente.id, 'recibida');
+      actualizarEstadoCompraLocal(compraRecibidaPendiente.id, 'recibida');
       toast.success('Estado actualizado', {
         description: 'Compra recibida y stock actualizado exitosamente'
       });
       setCompraRecibidaPendiente(null);
-      cargarDatos();
+      void cargarDatos({ soloCompras: true, silencioso: true }).catch(() => undefined);
     } catch (error: any) {
       toast.error('Error al cambiar estado', { description: error.message });
-      cargarDatos();
+    } finally {
+      setIsSubmittingEstado(false);
     }
   };
 
-  const confirmarCambioEstado = async () => {
-    if (!selectedCompra) return;
-    const motivoCancelacionLimpio = motivoCancelacion.trim();
+  const confirmarCambioEstado = async (
+    compraOverride?: Compra,
+    estadoOverride?: 'pendiente' | 'recibida' | 'cancelada',
+    motivoOverride?: string
+  ) => {
+    const compraObjetivo = compraOverride || selectedCompra;
+    if (!compraObjetivo || isSubmittingEstado) return;
+    const estadoObjetivo = estadoOverride || nuevoEstado;
+    const motivoCancelacionLimpio = String(motivoOverride ?? motivoCancelacion ?? '').trim();
 
-    if (nuevoEstado === 'cancelada') {
+    if (estadoObjetivo === 'cancelada') {
       if (motivoCancelacionLimpio.length < 10 || motivoCancelacionLimpio.length > 50) {
         toast.error('Error de validación', {
           description: 'El motivo debe tener entre 10 y 50 caracteres'
@@ -281,23 +305,26 @@ export function Compras() {
     }
 
     try {
+      setIsSubmittingEstado(true);
       await api.compras.changeEstado(
-        selectedCompra.id,
-        nuevoEstado,
-        nuevoEstado === 'cancelada' ? motivoCancelacionLimpio : undefined
+        compraObjetivo.id,
+        estadoObjetivo,
+        estadoObjetivo === 'cancelada' ? motivoCancelacionLimpio : undefined
       );
 
+      actualizarEstadoCompraLocal(compraObjetivo.id, estadoObjetivo);
       toast.success('Estado actualizado', {
-        description: 'Compra cancelada exitosamente',
+        description: `Compra marcada como ${estadoObjetivo} exitosamente`,
       });
 
       setIsEstadoModalOpen(false);
       setMotivoCancelacion('');
       setSelectedCompra(null);
-      cargarDatos();
+      void cargarDatos({ soloCompras: true, silencioso: true }).catch(() => undefined);
     } catch (error: any) {
       toast.error('Error al cambiar estado', { description: error.message });
-      cargarDatos();
+    } finally {
+      setIsSubmittingEstado(false);
     }
   };
 
@@ -1044,8 +1071,8 @@ export function Compras() {
             >
               Cancelar
             </Button>
-            <Button onClick={confirmarCambioEstado}>
-              Confirmar Cambio
+            <Button onClick={() => void confirmarCambioEstado()} disabled={isSubmittingEstado}>
+              {isSubmittingEstado ? 'Guardando...' : 'Confirmar Cambio'}
             </Button>
           </FormActions>
         </div>

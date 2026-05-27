@@ -38,7 +38,7 @@ const todosLosPermisos = [
   { modulo: 'Compras', permiso: 'Crear Proveedores' },
   { modulo: 'Compras', permiso: 'Editar Proveedores' },
   { modulo: 'Compras', permiso: 'Ver Compras' },
-  { modulo: 'Compras', permiso: 'Registrar Compras' },
+  { modulo: 'Compras', permiso: 'Crear Compras' },
   { modulo: 'Compras', permiso: 'Anular Compras' },
   { modulo: 'Compras', permiso: 'Ver Productos' },
   { modulo: 'Compras', permiso: 'Crear Productos' },
@@ -57,20 +57,21 @@ const todosLosPermisos = [
   { modulo: 'Ventas', permiso: 'Crear Clientes' },
   { modulo: 'Ventas', permiso: 'Editar Clientes' },
   { modulo: 'Ventas', permiso: 'Ver Ventas' },
-  { modulo: 'Ventas', permiso: 'Registrar Ventas' },
+  { modulo: 'Ventas', permiso: 'Crear Ventas' },
   { modulo: 'Ventas', permiso: 'Anular Ventas' },
   { modulo: 'Ventas', permiso: 'Ver Abonos' },
-  { modulo: 'Ventas', permiso: 'Registrar Abonos' },
+  { modulo: 'Ventas', permiso: 'Crear Abonos' },
   { modulo: 'Ventas', permiso: 'Ver Pedidos' },
   { modulo: 'Ventas', permiso: 'Crear Pedidos' },
   { modulo: 'Ventas', permiso: 'Ver Domicilios' },
-  { modulo: 'Ventas', permiso: 'Gestionar Domicilios' },
+  { modulo: 'Ventas', permiso: 'Editar Domicilios' },
 ];
 
 const moduloPorPermiso = (permiso: string) => {
   const p = permiso.toLowerCase();
   if (p.includes('dashboard')) return 'Dashboard';
-  if (p.includes('usuarios') || p.includes('roles') || p.includes('permisos')) return 'Usuarios';
+  if (p.includes('roles') || p.includes('permisos')) return 'Configuración';
+  if (p.includes('usuarios')) return 'Usuarios';
   if (p.includes('proveedor') || p.includes('compra') || p.includes('producto') || p.includes('categor')) return 'Compras';
   if (p.includes('insumo') || p.includes('producci')) return 'Producción';
   if (p.includes('cliente') || p.includes('venta') || p.includes('abono') || p.includes('pedido') || p.includes('domicilio')) return 'Ventas';

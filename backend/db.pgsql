@@ -31,6 +31,7 @@ DROP FUNCTION IF EXISTS sync_cliente_from_usuario() CASCADE;
 DROP FUNCTION IF EXISTS sync_usuario_from_cliente() CASCADE;
 
 DROP TABLE IF EXISTS schema_migrations CASCADE;
+DROP TABLE IF EXISTS api_rate_limit_log CASCADE;
 DROP TABLE IF EXISTS usuarios_login_intentos CASCADE;
 DROP TABLE IF EXISTS usuarios_password_resets CASCADE;
 DROP TABLE IF EXISTS usuarios_password_historial CASCADE;
@@ -86,6 +87,17 @@ CREATE TABLE schema_migrations (
     version VARCHAR(255) UNIQUE,
     executed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- TABLA: api_rate_limit_log (soporte para rate limiting distribuido)
+CREATE TABLE api_rate_limit_log (
+    id BIGSERIAL PRIMARY KEY,
+    route_key VARCHAR(120) NOT NULL,
+    identifier VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_api_rate_limit_route_identifier_created_at
+    ON api_rate_limit_log (route_key, identifier, created_at);
 
 -- TABLA: categorias
 CREATE TABLE categorias (

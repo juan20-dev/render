@@ -26,7 +26,7 @@ router.get('/', authorizePermissions('Ver Ventas'), controller.getAll);
 router.get('/:id', authorizePermissions('Ver Ventas'), validate(idParam, 'params'), controller.getById);
 router.post(
   '/',
-  simpleRateLimit(1, 3000, 'create-venta'),
+  simpleRateLimit(10, 2000, 'create-venta'),
   authorizePermissions('Crear Ventas'),
   validate(createVentaBody),
   controller.create

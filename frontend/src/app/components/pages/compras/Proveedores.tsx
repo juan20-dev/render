@@ -209,8 +209,9 @@ export function Proveedores() {
 
   const confirmarCambioEstado = async () => {
     if (!proveedorEstadoPendiente) return;
+    const motivoTrim = motivoEstado.trim();
 
-    if (motivoEstado.length < 10 || motivoEstado.length > 50) {
+    if (motivoTrim.length < 10 || motivoTrim.length > 50) {
       toast.error('Error de validación', {
         description: 'El motivo debe tener entre 10 y 50 caracteres'
       });
@@ -221,7 +222,7 @@ export function Proveedores() {
       await api.proveedores.changeEstado(
         proveedorEstadoPendiente.proveedor.id,
         proveedorEstadoPendiente.nuevoEstado,
-        motivoEstado
+        motivoTrim
       );
 
       toast.success('Estado actualizado', {
@@ -354,7 +355,7 @@ export function Proveedores() {
       return;
     }
 
-    if (nitDigits.length < 6 || nitDigits.length > 12) {
+    if (nitDigits.length < 6 || nitDigits.length > 15) {
       toast.error('NIT o documento inválido', {
         description: 'El NIT/Documento debe tener entre 6 y 15 dígitos.',
       });

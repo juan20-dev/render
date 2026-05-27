@@ -258,9 +258,14 @@ export const catalogApi = {
     },
     changeEstado: async (id: number, estado: 'pendiente' | 'recibida' | 'cancelada', motivo?: string) => {
       const mapDb: Record<string, string> = { pendiente: 'Pendiente', recibida: 'Recibida', cancelada: 'Cancelada' };
+      const motivoLimpio = typeof motivo === 'string' ? motivo.trim() : '';
       await apiFetch(`/api/compras/${id}/estado`, {
         method: 'PATCH',
-        json: { estado: mapDb[estado], motivo_cancelacion: typeof motivo === 'string' ? motivo.trim() : undefined },
+        json: {
+          estado: mapDb[estado],
+          motivo: motivoLimpio || undefined,
+          motivo_cancelacion: motivoLimpio || undefined,
+        },
       });
     },
   },
