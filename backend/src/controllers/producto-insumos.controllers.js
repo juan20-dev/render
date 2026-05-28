@@ -10,7 +10,7 @@ module.exports = {
       const data = await models.ProductoInsumos.getAll();
       res.json({ success: true, data });
     } catch (error) {
-      res.status(500).json({ success: false, message: error.message });
+      res.status(error.statusCode || 500).json({ success: false, message: error.message });
     }
   },
   getByProducto: async (req, res) => {
@@ -18,7 +18,7 @@ module.exports = {
       const data = await models.ProductoInsumos.getByProducto(req.params.productoId);
       res.json({ success: true, data });
     } catch (error) {
-      res.status(500).json({ success: false, message: error.message });
+      res.status(error.statusCode || 500).json({ success: false, message: error.message });
     }
   },
   getById: async (req, res) => {
@@ -27,7 +27,7 @@ module.exports = {
       if (!row) return res.status(404).json({ success: false, message: 'Receta no encontrada' });
       res.json({ success: true, data: row });
     } catch (error) {
-      res.status(500).json({ success: false, message: error.message });
+      res.status(error.statusCode || 500).json({ success: false, message: error.message });
     }
   },
   create: async (req, res) => {
@@ -48,7 +48,14 @@ module.exports = {
   },
   delete: async (req, res) => {
     try {
-      await models.ProductoInsumos.delete(req.params.id);
+      const motivo = typeof req.body?.motivo === 'string' ? req.body.motivo.trim() : '';
+      if (!motivo || motivo.length < 10 || motivo.length > 50) {
+        return res.status(400).json({
+          success: false,
+          message: 'El motivo de eliminacion es obligatorio y debe tener entre 10 y 50 caracteres',
+        });
+      }
+      await models.ProductoInsumos.delete(req.params.id, { reason: motivo });
       res.json({ success: true, message: 'Receta eliminada exitosamente' });
     } catch (error) {
       res.status(error.statusCode || 500).json({ success: false, message: error.message });

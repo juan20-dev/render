@@ -1,4 +1,5 @@
 const { z } = require('zod');
+const { moneyNumber, stockInt, telefonoString, longTextString } = require('./common.schema');
 
 const pedidoEstados = z.enum(['Pendiente', 'En Proceso', 'Completado', 'Cancelado']);
 
@@ -8,10 +9,10 @@ const createPedidoBody = z
     cliente_id: z.coerce.number().int().positive().optional(),
     fecha: z.string().trim().optional(),
     fecha_entrega: z.string().trim().optional(),
-    detalles: z.string().optional(),
-    direccion: z.string().nullable().optional(),
-    telefono: z.string().nullable().optional(),
-    total: z.coerce.number().nonnegative().optional(),
+    detalles: longTextString.optional(),
+    direccion: longTextString.nullable().optional(),
+    telefono: telefonoString.nullable().optional(),
+    total: moneyNumber.optional(),
     estado: pedidoEstados.optional(),
     metodo_pago: z.string().trim().optional(),
     esquema_abono: z.enum(['50%', '100%']).optional(),
@@ -20,9 +21,9 @@ const createPedidoBody = z
         z.object({
           productoId: z.coerce.number().int().positive().optional(),
           producto_id: z.coerce.number().int().positive().optional(),
-          cantidad: z.coerce.number().positive(),
-          precio: z.coerce.number().nonnegative().optional(),
-          precioUnitario: z.coerce.number().nonnegative().optional(),
+          cantidad: stockInt.refine((n) => n > 0, 'La cantidad debe ser mayor a 0'),
+          precio: moneyNumber.optional(),
+          precioUnitario: moneyNumber.optional(),
         })
       )
       .optional(),
@@ -41,8 +42,8 @@ const addProductoPedidoBody = z.object({
   pedido_id: z.coerce.number().int().positive().optional(),
   productoId: z.coerce.number().int().positive().optional(),
   producto_id: z.coerce.number().int().positive().optional(),
-  cantidad: z.coerce.number().positive(),
-  precioUnitario: z.coerce.number().nonnegative().optional(),
+  cantidad: stockInt.refine((n) => n > 0, 'La cantidad debe ser mayor a 0'),
+  precioUnitario: moneyNumber.optional(),
 });
 
 module.exports = {

@@ -70,21 +70,24 @@ export const salesApi = {
         precio: p.precio,
         precioUnitario: p.precio,
       }));
+      const direccion = String(data.direccion || '').trim();
+      const telefono = String(data.telefono || '').trim();
+      const payload: Record<string, unknown> = {
+        cliente_id: data.clienteId,
+        fecha: data.fechaPedido,
+        fecha_entrega: data.fechaEntrega,
+        total: data.total,
+        estado: 'Pendiente',
+        metodo_pago: metodoPagoDb(String(data.metodoPago || 'efectivo')),
+        esquema_abono: data.porcentajeAbono === 50 ? '50%' : '100%',
+        productos,
+      };
+      if (observaciones.length >= 5) payload.detalles = observaciones;
+      if (direccion.length >= 5) payload.direccion = direccion;
+      if (telefono.length > 0) payload.telefono = telefono;
       await apiFetch('/api/pedidos', {
         method: 'POST',
-        json: {
-          cliente_id: data.clienteId,
-          fecha: data.fechaPedido,
-          fecha_entrega: data.fechaEntrega,
-          detalles: observaciones,
-          direccion: data.direccion || null,
-          telefono: data.telefono || null,
-          total: data.total,
-          estado: 'Pendiente',
-          metodo_pago: metodoPagoDb(String(data.metodoPago || 'efectivo')),
-          esquema_abono: data.porcentajeAbono === 50 ? '50%' : '100%',
-          productos,
-        },
+        json: payload,
       });
     },
     /** Lista pedidos del cliente autenticado con líneas de detalle (nombres y cantidades). */

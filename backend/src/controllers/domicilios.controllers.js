@@ -40,29 +40,74 @@ const ensureVentaForDeliveredDomicilio = async (domicilioId) => {
   try {
     const domicilio = await models.Domicilios.getById(domicilioId);
     if (!domicilio) return;
-    if (normalizeEstado(domicilio.estado) !== 'entregado') return;
+    const domicilioEstado = normalizeEstado(domicilio.estado);
+    if (!['entregado', 'cancelado'].includes(domicilioEstado)) return;
 
     const pedido = await models.Pedidos.getById(domicilio.pedido_id);
     if (!pedido) return;
 
     const ventaExistente = await models.Ventas.getByPedido(domicilio.pedido_id);
+    const pedidoTotal = Number(pedido.total || 0);
+    const pedidoId = Number(pedido.id);
 
-    /*
-     * Liquidacion del abono al entregar: no se crea un segundo abono por el mismo pedido.
-     * Se actualiza el abono mas antiguo del pedido (el creado al registrar el pedido con 50%)
-     * al monto total y 100%, y se eliminan filas duplicadas del mismo pedido.
-     */
+    if (domicilioEstado === 'cancelado') {
+      if (String(pedido.estado || '').trim() !== 'Cancelado') {
+        await models.Pedidos.update(pedidoId, {
+          numero_pedido: pedido.numero_pedido,
+          fecha: pedido.fecha,
+          fecha_entrega: pedido.fecha_entrega,
+          detalles: pedido.detalles,
+          direccion: pedido.direccion,
+          telefono: pedido.telefono,
+          total: pedido.total,
+          metodo_pago: pedido.metodo_pago,
+          esquema_abono: pedido.esquema_abono,
+          monto_abonado: pedido.monto_abonado,
+          estado: 'Cancelado',
+        });
+      }
+      if (ventaExistente?.id) {
+        const ventaActual = await models.Ventas.getById(ventaExistente.id);
+        if (ventaActual && String(ventaActual.estado || '').trim() === 'Pendiente') {
+          await models.Ventas.update(ventaExistente.id, { estado: 'Cancelada' });
+        }
+      }
+      const abonosRaw = await models.Abonos.getByPedido(pedidoId);
+      for (const abono of Array.isArray(abonosRaw) ? abonosRaw : []) {
+        const estadoAbono = String(abono.estado || '').trim();
+        if (estadoAbono === 'Registrado' || estadoAbono === 'Verificado' || estadoAbono === 'Aplicado') {
+          await models.Abonos.updateEstado(abono.id, 'Cancelado');
+        }
+      }
+      return;
+    }
+
+    if (String(pedido.estado || '').trim() !== 'Completado') {
+      await models.Pedidos.update(pedidoId, {
+        numero_pedido: pedido.numero_pedido,
+        fecha: pedido.fecha,
+        fecha_entrega: pedido.fecha_entrega,
+        detalles: pedido.detalles,
+        direccion: pedido.direccion,
+        telefono: pedido.telefono,
+        total: pedido.total,
+        metodo_pago: pedido.metodo_pago,
+        esquema_abono: pedido.esquema_abono,
+        monto_abonado: pedido.monto_abonado,
+        estado: 'Completado',
+      });
+    }
+
     try {
       const abonosRaw = await models.Abonos.getByPedido(pedido.id);
-      const totalPedido = Number(pedido.total || 0);
       const lista = [...(Array.isArray(abonosRaw) ? abonosRaw : [])].sort((a, b) => Number(a.id) - Number(b.id));
       const isCancelado = (s) => String(s || '').trim().toLowerCase().includes('cancel');
       const activos = lista.filter((a) => !isCancelado(a.estado));
       const principal = activos[0] || lista[0] || null;
 
-      if (principal && totalPedido > 0) {
+      if (principal && pedidoTotal > 0) {
         const montoPrevio = Number(principal.monto || 0);
-        const faltante = Math.max(0, Math.round(totalPedido - montoPrevio));
+        const faltante = Math.max(0, Math.round(pedidoTotal - montoPrevio));
         const fechaHoy = new Date().toISOString().split('T')[0];
         const fechaPrev = principal.fecha ? String(principal.fecha).split('T')[0] : 'sin fecha';
         const metodoPrev = principal.metodo_pago || 'no especificado';
@@ -70,26 +115,26 @@ const ensureVentaForDeliveredDomicilio = async (domicilioId) => {
         const partes = [];
         partes.push(
           `Abono inicial: $${montoPrevio.toLocaleString('es-CO')} (${
-            totalPedido > 0 ? Math.round((montoPrevio * 100) / totalPedido) : 0
+            pedidoTotal > 0 ? Math.round((montoPrevio * 100) / pedidoTotal) : 0
           }%) - ${fechaPrev} - ${metodoPrev}`
         );
         if (faltante > 0) {
           partes.push(
             `Liquidacion contraentrega: $${faltante.toLocaleString('es-CO')} (${
-              totalPedido > 0 ? Math.round((faltante * 100) / totalPedido) : 0
+              pedidoTotal > 0 ? Math.round((faltante * 100) / pedidoTotal) : 0
             }%) - ${fechaHoy} - Contraentrega`
           );
         } else {
           partes.push(`Liquidacion contraentrega: $0 - pedido ya saldado al ${fechaHoy}`);
         }
         partes.push(
-          `Total liquidado: $${Math.round(totalPedido).toLocaleString('es-CO')} (100%) - cierre el ${fechaHoy}`
+          `Total liquidado: $${Math.round(pedidoTotal).toLocaleString('es-CO')} (100%) - cierre el ${fechaHoy}`
         );
         const detalleCombinado = partes.join(' | ');
 
         try {
           await models.Abonos.updateLiquidacion(principal.id, {
-            monto: Math.round(totalPedido),
+            monto: Math.round(pedidoTotal),
             detalle: detalleCombinado,
             estado: 'Finalizado',
             porcentaje_abonado: 100,
@@ -100,23 +145,19 @@ const ensureVentaForDeliveredDomicilio = async (domicilioId) => {
 
         for (const a of lista) {
           if (Number(a.id) === Number(principal.id)) continue;
-          try {
-            await models.Abonos.delete(a.id);
-          } catch (e) {
-            // continuar
-          }
+          await models.Abonos.updateEstado(a.id, 'Cancelado');
         }
-      } else if (totalPedido > 0 && lista.length === 0) {
+      } else if (pedidoTotal > 0 && lista.length === 0) {
         const fechaHoy = new Date().toISOString().split('T')[0];
         await models.Abonos.create({
-          pedido_id: pedido.id,
+          pedido_id: pedidoId,
           cliente_id: pedido.cliente_id,
-          monto: Math.round(totalPedido),
+          monto: Math.round(pedidoTotal),
           fecha: fechaHoy,
           metodo_pago: 'Contraentrega',
           estado: 'Finalizado',
           porcentaje_abonado: 100,
-          detalle: `Liquidacion total a contraentrega: $${Math.round(totalPedido).toLocaleString(
+          detalle: `Liquidacion total a contraentrega: $${Math.round(pedidoTotal).toLocaleString(
             'es-CO'
           )} (100%) - ${fechaHoy} - Contraentrega`,
         });
@@ -124,8 +165,15 @@ const ensureVentaForDeliveredDomicilio = async (domicilioId) => {
 
       try {
         await models.Pedidos.update(pedido.id, {
+          numero_pedido: pedido.numero_pedido,
+          fecha: pedido.fecha,
+          fecha_entrega: pedido.fecha_entrega,
+          detalles: pedido.detalles,
+          direccion: pedido.direccion,
+          telefono: pedido.telefono,
           esquema_abono: '100%',
-          monto_abonado: Math.round(totalPedido),
+          monto_abonado: Math.round(pedidoTotal),
+          estado: 'Completado',
         });
       } catch (e) {
         // ignore
@@ -150,14 +198,14 @@ const ensureVentaForDeliveredDomicilio = async (domicilioId) => {
     const ventaId = await models.Ventas.create({
       tipo: 'Por Pedido',
       cliente_id: pedido.cliente_id,
-      pedido_id: pedido.id,
+      pedido_id: pedidoId,
       fecha: new Date().toISOString().split('T')[0],
       metodopago: 'Contraentrega',
-      total: Number(pedido.total || 0),
+      total: pedidoTotal,
       estado: 'Completada',
     });
 
-    const detalles = await models.Pedidos.getDetalles(pedido.id);
+    const detalles = await models.Pedidos.getDetalles(pedidoId);
     await Promise.all(
       (Array.isArray(detalles) ? detalles : []).map((item) =>
         models.Ventas.addDetalle(
@@ -354,6 +402,10 @@ exports.delete = asyncHandler(async (req, res) => {
   if (isClienteUser(req)) throw AppError.forbidden();
   const dom = await models.Domicilios.getById(req.params.id);
   assertRepartidorOwnsDomicilio(req, dom);
-  await models.Domicilios.delete(req.params.id);
+  const motivo = String(req.body?.motivo || '').trim();
+  if (!motivo || motivo.length < 10 || motivo.length > 50) {
+    throw AppError.badRequest('El motivo de eliminacion es obligatorio y debe tener entre 10 y 50 caracteres');
+  }
+  await models.Domicilios.delete(req.params.id, { reason: motivo, actor_id: req.user?.id || null });
   res.json({ success: true, message: 'Domicilio eliminado exitosamente' });
 });

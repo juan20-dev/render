@@ -174,6 +174,7 @@ export function TiendaCliente() {
               onChange={(e) => setBusqueda(e.target.value)}
               placeholder="Buscar ..."
               className="w-full px-4 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+              maxLength={60}
             />
           </div>
 

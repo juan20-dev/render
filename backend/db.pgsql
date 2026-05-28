@@ -113,7 +113,7 @@ CREATE TABLE categorias (
 -- TABLA: productos
 CREATE TABLE productos (
     id SERIAL PRIMARY KEY,
-    nombre VARCHAR(150) NOT NULL UNIQUE,
+    nombre VARCHAR(150) NOT NULL,
     categoria_id INTEGER NOT NULL REFERENCES categorias(id) ON DELETE RESTRICT,
     descripcion TEXT,
     precio DECIMAL(18,2) NOT NULL,
@@ -132,6 +132,9 @@ CREATE TABLE productos (
 ALTER TABLE productos
     ADD CONSTRAINT productos_preparacion_stock_cero_chk
     CHECK (tipo_producto <> 'preparacion' OR COALESCE(stock, 0) = 0);
+
+CREATE UNIQUE INDEX ux_productos_nombre_tipo_normalizado
+    ON productos (LOWER(TRIM(nombre)), tipo_producto);
 
 -- TABLA: usuarios
 CREATE TABLE usuarios (
@@ -168,6 +171,10 @@ CREATE TABLE clientes (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE UNIQUE INDEX ux_clientes_email_normalizado
+    ON clientes (LOWER(TRIM(email)))
+    WHERE email IS NOT NULL AND TRIM(email) <> '';
+
 -- TABLA: proveedores
 CREATE TABLE proveedores (
     id SERIAL PRIMARY KEY,
@@ -189,6 +196,22 @@ CREATE TABLE proveedores (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE UNIQUE INDEX ux_proveedores_nit_normalizado
+    ON proveedores ((regexp_replace(TRIM(COALESCE(nit, '')), '\D', '', 'g')))
+    WHERE nit IS NOT NULL AND TRIM(nit) <> '';
+
+CREATE UNIQUE INDEX ux_proveedores_documento_normalizado
+    ON proveedores ((regexp_replace(TRIM(COALESCE(numero_documento, '')), '\D', '', 'g')))
+    WHERE numero_documento IS NOT NULL AND TRIM(numero_documento) <> '';
+
+CREATE UNIQUE INDEX ux_proveedores_email_normalizado
+    ON proveedores (LOWER(TRIM(email)))
+    WHERE email IS NOT NULL AND TRIM(email) <> '';
+
+CREATE UNIQUE INDEX ux_proveedores_telefono_normalizado
+    ON proveedores ((regexp_replace(TRIM(COALESCE(telefono, '')), '\D', '', 'g')))
+    WHERE telefono IS NOT NULL AND TRIM(telefono) <> '';
+
 -- TABLA: pedidos
 CREATE TABLE pedidos (
     id SERIAL PRIMARY KEY,
@@ -207,6 +230,9 @@ CREATE TABLE pedidos (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+ALTER TABLE pedidos
+    ADD CONSTRAINT pedidos_numero_formato_chk
+    CHECK (numero_pedido ~ '^P[0-9]{3,}$');
 
 -- TABLA: detalle_pedidos
 CREATE TABLE detalle_pedidos (
@@ -235,6 +261,9 @@ CREATE TABLE ventas (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+ALTER TABLE ventas
+    ADD CONSTRAINT ventas_numero_formato_chk
+    CHECK (numero_venta ~ '^V[0-9]{3,}$');
 
 -- TABLA: detalle_ventas
 CREATE TABLE detalle_ventas (
@@ -267,6 +296,9 @@ CREATE TABLE abonos (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+ALTER TABLE abonos
+    ADD CONSTRAINT abonos_numero_formato_chk
+    CHECK (numero_abono ~ '^A[0-9]{3,}$');
 
 -- TABLA: domicilios
 CREATE TABLE domicilios (
@@ -285,6 +317,9 @@ CREATE TABLE domicilios (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+ALTER TABLE domicilios
+    ADD CONSTRAINT domicilios_numero_formato_chk
+    CHECK (numero_domicilio ~ '^D[0-9]{3,}$');
 
 -- TABLA: compras
 CREATE TABLE compras (
@@ -304,6 +339,9 @@ CREATE TABLE compras (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+ALTER TABLE compras
+    ADD CONSTRAINT compras_numero_formato_chk
+    CHECK (numero_compra ~ '^C[0-9]{3,}$');
 
 -- TABLA: detalle_compras (lineas: no incluir productos tipo preparacion; validado en API)
 CREATE TABLE detalle_compras (
@@ -363,6 +401,9 @@ CREATE TABLE entregas_insumos (
         OR (insumo_id IS NULL AND producto_catalogo_id IS NOT NULL)
     )
 );
+ALTER TABLE entregas_insumos
+    ADD CONSTRAINT entregas_numero_formato_chk
+    CHECK (numero_entrega ~ '^E[0-9]{3,}$');
 
 -- TABLA: insumo_movimientos
 CREATE TABLE insumo_movimientos (
@@ -400,6 +441,9 @@ CREATE TABLE produccion (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+ALTER TABLE produccion
+    ADD CONSTRAINT produccion_numero_formato_chk
+    CHECK (numero_produccion ~ '^O[0-9]{3,}$');
 
 -- TABLAS DE AUDITORÍA
 CREATE TABLE productos_auditoria (

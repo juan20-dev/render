@@ -10,7 +10,7 @@ module.exports = {
       const compras = await models.Compras.getAll();
       res.json({ success: true, data: compras });
     } catch (error) {
-      res.status(500).json({ success: false, message: error.message });
+      res.status(error.statusCode || 500).json({ success: false, message: error.message });
     }
   },
   getById: async (req, res) => {
@@ -21,7 +21,7 @@ module.exports = {
       const historial_estados = await models.Compras.getEstadoHistorial(req.params.id);
       res.json({ success: true, data: { ...compra, detalles, historial_estados } });
     } catch (error) {
-      res.status(500).json({ success: false, message: error.message });
+      res.status(error.statusCode || 500).json({ success: false, message: error.message });
     }
   },
   create: async (req, res) => {
@@ -82,7 +82,14 @@ module.exports = {
   },
   delete: async (req, res) => {
     try {
-      await models.Compras.delete(req.params.id);
+      const motivo = typeof req.body?.motivo === 'string' ? req.body.motivo.trim() : '';
+      if (!motivo || motivo.length < 10 || motivo.length > 50) {
+        return res.status(400).json({
+          success: false,
+          message: 'El motivo de eliminacion es obligatorio y debe tener entre 10 y 50 caracteres',
+        });
+      }
+      await models.Compras.delete(req.params.id, { usuarioId: req.user?.id || null, reason: motivo });
       res.json({ success: true, message: 'Compra eliminada exitosamente' });
     } catch (error) {
       res.status(error.statusCode || 500).json({ success: false, message: error.message, details: error.details });

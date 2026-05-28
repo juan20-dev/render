@@ -109,8 +109,12 @@ exports.updateStatus = asyncHandler(async (req, res) => {
 
 exports.delete = asyncHandler(async (req, res) => {
   throwIfProductorForbidden(req);
+  const motivo = String(req.body?.motivo || '').trim();
+  if (!motivo || motivo.length < 10 || motivo.length > 50) {
+    throw AppError.badRequest('El motivo de eliminacion es obligatorio y debe tener entre 10 y 50 caracteres');
+  }
   try {
-    await models.Produccion.delete(req.params.id);
+    await models.Produccion.delete(req.params.id, { reason: motivo, actor_id: req.user?.id || null });
     res.json({ success: true, message: 'Produccion eliminada exitosamente' });
   } catch (error) {
     throwIfModelError(error);

@@ -12,7 +12,7 @@ module.exports = {
       const abonos = await models.Abonos.getAll();
       res.json({ success: true, data: abonos });
     } catch (error) {
-      res.status(500).json({ success: false, message: error.message });
+      res.status(error.statusCode || 500).json({ success: false, message: error.message });
     }
   },
   getById: async (req, res) => {
@@ -21,7 +21,7 @@ module.exports = {
       if (!abono) return res.status(404).json({ success: false, message: 'Abono no encontrado' });
       res.json({ success: true, data: abono });
     } catch (error) {
-      res.status(500).json({ success: false, message: error.message });
+      res.status(error.statusCode || 500).json({ success: false, message: error.message });
     }
   },
   getByPedido: async (req, res) => {
@@ -29,7 +29,7 @@ module.exports = {
       const abonos = await models.Abonos.getByPedido(req.params.pedidoId);
       res.json({ success: true, data: abonos });
     } catch (error) {
-      res.status(500).json({ success: false, message: error.message });
+      res.status(error.statusCode || 500).json({ success: false, message: error.message });
     }
   },
   create: async (req, res) => {
@@ -81,7 +81,7 @@ module.exports = {
 
       res.status(201).json({ success: true, id, message: 'Abono creado exitosamente' });
     } catch (error) {
-      res.status(500).json({ success: false, message: error.message });
+      res.status(error.statusCode || 500).json({ success: false, message: error.message });
     }
   },
   update: async (req, res) => {
@@ -94,15 +94,22 @@ module.exports = {
       await models.Abonos.update(req.params.id, normalized.data);
       res.json({ success: true, message: 'Abono actualizado exitosamente' });
     } catch (error) {
-      res.status(500).json({ success: false, message: error.message });
+      res.status(error.statusCode || 500).json({ success: false, message: error.message });
     }
   },
   delete: async (req, res) => {
     try {
-      await models.Abonos.delete(req.params.id);
+      const motivo = typeof req.body?.motivo === 'string' ? req.body.motivo.trim() : '';
+      if (!motivo || motivo.length < 10 || motivo.length > 50) {
+        return res.status(400).json({
+          success: false,
+          message: 'El motivo de eliminacion es obligatorio y debe tener entre 10 y 50 caracteres',
+        });
+      }
+      await models.Abonos.delete(req.params.id, { reason: motivo });
       res.json({ success: true, message: 'Abono eliminado exitosamente' });
     } catch (error) {
-      res.status(500).json({ success: false, message: error.message });
+      res.status(error.statusCode || 500).json({ success: false, message: error.message });
     }
   },
   updateStatus: async (req, res) => {
@@ -163,7 +170,7 @@ module.exports = {
       await models.Abonos.updateEstado(req.params.id, estado);
       return res.json({ success: true, message: 'Estado actualizado exitosamente' });
     } catch (error) {
-      res.status(500).json({ success: false, message: error.message });
+      res.status(error.statusCode || 500).json({ success: false, message: error.message });
     }
   }
 };

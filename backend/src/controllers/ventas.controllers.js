@@ -106,10 +106,17 @@ module.exports = {
       if (isClienteUser(req)) {
         return res.status(403).json({ success: false, message: 'No autorizado' });
       }
-      await models.Ventas.delete(req.params.id);
+      const motivo = typeof req.body?.motivo === 'string' ? req.body.motivo.trim() : '';
+      if (!motivo || motivo.length < 10 || motivo.length > 50) {
+        return res.status(400).json({
+          success: false,
+          message: 'El motivo de eliminacion es obligatorio y debe tener entre 10 y 50 caracteres',
+        });
+      }
+      await models.Ventas.delete(req.params.id, { actor_id: req.user?.id || null, reason: motivo });
       return res.json({ success: true, message: 'Venta eliminada exitosamente' });
     } catch (error) {
-      return res.status(500).json({ success: false, message: error.message });
+      return res.status(error.statusCode || 500).json({ success: false, message: error.message });
     }
   },
   updateStatus: async (req, res) => {

@@ -14,9 +14,6 @@ const {
   ensureEntregasInsumoProductoCatalogo,
 } = require('../shared/auditoria');
 
-/** Evita solaparse con ids reales de la tabla insumos al exponer filas de inventario desde productos tipo insumo. */
-const INSUMO_VISTA_DESDE_PRODUCTO_ID_BASE = 900000000;
-
 const Insumos = {
   getAll: async () => {
     const result = await pool.query(`
@@ -162,7 +159,13 @@ const Insumos = {
     );
     return true;
   },
-  delete: async (id) => {
+  delete: async (id, options = {}) => {
+    const reason = typeof options.reason === 'string' ? options.reason.trim() : '';
+    if (!reason || reason.length < 10 || reason.length > 50) {
+      const error = new Error('El motivo de eliminacion es obligatorio y debe tener entre 10 y 50 caracteres');
+      error.statusCode = 400;
+      throw error;
+    }
     const current = await Insumos.getById(id);
     if (!current) {
       const error = new Error('Insumo no encontrado');
@@ -193,7 +196,7 @@ const Insumos = {
     await ensureEntregasInsumoProductoCatalogo();
     const result = await pool.query(
       `
-        SELECT ($1 + p.id) AS id,
+        SELECT p.id AS id,
                p.nombre,
                p.stock::numeric AS cantidad,
                'Unidades'::varchar AS unidad,
@@ -225,13 +228,10 @@ const Insumos = {
         WHERE COALESCE(p.tipo_producto, 'terminado') = 'insumo'
           AND LOWER(TRIM(COALESCE(p.estado, ''))) = 'activo'
         ORDER BY p.nombre
-      `,
-      [INSUMO_VISTA_DESDE_PRODUCTO_ID_BASE]
+      `
     );
     return result.rows;
   }
 };
-
-Insumos.INSUMO_VISTA_DESDE_PRODUCTO_ID_BASE = INSUMO_VISTA_DESDE_PRODUCTO_ID_BASE;
 
 module.exports = Insumos;

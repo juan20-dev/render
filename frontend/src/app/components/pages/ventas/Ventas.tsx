@@ -3,7 +3,7 @@ import { DataTable, Column, commonActions, openPrintablePdf } from '../../DataTa
 import { Modal } from '../../Modal';
 import { Form, FormField, FormActions, FieldError } from '../../Form';
 import { Button } from '../../Button';
-import { Plus, Trash2, Minus, Search, ShoppingCart, Package } from 'lucide-react';
+import { Plus, Trash2, Minus, Search, ShoppingCart, Package, X } from 'lucide-react';
 import { api } from '../../../services/api';
 import { formatEntityCode } from '../../../services/mappers';
 import { toast } from '../../AlertDialog';
@@ -52,6 +52,7 @@ export function Ventas() {
   const [mostrarListaClientes, setMostrarListaClientes] = useState(false);
   const [mostrarListaPedidos, setMostrarListaPedidos] = useState(false);
   const [mostrarListaProductos, setMostrarListaProductos] = useState(false);
+  const [mostrarNotaVenta, setMostrarNotaVenta] = useState(true);
   const [isSubmittingVenta, setIsSubmittingVenta] = useState(false);
   const [formData, setFormData] = useState({
     tipo: 'directa' as 'directa' | 'por pedido',
@@ -339,6 +340,7 @@ export function Ventas() {
     setMostrarListaClientes(false);
     setMostrarListaPedidos(false);
     setMostrarListaProductos(false);
+    setMostrarNotaVenta(true);
     try {
       const productosData = await api.productos.getAll();
       setProductos(productosData.filter((p) => p.estado === 'activo' && p.typo !== 'insumo'));
@@ -696,12 +698,23 @@ export function Ventas() {
         size="xl"
       >
         <Form onSubmit={handleSubmit} noValidate>
-          {/* Nota informativa sobre tipos de venta */}
-          <div className="p-4 bg-blue-50 rounded-lg border border-blue-200 mb-4">
-            <p className="text-sm text-blue-700">
-              <strong>Nota:</strong> Las ventas directas descuentan stock inmediatamente. Las ventas por pedido descuentan stock al completar el pedido.
-            </p>
-          </div>
+          {mostrarNotaVenta ? (
+            <div className="p-4 bg-blue-50 rounded-lg border border-blue-200 mb-4">
+              <div className="flex items-start justify-between gap-3">
+                <p className="text-sm text-blue-700">
+                  <strong>Nota:</strong> Las ventas directas descuentan stock inmediatamente. Las ventas por pedido descuentan stock al completar el pedido.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setMostrarNotaVenta(false)}
+                  className="rounded-md p-1 text-blue-700 transition-colors hover:bg-blue-100 hover:text-blue-900"
+                  aria-label="Cerrar nota informativa"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+          ) : null}
 
           <div className="grid grid-cols-2 gap-4">
             <FormField
@@ -747,6 +760,7 @@ export function Ventas() {
                   onFocus={() => setMostrarListaClientes(true)}
                   placeholder="Escribe nombre, ID o documento del cliente..."
                   className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                  maxLength={60}
                   required
                 />
                 {mostrarListaClientes && busquedaCliente && (
@@ -783,6 +797,7 @@ export function Ventas() {
                   onFocus={() => setMostrarListaPedidos(true)}
                   placeholder="Escribe ID del pedido o nombre del cliente..."
                   className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                  maxLength={60}
                   required
                 />
                 {mostrarListaPedidos && busquedaPedido && (
@@ -862,6 +877,7 @@ export function Ventas() {
                     onFocus={() => setMostrarListaProductos(true)}
                     placeholder="Busca por nombre o ID, o haz clic para ver todos los productos..."
                     className="w-full pl-10 pr-4 py-3 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-base"
+                    maxLength={60}
                   />
                 </div>
                 {mostrarListaProductos && (
@@ -901,12 +917,23 @@ export function Ventas() {
                                     <span className="font-medium">{p.nombre}</span>
                                   </div>
                                   <div className="text-sm text-muted-foreground mt-1">
-                                    ID: {p.id} | Precio: {formatCurrency(p.precioVenta)} |
-                                    Stock: <span className={esPrep ? 'text-muted-foreground' : stockRestante <= 5 ? 'text-red-600 font-semibold' : 'text-green-600'}>
-                                      {esPrep ? 'No aplica (preparación)' : `${stockRestante} disponibles`}
-                                    </span>
-                                    {cantidadEnVenta > 0 && (
-                                      <span className="ml-2 text-blue-600">({cantidadEnVenta} en esta venta)</span>
+                                    {esPrep ? (
+                                      <>
+                                        ID: {p.id} | Precio: {formatCurrency(p.precioVenta)}
+                                        {cantidadEnVenta > 0 && (
+                                          <span className="ml-2 text-blue-600">({cantidadEnVenta} en esta venta)</span>
+                                        )}
+                                      </>
+                                    ) : (
+                                      <>
+                                        ID: {p.id} | Precio: {formatCurrency(p.precioVenta)} |
+                                        Stock: <span className={stockRestante <= 5 ? 'text-red-600 font-semibold' : 'text-green-600'}>
+                                          {stockRestante} disponibles
+                                        </span>
+                                        {cantidadEnVenta > 0 && (
+                                          <span className="ml-2 text-blue-600">({cantidadEnVenta} en esta venta)</span>
+                                        )}
+                                      </>
                                     )}
                                   </div>
                                 </div>
@@ -949,7 +976,7 @@ export function Ventas() {
                             </div>
                             <div className="text-sm text-muted-foreground mb-2">
                               Precio unitario: {formatCurrency(producto.precio)}
-                              {esPrep ? ' | Producto de preparación (sin control de stock)' : ` | Stock disponible: ${maxCantidad}`}
+                              {!esPrep && ` | Stock disponible: ${maxCantidad}`}
                             </div>
 
                             {/* Validación visual de stock */}
@@ -971,13 +998,6 @@ export function Ventas() {
                               <div className="mt-2 p-2 bg-yellow-50 rounded border border-yellow-200">
                                 <p className="text-xs text-yellow-700">
                                   <strong>⚠️ Advertencia:</strong> Este producto tiene stock bajo. Quedarán {validacionStock.stockRestante} unidades disponibles.
-                                </p>
-                              </div>
-                            )}
-                            {!esPrep && validacionStock.valido && !stockBajo && validacionStock.stockRestante > 5 && (
-                              <div className="mt-2 p-2 bg-green-50 rounded border border-green-200">
-                                <p className="text-xs text-green-700">
-                                  ✓ Stock disponible. Quedarán {validacionStock.stockRestante} unidades.
                                 </p>
                               </div>
                             )}

@@ -514,6 +514,7 @@ export function Abonos() {
                 onFocus={() => setMostrarListaPedidos(true)}
                 placeholder="Escribe ID del pedido o nombre del cliente..."
                 className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                maxLength={60}
                 autoComplete="off"
               />
               {mostrarListaPedidos && (

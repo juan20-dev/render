@@ -20,7 +20,18 @@ const validate =
           path: Array.isArray(e.path) ? e.path.join('.') : String(e.path || ''),
           message: e.message,
         }));
-        return next(AppError.badRequest('Datos de entrada inválidos', details));
+        const preview = details
+          .slice(0, 2)
+          .map((d) => `${d.path || 'campo'}: ${d.message}`)
+          .join(' | ');
+        return next(
+          AppError.validationError(
+            details,
+            preview
+              ? `Error de validación en ${source}: ${preview}`
+              : `Error de validación en ${source}: revise los campos enviados`
+          )
+        );
       }
       return next(err);
     }

@@ -34,7 +34,7 @@ const productoDeleteBlockedByFk = (err, producto) => {
   const nombre = producto?.nombre ? `«${producto.nombre}»` : 'este producto';
   const esInsumo = String(producto?.tipo_producto || '').toLowerCase() === 'insumo';
   const msg = esInsumo
-    ? `No se puede eliminar el insumo ${nombre} porque tiene entregas registradas a productores en «Entrega de Insumos». Anule esas entregas o cambie el estado del insumo a Inactivo en lugar de eliminarlo.`
+    ? `No se puede eliminar el insumo ${nombre} porque tiene entregas registradas a productores en «Entrega de Insumos». Anule esas entregas o deje el insumo como Inactivo.`
     : `No se puede eliminar ${nombre} porque tiene entregas de insumos vinculadas en «Entrega de Insumos». Revise ese módulo o inactiva el producto.`;
 
   const error = new Error(msg);
@@ -59,7 +59,7 @@ const assertProductoEliminable = async (id, producto) => {
     total === 1 ? '1 entrega registrada' : `${total} entregas registradas`;
 
   const msg = esInsumo
-    ? `No se puede eliminar el insumo ${nombre} porque tiene ${detalleEntregas} a productores en «Entrega de Insumos». Anule esas entregas o cambie el estado del insumo a Inactivo.`
+    ? `No se puede eliminar el insumo ${nombre} porque tiene ${detalleEntregas} a productores en «Entrega de Insumos». Anule esas entregas o deje el insumo como Inactivo.`
     : `No se puede eliminar ${nombre} porque tiene ${detalleEntregas} vinculadas en «Entrega de Insumos». Revise ese módulo o inactiva el producto.`;
 
   const error = new Error(msg);
@@ -129,13 +129,18 @@ const Productos = {
       error.statusCode = 400;
       throw error;
     }
+    const tipoProducto = normalizeProductoTipoValue(data?.tipo_producto ?? data?.tipo);
 
     const duplicate = await pool.query(
-      'SELECT id, estado FROM productos WHERE LOWER(TRIM(nombre)) = LOWER(TRIM($1)) LIMIT 1',
-      [nombre]
+      `SELECT id, estado
+       FROM productos
+       WHERE LOWER(TRIM(nombre)) = LOWER(TRIM($1))
+         AND COALESCE(tipo_producto, 'terminado') = $2
+       LIMIT 1`,
+      [nombre, tipoProducto]
     );
     if (duplicate.rows[0]) {
-      const error = new Error('Ya existe un producto con ese nombre');
+      const error = new Error('Ya existe un producto con ese nombre para el mismo tipo');
       error.statusCode = 409;
       throw error;
     }
@@ -150,7 +155,6 @@ const Productos = {
       throw error;
     }
 
-    const tipoProducto = normalizeProductoTipoValue(data?.tipo_producto ?? data?.tipo);
     if (tipoProducto === 'preparacion' && (!Number.isFinite(precioSeguro) || precioSeguro <= 0)) {
       const error = new Error('El precio de venta es obligatorio y debe ser mayor a 0 para productos de preparación');
       error.statusCode = 400;
@@ -222,11 +226,16 @@ const Productos = {
     }
 
     const duplicate = await pool.query(
-      'SELECT id FROM productos WHERE LOWER(TRIM(nombre)) = LOWER(TRIM($1)) AND id <> $2 LIMIT 1',
-      [nombre, id]
+      `SELECT id
+       FROM productos
+       WHERE LOWER(TRIM(nombre)) = LOWER(TRIM($1))
+         AND COALESCE(tipo_producto, 'terminado') = $2
+         AND id <> $3
+       LIMIT 1`,
+      [nombre, currentTipo, id]
     );
     if (duplicate.rows[0]) {
-      const error = new Error('Ya existe un producto con ese nombre');
+      const error = new Error('Ya existe un producto con ese nombre para el mismo tipo');
       error.statusCode = 409;
       throw error;
     }
@@ -352,6 +361,13 @@ const Productos = {
     return Productos.getById(id);
   },
   delete: async (id, options = {}) => {
+    const reason = typeof options.reason === 'string' ? options.reason.trim() : '';
+    if (!reason || reason.length < 10 || reason.length > 50) {
+      const error = new Error('El motivo de eliminacion es obligatorio y debe tener entre 10 y 50 caracteres');
+      error.statusCode = 400;
+      throw error;
+    }
+
     await ensureCategoriaProductCountColumn();
     const previousFull = await Productos.getById(id);
     if (!previousFull) {
@@ -388,6 +404,7 @@ const Productos = {
             }
           : null,
         after: null,
+        reason,
       },
     });
     return true;

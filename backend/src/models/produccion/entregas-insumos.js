@@ -9,6 +9,7 @@ const pool = require('../../../db');
 const {
   ensureMotivoEstado,
   ensureEntregasInsumoProductoCatalogo,
+  reserveEntityIdAndCode,
 } = require('../shared/auditoria');
 const InsumosModel = require('./insumos');
 
@@ -95,11 +96,6 @@ const EntregasInsumos = {
     return result.rows[0];
   },
   create: async (data) => {
-    if (!data.numero_entrega || !String(data.numero_entrega).trim()) {
-      const error = new Error('El número de entrega es obligatorio');
-      error.statusCode = 400;
-      throw error;
-    }
     const cantidad = Number(data?.cantidad) || 0;
     if (cantidad <= 0) {
       const error = new Error('La cantidad debe ser un valor positivo');
@@ -141,6 +137,7 @@ const EntregasInsumos = {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
+      const reserved = await reserveEntityIdAndCode(client, 'public.entregas_insumos', 'E');
 
       if (target.kind === 'producto') {
         await assertProductoInsumoActivo(client, target.id);
@@ -154,10 +151,11 @@ const EntregasInsumos = {
           throw err;
         }
         const result = await client.query(
-          `INSERT INTO entregas_insumos (numero_entrega, insumo_id, producto_catalogo_id, cantidad, unidad, operario_id, fecha, hora)
-           VALUES ($1, NULL, $2, $3, $4, $5, $6, $7) RETURNING id`,
+          `INSERT INTO entregas_insumos (id, numero_entrega, insumo_id, producto_catalogo_id, cantidad, unidad, operario_id, fecha, hora)
+           VALUES ($1, $2, NULL, $3, $4, $5, $6, $7, $8) RETURNING id`,
           [
-            data.numero_entrega,
+            reserved.id,
+            reserved.code,
             target.id,
             cantidad,
             unidad,
@@ -191,8 +189,8 @@ const EntregasInsumos = {
         throw err;
       }
       const result = await client.query(
-        'INSERT INTO entregas_insumos (numero_entrega, insumo_id, producto_catalogo_id, cantidad, unidad, operario_id, fecha, hora) VALUES ($1, $2, NULL, $3, $4, $5, $6, $7) RETURNING id',
-        [data.numero_entrega, insumoId, cantidad, unidad, data.operario_id, data.fecha, data.hora || null]
+        'INSERT INTO entregas_insumos (id, numero_entrega, insumo_id, producto_catalogo_id, cantidad, unidad, operario_id, fecha, hora) VALUES ($1, $2, $3, NULL, $4, $5, $6, $7, $8) RETURNING id',
+        [reserved.id, reserved.code, insumoId, cantidad, unidad, data.operario_id, data.fecha, data.hora || null]
       );
       await client.query(
         'UPDATE insumos SET cantidad = COALESCE(cantidad, 0) - $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND COALESCE(cantidad, 0) >= $1',

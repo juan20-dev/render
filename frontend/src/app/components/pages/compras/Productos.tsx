@@ -86,9 +86,14 @@ export function Productos() {
   };
 
   // Validar nombre único
-  const validarNombreUnico = (nombre: string, idActual?: number) => {
+  const validarNombreUnico = (
+    nombre: string,
+    tipo: 'terminado' | 'de preparacion' | 'insumo',
+    idActual?: number
+  ) => {
     const existe = productos.find(p =>
       p.nombre.toLowerCase() === nombre.toLowerCase() &&
+      p.typo === tipo &&
       p.id !== idActual
     );
     return !existe;
@@ -335,7 +340,11 @@ export function Productos() {
       setSelectedProducto(null);
       cargarDatos();
     } catch (error: any) {
-      toast.error('Error al eliminar producto', { description: error.message });
+      const descripcion = String(error?.message || '').trim();
+      const titulo = descripcion.toLowerCase().startsWith('no se puede eliminar')
+        ? 'No se puede eliminar el producto'
+        : 'Error al eliminar producto';
+      toast.error(titulo, { description: descripcion || 'No se pudo eliminar el producto' });
     }
   };
 
@@ -359,9 +368,9 @@ export function Productos() {
       (productoFormularioModo === 'nuevo' && formData.typo === 'de preparacion');
 
     // Validaciones
-    if (!validarNombreUnico(formData.nombre, productoFormularioModo === 'editar' ? selectedProducto?.id : undefined)) {
+    if (!validarNombreUnico(formData.nombre, formData.typo, productoFormularioModo === 'editar' ? selectedProducto?.id : undefined)) {
       toast.error('Error de validación', {
-        description: 'Ya existe un producto con ese nombre'
+        description: 'Ya existe un producto con ese nombre para el mismo tipo'
       });
       return;
     }
@@ -589,11 +598,12 @@ export function Productos() {
                 value &&
                 !validarNombreUnico(
                   value as string,
+                  formData.typo,
                   productoFormularioModo === 'editar' ? selectedProducto?.id : undefined
                 )
               ) {
                 toast.warning('Advertencia', {
-                  description: 'Ya existe un producto con ese nombre',
+                  description: 'Ya existe un producto con ese nombre para el mismo tipo',
                   duration: 2000
                 });
               }
@@ -769,7 +779,6 @@ export function Productos() {
                   name="precioVenta"
                   type="text"
                   inputMode="numeric"
-                  pattern="[0-9]*"
                   value={precioVentaInput}
                   onChange={(e) => {
                     const num = parseMoneyInput(e.target.value);

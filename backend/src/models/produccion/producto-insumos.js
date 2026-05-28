@@ -94,7 +94,13 @@ const ProductoInsumos = {
     );
     return true;
   },
-  delete: async (id) => {
+  delete: async (id, options = {}) => {
+    const reason = typeof options.reason === 'string' ? options.reason.trim() : '';
+    if (!reason || reason.length < 10 || reason.length > 50) {
+      const error = new Error('El motivo de eliminacion es obligatorio y debe tener entre 10 y 50 caracteres');
+      error.statusCode = 400;
+      throw error;
+    }
     const r = await pool.query('DELETE FROM producto_insumos WHERE id = $1 RETURNING id', [id]);
     if (r.rowCount === 0) {
       const error = new Error('Receta no encontrada');

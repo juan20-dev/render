@@ -1,4 +1,5 @@
 const { z } = require('zod');
+const { moneyNumber, stockInt } = require('./common.schema');
 
 const ventaEstados = z.enum(['Pendiente', 'Completada', 'Cancelada']);
 
@@ -10,7 +11,7 @@ const createVentaBody = z
     pedido_id: z.coerce.number().int().positive().nullable().optional(),
     fecha: z.string().trim().optional(),
     metodopago: z.string().trim().optional(),
-    total: z.coerce.number().nonnegative().optional(),
+    total: moneyNumber.optional(),
     estado: ventaEstados.optional(),
     productos: z.array(z.record(z.unknown())).optional(),
     items: z.array(z.record(z.unknown())).optional(),
@@ -29,8 +30,8 @@ const addProductoVentaBody = z.object({
   venta_id: z.coerce.number().int().positive().optional(),
   productoId: z.coerce.number().int().positive().optional(),
   producto_id: z.coerce.number().int().positive().optional(),
-  cantidad: z.coerce.number().positive(),
-  precioUnitario: z.coerce.number().nonnegative().optional(),
+  cantidad: stockInt.refine((n) => n > 0, 'La cantidad debe ser mayor a 0'),
+  precioUnitario: moneyNumber.optional(),
 });
 
 module.exports = {

@@ -1,10 +1,14 @@
 const { z } = require('zod');
+const { longTextString } = require('./common.schema');
 
 const consumoInsumoItem = z
   .object({
     clave: z.string().trim().optional(),
     insumo_nombre: z.string().trim().optional(),
-    cantidad: z.coerce.number().positive(),
+    cantidad: z.coerce
+      .number()
+      .positive('La cantidad debe ser mayor a 0')
+      .max(99999, 'La cantidad no puede superar 99999 por registro de consumo'),
     unidad: z.string().trim().optional(),
     producto_catalogo_id: z.coerce.number().int().positive().optional(),
   })
@@ -22,7 +26,7 @@ const createProduccionBody = z
     tiempoPreparacion: z.coerce.number().min(0).max(120).optional(),
     responsable: z.string().trim().optional(),
     estado: z.string().trim().optional(),
-    notes: z.string().nullable().optional(),
+    notes: longTextString.nullable().optional(),
     consumo_insumos: z.array(consumoInsumoItem).min(1, 'consumo_insumos es obligatorio').optional(),
     consumoInsumos: z.array(consumoInsumoItem).min(1, 'consumo_insumos es obligatorio').optional(),
   })
@@ -66,12 +70,16 @@ const updateProduccionBody = z
   .object({
     producto_id: z.coerce.number().int().positive().optional(),
     pedido_id: z.coerce.number().int().positive().nullable().optional(),
-    cantidad: z.coerce.number().int().positive().optional(),
+    cantidad: z.coerce
+      .number()
+      .positive('La cantidad debe ser mayor a 0')
+      .max(99999, 'La cantidad no puede superar 99999')
+      .optional(),
     fecha: z.string().trim().optional(),
     responsable: z.string().trim().optional(),
     tiempo_preparacion_minutos: z.coerce.number().positive().optional(),
     estado: z.string().trim().optional(),
-    notes: z.string().nullable().optional(),
+    notes: longTextString.nullable().optional(),
     insumos_gastados: z.array(z.unknown()).optional(),
   })
   .passthrough();

@@ -1,4 +1,5 @@
 const { z } = require('zod');
+const { moneyNumber, longTextString } = require('./common.schema');
 
 const abonoEstados = z.enum(['Registrado', 'Verificado', 'Aplicado', 'Finalizado', 'Cancelado']);
 
@@ -7,12 +8,12 @@ const createAbonoBody = z
     numero_abono: z.string().trim().optional(),
     pedido_id: z.coerce.number().int().positive().optional(),
     cliente_id: z.coerce.number().int().positive().optional(),
-    monto: z.coerce.number().positive().optional(),
+    monto: moneyNumber.refine((n) => n > 0, 'El monto debe ser mayor a 0').optional(),
     fecha: z.string().trim().optional(),
     metodo_pago: z.string().trim().optional(),
     estado: abonoEstados.optional(),
     porcentaje_abonado: z.coerce.number().min(0).max(100).optional(),
-    detalle: z.string().optional(),
+    detalle: longTextString.optional(),
   })
   .passthrough();
 

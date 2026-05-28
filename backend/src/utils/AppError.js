@@ -13,6 +13,10 @@ class AppError extends Error {
     return new AppError(message, 400, 'BAD_REQUEST', details);
   }
 
+  static validationError(details, message = 'Error de validación en datos de entrada') {
+    return new AppError(message, 400, 'VALIDATION_ERROR', details);
+  }
+
   static unauthorized(message = 'No autenticado') {
     return new AppError(message, 401, 'UNAUTHORIZED');
   }

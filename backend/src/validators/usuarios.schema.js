@@ -1,16 +1,23 @@
 const { z } = require('zod');
-const { motivoEstadoBody } = require('./common.schema');
+const {
+  motivoEstadoBody,
+  humanNameString,
+  emailString,
+  documentoString,
+  telefonoString,
+  longTextString,
+} = require('./common.schema');
 
 const createUsuarioBody = z
   .object({
-    nombre: z.string().trim().min(1),
-    apellido: z.string().trim().min(1),
-    email: z.string().trim().email(),
-    documento: z.string().trim().min(1),
-    telefono: z.string().trim().optional(),
+    nombre: humanNameString,
+    apellido: humanNameString,
+    email: emailString,
+    documento: documentoString,
+    telefono: telefonoString.optional(),
     tipo_documento: z.string().trim().optional(),
     tipoDocumento: z.string().trim().optional(),
-    direccion: z.string().trim().optional(),
+    direccion: longTextString.optional(),
     rol_id: z.coerce.number().int().positive(),
     estado: z.enum(['Activo', 'Inactivo']).optional(),
     password: z.string().trim().optional(),

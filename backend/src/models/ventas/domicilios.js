@@ -249,6 +249,29 @@ const Domicilios = {
       throw error;
     }
 
+    const nextEstado = String(data.estado !== undefined ? data.estado : current.estado)
+      .trim()
+      .toLowerCase();
+    const requierePedidoCompletado = nextEstado === 'en camino' || nextEstado === 'entregado';
+    if (requierePedidoCompletado) {
+      const pedidoEstadoRes = await pool.query('SELECT estado FROM pedidos WHERE id = $1 LIMIT 1', [
+        current.pedido_id,
+      ]);
+      const pedidoEstado = String(pedidoEstadoRes.rows?.[0]?.estado || '')
+        .trim()
+        .toLowerCase();
+      if (!pedidoEstadoRes.rows?.[0] || pedidoEstado !== 'completado') {
+        const estadoActual = pedidoEstadoRes.rows?.[0]?.estado
+          ? String(pedidoEstadoRes.rows[0].estado).trim()
+          : 'No disponible';
+        const error = new Error(
+          `No se puede cambiar el domicilio a ${nextEstado === 'en camino' ? 'En Ruta' : 'Completado'} porque el pedido asociado está en estado "${estadoActual}". El pedido debe estar en estado "Completado". Comuníquese con el asesor para actualizar el pedido.`
+        );
+        error.statusCode = 409;
+        throw error;
+      }
+    }
+
     await pool.query(
       `UPDATE domicilios SET
          repartidor = COALESCE($1, repartidor),
@@ -273,7 +296,13 @@ const Domicilios = {
     );
     return true;
   },
-  delete: async (id) => {
+  delete: async (id, options = {}) => {
+    const reason = typeof options.reason === 'string' ? options.reason.trim() : '';
+    if (!reason || reason.length < 10 || reason.length > 50) {
+      const error = new Error('El motivo de eliminacion es obligatorio y debe tener entre 10 y 50 caracteres');
+      error.statusCode = 400;
+      throw error;
+    }
     await pool.query('DELETE FROM domicilios WHERE id = $1', [id]);
     return true;
   }

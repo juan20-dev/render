@@ -151,6 +151,12 @@ export function useCart({ user, productos }: UseCartOptions) {
   };
 
   const limpiarCarrito = () => {
+    if (typeof window !== 'undefined') {
+      const userKey = getCartStorageKey(user);
+      window.localStorage.removeItem(userKey);
+      // Defensa adicional: evita que residuos del carrito invitado reaparezcan.
+      window.localStorage.removeItem(GUEST_CART_STORAGE_KEY);
+    }
     setCarrito([]);
   };
 

@@ -489,15 +489,22 @@ const Ventas = {
     const mergedData = {
       ...current,
       ...data,
+      numero_venta: current.numero_venta,
     };
 
     await pool.query(
-      'UPDATE ventas SET numero_venta = $1, tipo = $2, cliente_id = $3, pedido_id = $4, fecha = $5, metodopago = $6, total = $7, estado = $8, updated_at = CURRENT_TIMESTAMP WHERE id = $9',
-      [mergedData.numero_venta, mergedData.tipo, mergedData.cliente_id, mergedData.pedido_id, mergedData.fecha, mergedData.metodopago, mergedData.total, mergedData.estado, id]
+      'UPDATE ventas SET tipo = $1, cliente_id = $2, pedido_id = $3, fecha = $4, metodopago = $5, total = $6, estado = $7, updated_at = CURRENT_TIMESTAMP WHERE id = $8',
+      [mergedData.tipo, mergedData.cliente_id, mergedData.pedido_id, mergedData.fecha, mergedData.metodopago, mergedData.total, mergedData.estado, id]
     );
     return true;
   },
-  delete: async (id) => {
+  delete: async (id, options = {}) => {
+    const reason = typeof options.reason === 'string' ? options.reason.trim() : '';
+    if (!reason || reason.length < 10 || reason.length > 50) {
+      const error = new Error('El motivo de eliminacion es obligatorio y debe tener entre 10 y 50 caracteres');
+      error.statusCode = 400;
+      throw error;
+    }
     await pool.query('DELETE FROM detalle_ventas WHERE venta_id = $1', [id]);
     await pool.query('DELETE FROM ventas WHERE id = $1', [id]);
     return true;

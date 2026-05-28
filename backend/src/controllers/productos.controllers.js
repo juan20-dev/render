@@ -70,7 +70,7 @@ module.exports = {
       });
       res.status(201).json({ success: true, id, message: 'Producto creado exitosamente' });
     } catch (error) {
-      res.status(500).json({ success: false, message: error.message });
+      res.status(error.statusCode || 500).json({ success: false, message: error.message });
     }
   },
   update: async (req, res) => {
@@ -121,7 +121,17 @@ module.exports = {
       if (isClienteUser(req)) {
         return res.status(403).json({ success: false, message: 'No autorizado' });
       }
-      await models.Productos.delete(req.params.id, { actor_id: req.user?.id || null });
+      const motivo = typeof req.body?.motivo === 'string' ? req.body.motivo.trim() : '';
+      if (!motivo || motivo.length < 10 || motivo.length > 50) {
+        return res.status(400).json({
+          success: false,
+          message: 'El motivo de eliminacion es obligatorio y debe tener entre 10 y 50 caracteres',
+        });
+      }
+      await models.Productos.delete(req.params.id, {
+        actor_id: req.user?.id || null,
+        reason: motivo,
+      });
       res.json({ success: true, message: 'Producto eliminado exitosamente' });
     } catch (error) {
       res.status(error.statusCode || 500).json({ success: false, message: error.message });

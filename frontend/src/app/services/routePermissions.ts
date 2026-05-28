@@ -97,11 +97,6 @@ export function routeAllowsAccess(route: string, permisos: string[], roleName: s
 
   if (roleName === 'Administrador') return true;
 
-  if (roleName === 'Asesor') {
-    if (ADMIN_ONLY_ROUTES.has(normalized)) return false;
-    return true;
-  }
-
   if (roleName === 'Repartidor') {
     return normalized === 'dashboard' || normalized === 'ventas/domicilios';
   }

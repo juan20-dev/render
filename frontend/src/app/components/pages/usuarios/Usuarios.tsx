@@ -1,9 +1,9 @@
 ﻿import React, { useState, useEffect, useMemo } from 'react';
 import { DataTable, Column } from '../../DataTable';
 import { Modal } from '../../Modal';
-import { Form, FormField, FormActions, FieldError, FieldSuccess } from '../../Form';
+import { Form, FormField, FormActions } from '../../Form';
 import { Button } from '../../Button';
-import { Plus, Eye, EyeOff, Edit, Trash2 } from 'lucide-react';
+import { Plus, Eye, Edit, Trash2 } from 'lucide-react';
 import { AlertDialog } from '../../AlertDialog';
 import { api } from '../../../services/api';
 import type { Usuario } from '../../../services/types';
@@ -49,13 +49,6 @@ export function Usuarios() {
   const [filtroRol, setFiltroRol] = useState<string>('Todos');
   const [filtroEstado, setFiltroEstado] = useState<string>('Todos');
   const [isSavingUsuario, setIsSavingUsuario] = useState(false);
-
-  // Estados para validaciones en tiempo real
-  const [emailValido, setEmailValido] = useState<boolean | null>(null);
-  const [telefonoValido, setTelefonoValido] = useState<boolean | null>(null);
-  const [documentoValido, setDocumentoValido] = useState<boolean | null>(null);
-  const [passwordValido, setPasswordValido] = useState<boolean | null>(null);
-  const [showFormPassword, setShowFormPassword] = useState(false);
 
   // Debounce de búsqueda para evitar saturar API
   useEffect(() => {
@@ -317,12 +310,6 @@ export function Usuarios() {
       rol: rolesActivos[0]?.nombre ?? '',
       estado: 'activo'
     });
-    // Resetear validaciones
-    setEmailValido(null);
-    setTelefonoValido(null);
-    setDocumentoValido(null);
-    setPasswordValido(null);
-    setShowFormPassword(false);
     setIsModalOpen(true);
   };
 
@@ -346,11 +333,6 @@ export function Usuarios() {
       rol: usuario.rol,
       estado: usuario.estado
     });
-    setEmailValido(validarEmail(usuario.email));
-    setTelefonoValido(validarTelefono(usuario.telefono));
-    setDocumentoValido(validarDocumento(usuario.numeroDocumento));
-    setPasswordValido(null);
-    setShowFormPassword(false);
     setIsModalOpen(true);
   };
 
@@ -656,48 +638,16 @@ export function Usuarios() {
               required
             />
 
-            {/* Número de Documento con validación visual */}
-            <div>
-              <label className="block text-sm font-medium mb-2">Número de Documento</label>
-              <input
-                type="text"
-                inputMode="numeric"
-                maxLength={12}
-                value={formData.numeroDocumento}
-                onChange={(e) => {
-                  const value = e.target.value.replace(/\D/g, '').slice(0, 12);
-                  setFormData({ ...formData, numeroDocumento: value });
-                  // Sin validación en vivo: ocultamos el feedback hasta el blur.
-                  setDocumentoValido(null);
-                }}
-                onBlur={(e) => {
-                  const value = e.target.value.replace(/\D/g, '');
-                  if (!value) {
-                    setDocumentoValido(null);
-                  } else {
-                    setDocumentoValido(validarDocumento(value));
-                  }
-                }}
-                placeholder="Entre 6 y 12 dígitos"
-                className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 transition-all ${
-                  documentoValido === null ? 'border-border focus:ring-primary' :
-                  documentoValido ? 'border-green-500 ring-1 ring-green-500/20 focus:ring-green-500'
-                                  : 'border-destructive ring-1 ring-destructive/20 focus:ring-destructive'
-                }`}
-                required
-              />
-              <div className="mt-1.5 space-y-1.5">
-                {documentoValido === false && (
-                  <FieldError>El documento debe tener entre 6 y 12 dígitos.</FieldError>
-                )}
-                {documentoValido === true && !documentoDuplicadoU && (
-                  <FieldSuccess>Documento válido.</FieldSuccess>
-                )}
-                {documentoDuplicadoU && (
-                  <FieldError>{documentoDuplicadoU}</FieldError>
-                )}
-              </div>
-            </div>
+            <FormField
+              label="Número de Documento"
+              name="numeroDocumento"
+              value={formData.numeroDocumento}
+              onChange={(value) => setFormData({ ...formData, numeroDocumento: value as string })}
+              placeholder="Entre 6 y 12 dígitos"
+              required
+              inputDigitRule="documento6to12"
+              error={documentoDuplicadoU || undefined}
+            />
           </div>
 
           <FormField
@@ -710,129 +660,39 @@ export function Usuarios() {
           />
 
           <div className="grid grid-cols-2 gap-4">
-            {/* Email con validación visual */}
-            <div>
-              <label className="block text-sm font-medium mb-2">Email</label>
-              <input
-                type="email"
-                value={formData.email}
-                maxLength={30}
-                onChange={(e) => {
-                  const value = e.target.value;
-                  setFormData({ ...formData, email: value });
-                  if (value) {
-                    setEmailValido(validarEmail(value));
-                  } else {
-                    setEmailValido(null);
-                  }
-                }}
-                placeholder="ejemplo@email.com"
-                className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 transition-all ${
-                  emailValido === null ? 'border-border focus:ring-primary' :
-                  emailValido ? 'border-green-500 ring-1 ring-green-500/20 focus:ring-green-500'
-                              : 'border-destructive ring-1 ring-destructive/20 focus:ring-destructive'
-                }`}
-                required
-              />
-              <div className="mt-1.5 space-y-1.5">
-                {emailValido === false && (
-                  <FieldError>Formato de correo electrónico inválido.</FieldError>
-                )}
-                {emailValido === true && !emailDuplicadoU && (
-                  <FieldSuccess>Correo electrónico válido.</FieldSuccess>
-                )}
-                {emailDuplicadoU && (
-                  <FieldError>{emailDuplicadoU}</FieldError>
-                )}
-              </div>
-            </div>
+            <FormField
+              label="Email"
+              name="email"
+              type="email"
+              value={formData.email}
+              onChange={(value) => setFormData({ ...formData, email: value as string })}
+              placeholder="ejemplo@email.com"
+              required
+              error={emailDuplicadoU || undefined}
+            />
 
-            {/* Teléfono con validación visual */}
-            <div>
-              <label className="block text-sm font-medium mb-2">Teléfono</label>
-              <input
-                type="text"
-                inputMode="numeric"
-                maxLength={10}
-                value={formData.telefono}
-                onChange={(e) => {
-                  const value = e.target.value.replace(/\D/g, '').slice(0, 10);
-                  setFormData({ ...formData, telefono: value });
-                  if (value) {
-                    setTelefonoValido(validarTelefono(value));
-                  } else {
-                    setTelefonoValido(null);
-                  }
-                }}
-                placeholder="3001234567"
-                className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 transition-all ${
-                  telefonoValido === null ? 'border-border focus:ring-primary' :
-                  telefonoValido ? 'border-green-500 ring-1 ring-green-500/20 focus:ring-green-500'
-                                 : 'border-destructive ring-1 ring-destructive/20 focus:ring-destructive'
-                }`}
-                required
-              />
-              <div className="mt-1.5 space-y-1.5">
-                {telefonoValido === false && (
-                  <FieldError>El teléfono debe tener exactamente 10 dígitos.</FieldError>
-                )}
-                {telefonoValido === true && !telefonoDuplicadoU && (
-                  <FieldSuccess>Teléfono válido.</FieldSuccess>
-                )}
-                {telefonoDuplicadoU && (
-                  <FieldError>{telefonoDuplicadoU}</FieldError>
-                )}
-              </div>
-            </div>
+            <FormField
+              label="Teléfono"
+              name="telefono"
+              value={formData.telefono}
+              onChange={(value) => setFormData({ ...formData, telefono: value as string })}
+              placeholder="3001234567"
+              required
+              inputDigitRule="telefono10"
+              error={telefonoDuplicadoU || undefined}
+            />
           </div>
 
-          {/* Contraseña con validación visual */}
-          <div>
-            <label className="block text-sm font-medium mb-2">
-              {selectedUsuario ? 'Contraseña (dejar vacío para no cambiar)' : 'Contraseña *'}
-            </label>
-            <div className="relative">
-              <input
-                type={showFormPassword ? 'text' : 'password'}
-                value={formData.password}
-                onChange={(e) => {
-                  const value = e.target.value;
-                  setFormData({ ...formData, password: value });
-                  if (value) {
-                    setPasswordValido(validarPassword(value));
-                  } else {
-                    setPasswordValido(null);
-                  }
-                }}
-                placeholder="Mínimo 8 caracteres"
-                className={`w-full px-3 py-2 pr-11 border rounded-lg focus:outline-none focus:ring-2 transition-all ${
-                  passwordValido === null ? 'border-border focus:ring-primary' :
-                  passwordValido ? 'border-green-500 ring-1 ring-green-500/20 focus:ring-green-500'
-                                 : 'border-destructive ring-1 ring-destructive/20 focus:ring-destructive'
-                }`}
-                required={!selectedUsuario}
-              />
-              <button
-                type="button"
-                tabIndex={-1}
-                onClick={() => setShowFormPassword((v) => !v)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-                aria-label={showFormPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
-              >
-                {showFormPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-              </button>
-            </div>
-            <div className="mt-1.5">
-              {passwordValido === false && (
-                <FieldError>
-                  Debe tener al menos 8 caracteres con mayúsculas, minúsculas y números.
-                </FieldError>
-              )}
-              {passwordValido === true && (
-                <FieldSuccess>Contraseña segura.</FieldSuccess>
-              )}
-            </div>
-          </div>
+          <FormField
+            label={selectedUsuario ? 'Contraseña (dejar vacío para no cambiar)' : 'Contraseña'}
+            name="password"
+            type="password"
+            value={formData.password}
+            onChange={(value) => setFormData({ ...formData, password: value as string })}
+            placeholder="Mínimo 8 caracteres"
+            required={!selectedUsuario}
+            minLength={8}
+          />
 
           {/* Nota informativa sobre contraseñas */}
           <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">

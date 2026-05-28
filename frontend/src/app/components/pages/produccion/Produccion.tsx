@@ -7,6 +7,7 @@ import { Plus, FileText, Calendar, Search, Package, ShoppingCart } from 'lucide-
 import { api } from '../../../services/api';
 import { toast } from '../../AlertDialog';
 import type { OrdenProduccion, Producto, Usuario, Pedido } from '../../../services/types';
+import { formatEntityCode } from '../../../services/mappers';
 import { MotivoModal } from '../../MotivoModal';
 import { AlertDialog } from '../../AlertDialog';
 import { useAuth } from '../../AuthContext';
@@ -321,7 +322,7 @@ export function Produccion() {
         ...formData,
         pedidoId: pedido.id,
       });
-      setBusquedaPedido(`#${String(pedido.id).padStart(4, '0')}`);
+      setBusquedaPedido(formatEntityCode('P', pedido.id));
       setMostrarListaPedidos(false);
     } catch {
       toast.error('No se pudo cargar el detalle del pedido seleccionado');
@@ -338,7 +339,7 @@ export function Produccion() {
     {
       key: 'idOrden',
       label: 'ID Orden',
-      render: (value: number) => `#${String(value).padStart(4, '0')}`
+      render: (value: number) => formatEntityCode('O', value)
     },
     {
       key: 'productoNombre',
@@ -529,7 +530,7 @@ export function Produccion() {
               : orden.estado;
 
     const opened = openPrintablePdf({
-      title: `Orden de producción #${String(orden.idOrden).padStart(4, '0')}`,
+      title: `Orden de producción ${formatEntityCode('O', orden.idOrden)}`,
       subtitle: `Generado el ${new Date().toLocaleString('es-CO')}`,
       sections: [
         {
@@ -540,7 +541,7 @@ export function Produccion() {
             { label: 'Tiempo preparación', value: `${orden.tiempoPreparacion ?? 0} minutos` },
             { label: 'Total unidades', value: orden.cantidad },
             { label: 'Estado', value: estadoLabel },
-            ...(orden.pedidoId ? [{ label: 'Pedido vinculado', value: `#${orden.pedidoId}` }] : []),
+            ...(orden.pedidoId ? [{ label: 'Pedido vinculado', value: formatEntityCode('P', orden.pedidoId) }] : []),
           ],
         },
         {
@@ -637,7 +638,7 @@ export function Produccion() {
       const ordenId = ordenCreada?.idOrden || 'XXXX';
 
       toast.success('Orden de producción creada exitosamente', {
-        description: `Orden #${String(ordenId).padStart(4, '0')} asignada a ${nombreProductor}. Estado: Pendiente.`
+        description: `Orden ${formatEntityCode('O', ordenId)} asignada a ${nombreProductor}. Estado: Pendiente.`
       });
       setIsModalOpen(false);
       cargarDatos();
@@ -748,8 +749,7 @@ export function Produccion() {
           produccionPending ? (
             <>
               <p>
-                <strong>Orden:</strong> #
-                {String(produccionPending.orden.idOrden).padStart(4, '0')}
+                <strong>Orden:</strong> {formatEntityCode('O', produccionPending.orden.idOrden)}
               </p>
               <p className="text-muted-foreground">Indique el motivo de cancelación.</p>
             </>
@@ -796,6 +796,7 @@ export function Produccion() {
                   onFocus={() => setMostrarListaPedidos(true)}
                   placeholder="Busca por ID de pedido en preparación..."
                   className="w-full pl-10 pr-4 py-3 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-base"
+                  maxLength={60}
                   required
                 />
               </div>
@@ -818,7 +819,7 @@ export function Produccion() {
                             <div className="flex-1">
                               <div className="flex items-center gap-2">
                                 <Package className="w-4 h-4 text-primary" />
-                                <span className="font-medium">Pedido #{String(p.id).padStart(4, '0')}</span>
+                                <span className="font-medium">Pedido {formatEntityCode('P', p.id)}</span>
                               </div>
                               <div className="text-sm text-muted-foreground mt-1">
                                 Entrega: {p.fechaEntrega}
@@ -848,6 +849,7 @@ export function Produccion() {
                 onFocus={() => setMostrarListaProductores(true)}
                 placeholder="Escribe ID, nombre o apellido..."
                 className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                maxLength={60}
                 required
               />
               {mostrarListaProductores && (
@@ -1101,7 +1103,7 @@ export function Produccion() {
             {/* Header con estado */}
             <div className="flex items-center justify-between p-4 bg-accent rounded-lg">
               <div>
-                <h3 className="text-lg">Orden #{String(selectedOrden.idOrden).padStart(4, '0')}</h3>
+                <h3 className="text-lg">Orden {formatEntityCode('O', selectedOrden.idOrden)}</h3>
                 <p className="text-sm text-muted-foreground">{selectedOrden.productoNombre}</p>
               </div>
               <span className={`px-4 py-2 rounded-full text-sm ${
@@ -1120,7 +1122,7 @@ export function Produccion() {
             <div className="grid grid-cols-2 gap-6">
               <div>
                 <label className="text-sm text-muted-foreground">ID Orden</label>
-                <p className="mt-1">#{String(selectedOrden.idOrden).padStart(4, '0')}</p>
+                <p className="mt-1">{formatEntityCode('O', selectedOrden.idOrden)}</p>
               </div>
               <div>
                 <label className="text-sm text-muted-foreground">Resumen productos</label>

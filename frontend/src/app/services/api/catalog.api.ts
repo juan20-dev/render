@@ -425,13 +425,13 @@ export const catalogApi = {
       }
     ) => {
       const json: Record<string, unknown> = {
-        numero_entrega: data.numeroEntrega || `ENT-${Date.now()}`,
         cantidad: data.cantidad,
         unidad: data.unidad || 'Unidades',
         operario_id: data.operarioId,
         fecha: data.fecha,
         hora: data.hora,
       };
+      if (data.numeroEntrega) json.numero_entrega = data.numeroEntrega;
       if (data.productoCatalogoId != null && data.productoCatalogoId > 0) {
         json.producto_catalogo_id = data.productoCatalogoId;
       } else if (data.insumoId != null && data.insumoId > 0) {

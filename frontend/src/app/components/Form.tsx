@@ -100,6 +100,15 @@ const getNowDateTimeString = (): string => {
   return new Date(now.getTime() - offset).toISOString().slice(0, 16);
 };
 
+const seemsLikeGibberish = (raw: string): boolean => {
+  const normalized = String(raw || '').trim().toLowerCase();
+  if (!normalized) return false;
+  const letters = normalized.match(/[a-záéíóúñ]/g) || [];
+  if (letters.length < 6) return false;
+  const vowels = normalized.match(/[aeiouáéíóú]/g) || [];
+  return vowels.length / letters.length < 0.2;
+};
+
 export function FormField({
   label,
   name,
@@ -147,7 +156,12 @@ export function FormField({
       normalizedName.includes('direccion') ||
       normalizedName.includes('razonsocial')
     );
-  const effectiveMaxLength = autoCapAtSixty ? 60 : autoCapAtThirty ? 30 : maxLength;
+  const autoCapAtDefault =
+    maxLength === undefined &&
+    !inputDigitRule &&
+    (type === 'text' || type === 'textarea' || type === 'email' || type === 'password');
+  const effectiveMaxLength =
+    autoCapAtSixty ? 60 : autoCapAtThirty ? 30 : autoCapAtDefault ? 60 : maxLength;
   // Los identificadores flexibles no muestran error parcial mientras se escribe; sólo tras blur/submit.
   const showDigitPartial = Boolean(
     inputDigitRule &&
@@ -282,16 +296,56 @@ export function FormField({
         setError(`El valor no puede ser mayor a ${max}`);
         return;
       }
+
+      const numberName = normalizedName;
+      const decimalLen = String(val).includes('.') ? String(val).split('.')[1]?.length ?? 0 : 0;
+      const looksPrice = numberName.includes('precio') || numberName.includes('monto') || numberName.includes('total');
+      const looksCount = numberName.includes('cantidad') || numberName.includes('stock');
+
+      if (looksPrice) {
+        if (decimalLen > 2) {
+          setError('Solo se permiten 2 decimales en valores monetarios');
+          return;
+        }
+        if (numVal > 999999) {
+          setError('El valor monetario no puede ser mayor a 999999');
+          return;
+        }
+      }
+
+      if (looksCount) {
+        if (!Number.isInteger(numVal)) {
+          setError('La cantidad debe ser un número entero');
+          return;
+        }
+        if (numVal > 9999) {
+          setError('La cantidad no puede ser mayor a 9999');
+          return;
+        }
+      }
     }
 
-    if ((type === 'text' || type === 'textarea' || type === 'email') && (minLength || maxLength)) {
+    if ((type === 'text' || type === 'textarea' || type === 'email' || type === 'password') && (minLength || effectiveMaxLength)) {
       const len = String(val ?? '').trim().length;
       if (minLength && len > 0 && len < minLength) {
         setError(`Debe tener al menos ${minLength} caracteres (lleva ${len}).`);
         return;
       }
-      if (maxLength && len > maxLength) {
-        setError(`Excede el máximo de ${maxLength} caracteres (lleva ${len}).`);
+      if (effectiveMaxLength && len > effectiveMaxLength) {
+        setError(`Excede el máximo de ${effectiveMaxLength} caracteres (lleva ${len}).`);
+        return;
+      }
+    }
+
+    if (type === 'text' || type === 'textarea') {
+      const raw = String(val ?? '');
+      const isNameLike =
+        normalizedName.includes('nombre') ||
+        normalizedName.includes('apellido') ||
+        normalizedName.includes('razon') ||
+        normalizedName.includes('direccion');
+      if (isNameLike && raw.trim() && seemsLikeGibberish(raw)) {
+        setError('El texto no parece válido. Revisa el contenido ingresado.');
         return;
       }
     }
@@ -472,12 +526,12 @@ export function FormField({
         <FieldHelper>Entre 6 y 12 dígitos (solo números).</FieldHelper>
       ) : !hideAutoHelper && inputDigitRule === 'documento6to15' ? (
         <FieldHelper>Entre 6 y 15 dígitos (solo números).</FieldHelper>
-      ) : (minLength || maxLength) && (type === 'text' || type === 'textarea') ? (
+      ) : (minLength || effectiveMaxLength) && (type === 'text' || type === 'textarea' || type === 'password' || type === 'email') ? (
         <FieldHelper>
           {(() => {
             const len = String(value ?? '').length;
-            if (minLength && maxLength) return `Entre ${minLength} y ${maxLength} caracteres (${len}/${maxLength}).`;
-            if (maxLength) return `Máximo ${maxLength} caracteres (${len}/${maxLength}).`;
+            if (minLength && effectiveMaxLength) return `Entre ${minLength} y ${effectiveMaxLength} caracteres (${len}/${effectiveMaxLength}).`;
+            if (effectiveMaxLength) return `Máximo ${effectiveMaxLength} caracteres (${len}/${effectiveMaxLength}).`;
             if (minLength) return `Mínimo ${minLength} caracteres (lleva ${len}).`;
             return null;
           })()}

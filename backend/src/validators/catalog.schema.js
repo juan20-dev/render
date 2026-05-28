@@ -1,5 +1,15 @@
 const { z } = require('zod');
-const { motivoEstadoBody } = require('./common.schema');
+const {
+  motivoEstadoBody,
+  humanNameString,
+  entityNameString,
+  emailString,
+  documentoString,
+  telefonoString,
+  longTextString,
+  moneyNumber,
+  stockInt,
+} = require('./common.schema');
 
 const proveedorEstadoInput = z.enum(['Activo', 'Inactivo', 'activo', 'inactivo']);
 const emptyStringToUndefined = (value) =>
@@ -7,11 +17,19 @@ const emptyStringToUndefined = (value) =>
 const optionalTrimmedString = () =>
   z.preprocess(emptyStringToUndefined, z.string().trim().min(1).optional());
 const optionalEmailString = () =>
-  z.preprocess(emptyStringToUndefined, z.string().trim().email().optional());
+  z.preprocess(emptyStringToUndefined, emailString.optional());
+const optionalHumanNameString = () =>
+  z.preprocess(emptyStringToUndefined, humanNameString.optional());
+const optionalLongTextString = () =>
+  z.preprocess(emptyStringToUndefined, longTextString.optional());
+const optionalDocumentoString = () =>
+  z.preprocess(emptyStringToUndefined, documentoString.optional());
+const optionalTelefonoString = () =>
+  z.preprocess(emptyStringToUndefined, telefonoString.optional());
 
 const createCategoriaBody = z
   .object({
-    nombre: z.string().trim().min(1),
+    nombre: entityNameString.max(100),
     descripcion: z.string().optional(),
     estado: z.enum(['Activo', 'Inactivo']).optional(),
   })
@@ -21,10 +39,10 @@ const updateCategoriaBody = createCategoriaBody.partial().passthrough();
 
 const createProductoBody = z
   .object({
-    nombre: z.string().trim().min(1),
+    nombre: entityNameString.max(150),
     categoria_id: z.coerce.number().int().positive().optional(),
-    precio: z.coerce.number().nonnegative().optional(),
-    stock: z.coerce.number().int().nonnegative().optional(),
+    precio: moneyNumber.optional(),
+    stock: stockInt.optional(),
     estado: z.enum(['Activo', 'Inactivo']).optional(),
   })
   .passthrough();
@@ -33,16 +51,16 @@ const updateProductoBody = createProductoBody.partial().passthrough();
 
 const proveedorBodyBase = z
   .object({
-    nombre: optionalTrimmedString(),
-    apellido: optionalTrimmedString(),
-    nombreRazonSocial: optionalTrimmedString(),
-    nombreEmpresa: optionalTrimmedString(),
+    nombre: optionalHumanNameString(),
+    apellido: optionalHumanNameString(),
+    nombreRazonSocial: z.preprocess(emptyStringToUndefined, entityNameString.max(150).optional()),
+    nombreEmpresa: z.preprocess(emptyStringToUndefined, entityNameString.max(150).optional()),
     tipo: z.enum(['Natural', 'Juridica']).optional(),
     tipoPersona: z.enum(['Natural', 'Juridica']).optional(),
-    nit: optionalTrimmedString(),
-    telefono: optionalTrimmedString(),
+    nit: optionalDocumentoString(),
+    telefono: optionalTelefonoString(),
     email: optionalEmailString(),
-    direccion: optionalTrimmedString(),
+    direccion: optionalLongTextString(),
     estado: proveedorEstadoInput.optional(),
   })
   .passthrough();
@@ -76,7 +94,7 @@ const createCompraBody = z
   .object({
     proveedor_id: z.coerce.number().int().positive().optional(),
     fecha: z.string().trim().optional(),
-    total: z.coerce.number().nonnegative().optional(),
+    total: moneyNumber.optional(),
     estado: z.string().trim().optional(),
     productos: z.array(z.record(z.unknown())).optional(),
   })
@@ -95,15 +113,15 @@ const addProductoCompraBody = z.object({
   compra_id: z.coerce.number().int().positive().optional(),
   productoId: z.coerce.number().int().positive().optional(),
   producto_id: z.coerce.number().int().positive().optional(),
-  cantidad: z.coerce.number().positive(),
-  precioUnitario: z.coerce.number().nonnegative().optional(),
+  cantidad: stockInt.refine((n) => n > 0, 'La cantidad debe ser mayor a 0'),
+  precioUnitario: moneyNumber.optional(),
 });
 
 const createInsumoBody = z
   .object({
-    nombre: z.string().trim().min(1),
+    nombre: entityNameString.max(150),
     unidad: z.string().trim().optional(),
-    stock: z.coerce.number().nonnegative().optional(),
+    stock: stockInt.optional(),
     estado: z.enum(['Activo', 'Inactivo']).optional(),
   })
   .passthrough();
@@ -114,7 +132,7 @@ const productoInsumoBodyBase = z
   .object({
     producto_id: z.coerce.number().int().positive().optional(),
     insumo_id: z.coerce.number().int().positive().optional(),
-    cantidad_requerida: z.coerce.number().positive().optional(),
+    cantidad_requerida: z.coerce.number().positive().max(9999).optional(),
     unidad: z.string().trim().min(1).optional(),
     notas: z.string().nullable().optional(),
   })
@@ -168,7 +186,7 @@ const entregaInsumoBaseBody = z
 
 const createEntregaInsumoBody = z
   .object({
-    numero_entrega: z.string().trim().min(1),
+    numero_entrega: z.string().trim().min(1).optional(),
     cantidad: z.coerce.number().positive(),
     unidad: z.enum(['Litros', 'Kilogramos', 'Gramos', 'Unidades', 'Cajas', 'Botellas', 'Mililitros']),
     operario_id: z.coerce.number().int().positive(),

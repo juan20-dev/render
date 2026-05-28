@@ -210,11 +210,6 @@ const authorizePermissions = (...requiredPermissions) => async (req, res, next) 
       return next();
     }
 
-    // Asesor: acceso operativo completo (no entra a rutas protegidas con authorizeAdministrador)
-    if (req.user.rol === 'Asesor') {
-      return next();
-    }
-
     // Cliente: solo endpoints marcados para autoservicio / mis pedidos
     if (req.user.rol === 'Cliente') {
       const allowed = requiredPermissions.some((p) => CLIENT_API_PERMISSIONS.includes(p));
@@ -246,8 +241,6 @@ const authorizePermissions = (...requiredPermissions) => async (req, res, next) 
       return res.status(403).json({
         success: false,
         message: 'No tienes permisos suficientes para acceder a este recurso',
-        requiredPermissions,
-        userPermissions
       });
     }
 

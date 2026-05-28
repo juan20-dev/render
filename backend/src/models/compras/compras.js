@@ -293,8 +293,8 @@ const Compras = {
   update: async (id, data) => {
     await ensureComprasSchema();
     await pool.query(
-      'UPDATE compras SET numero_compra = $1, proveedor_id = $2, fecha = $3, subtotal = $4, iva = $5, total = $6, estado = $7, observaciones = $8, aprobacion_extraordinaria = $9, motivo_aprobacion = $10 WHERE id = $11',
-      [data.numero_compra, data.proveedor_id, data.fecha, data.subtotal, data.iva, data.total, data.estado, data.observaciones ?? null, data.aprobacion_extraordinaria ?? false, data.motivo_aprobacion ?? null, id]
+      'UPDATE compras SET proveedor_id = $1, fecha = $2, subtotal = $3, iva = $4, total = $5, estado = $6, observaciones = $7, aprobacion_extraordinaria = $8, motivo_aprobacion = $9 WHERE id = $10',
+      [data.proveedor_id, data.fecha, data.subtotal, data.iva, data.total, data.estado, data.observaciones ?? null, data.aprobacion_extraordinaria ?? false, data.motivo_aprobacion ?? null, id]
     );
     return true;
   },
@@ -456,7 +456,13 @@ const Compras = {
       client.release();
     }
   },
-  delete: async (id) => {
+  delete: async (id, options = {}) => {
+    const reason = typeof options.reason === 'string' ? options.reason.trim() : '';
+    if (!reason || reason.length < 10 || reason.length > 50) {
+      const error = new Error('El motivo de eliminacion es obligatorio y debe tener entre 10 y 50 caracteres');
+      error.statusCode = 400;
+      throw error;
+    }
     await ensureComprasSchema();
     await pool.query('DELETE FROM detalle_compras WHERE compra_id = $1', [id]);
     await pool.query('DELETE FROM compras WHERE id = $1', [id]);

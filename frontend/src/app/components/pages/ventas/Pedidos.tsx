@@ -776,6 +776,7 @@ export function Pedidos() {
                 onFocus={() => setMostrarListaClientes(true)}
                 placeholder="Escribe ID, nombre o documento del cliente..."
                 className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                maxLength={60}
                 required
               />
               {mostrarListaClientes && busquedaCliente && (
@@ -903,6 +904,7 @@ export function Pedidos() {
                   onFocus={() => setMostrarListaProductos(true)}
                   placeholder="Busca por nombre o ID, o haz clic para ver todos los productos..."
                   className="w-full pl-10 pr-4 py-3 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-base"
+                  maxLength={60}
                 />
               </div>
               {mostrarListaProductos && (

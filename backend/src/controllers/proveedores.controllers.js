@@ -11,7 +11,7 @@ module.exports = {
       const proveedores = await models.Proveedores.getAll();
       res.json({ success: true, data: proveedores });
     } catch (error) {
-      res.status(500).json({ success: false, message: error.message });
+      res.status(error.statusCode || 500).json({ success: false, message: error.message });
     }
   },
   getById: async (req, res) => {
@@ -20,7 +20,7 @@ module.exports = {
       if (!proveedor) return res.status(404).json({ success: false, message: 'Proveedor no encontrado' });
       res.json({ success: true, data: proveedor });
     } catch (error) {
-      res.status(500).json({ success: false, message: error.message });
+      res.status(error.statusCode || 500).json({ success: false, message: error.message });
     }
   },
   getByNit: async (req, res) => {
@@ -30,7 +30,7 @@ module.exports = {
       if (!proveedor) return res.status(404).json({ success: false, message: 'Proveedor no encontrado' });
       res.json({ success: true, data: proveedor });
     } catch (error) {
-      res.status(500).json({ success: false, message: error.message });
+      res.status(error.statusCode || 500).json({ success: false, message: error.message });
     }
   },
   getByEmail: async (req, res) => {
@@ -40,7 +40,7 @@ module.exports = {
       if (!proveedor) return res.status(404).json({ success: false, message: 'Proveedor no encontrado' });
       res.json({ success: true, data: proveedor });
     } catch (error) {
-      res.status(500).json({ success: false, message: error.message });
+      res.status(error.statusCode || 500).json({ success: false, message: error.message });
     }
   },
   getByTelefono: async (req, res) => {
@@ -50,7 +50,7 @@ module.exports = {
       if (!proveedor) return res.status(404).json({ success: false, message: 'Proveedor no encontrado' });
       res.json({ success: true, data: proveedor });
     } catch (error) {
-      res.status(500).json({ success: false, message: error.message });
+      res.status(error.statusCode || 500).json({ success: false, message: error.message });
     }
   },
   create: async (req, res) => {
@@ -149,7 +149,7 @@ module.exports = {
       const historial = await models.Proveedores.getAuditByProveedor(req.params.id);
       res.json({ success: true, data: historial });
     } catch (error) {
-      res.status(500).json({ success: false, message: error.message });
+      res.status(error.statusCode || 500).json({ success: false, message: error.message });
     }
   },
   getPendingPurchases: async (req, res) => {
@@ -157,7 +157,7 @@ module.exports = {
       const total = await models.Proveedores.getPendingPurchases(req.params.id);
       res.json({ success: true, data: { total } });
     } catch (error) {
-      res.status(500).json({ success: false, message: error.message });
+      res.status(error.statusCode || 500).json({ success: false, message: error.message });
     }
   }
 };

@@ -12,6 +12,7 @@ const {
   ensureProductoTipoColumn,
   ensureProductoInsumosTable,
   ensureEntregasInsumoProductoCatalogo,
+  reserveEntityIdAndCode,
 } = require('../shared/auditoria');
 
 const INSUMO_ID_VIRTUAL_BASE = Number(InsumosModel.INSUMO_VISTA_DESDE_PRODUCTO_ID_BASE) || 900000000;
@@ -684,10 +685,6 @@ const Produccion = {
     validateProduccionCreateFromPedido(data);
 
     const estadoInicial = normalizeProduccionStatus(data.estado) || 'Orden Recibida';
-    const numeroProduccion =
-      data.numero_produccion && String(data.numero_produccion).trim()
-        ? String(data.numero_produccion).trim()
-        : `ORD-${Date.now()}`;
 
     const pedidoId = Number(data.pedido_id);
     const productorIdNum = Number(data.productor_id);
@@ -808,14 +805,16 @@ const Produccion = {
 
       const insumosEntregadosUsados = await applyConsumoFIFO(client, productorIdNum, consumoList);
       const detalleJson = JSON.stringify(detallePreparacion);
+      const reserved = await reserveEntityIdAndCode(client, 'public.produccion', 'O');
 
       const insResult = await client.query(
         `INSERT INTO produccion (
-          numero_produccion, producto_id, pedido_id, cantidad, fecha, responsable,
+          id, numero_produccion, producto_id, pedido_id, cantidad, fecha, responsable,
           productor_id, tiempo_preparacion_minutos, estado, notes, insumos_gastados, detalle_preparacion
-        ) VALUES ($1, $2, $3, $4, $5::date, $6, $7, $8, $9, $10, $11::jsonb, $12::jsonb) RETURNING id`,
+        ) VALUES ($1, $2, $3, $4, $5, $6::date, $7, $8, $9, $10, $11, $12::jsonb, $13::jsonb) RETURNING id`,
         [
-          numeroProduccion,
+          reserved.id,
+          reserved.code,
           productoIdPrincipal,
           pedidoId,
           cantidadTotal,
@@ -873,7 +872,13 @@ const Produccion = {
     }
     return true;
   },
-  delete: async (id) => {
+  delete: async (id, options = {}) => {
+    const reason = typeof options.reason === 'string' ? options.reason.trim() : '';
+    if (!reason || reason.length < 10 || reason.length > 50) {
+      const error = new Error('El motivo de eliminacion es obligatorio y debe tener entre 10 y 50 caracteres');
+      error.statusCode = 400;
+      throw error;
+    }
     await pool.query('DELETE FROM produccion WHERE id = $1', [id]);
     return true;
   },

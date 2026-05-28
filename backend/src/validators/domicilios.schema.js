@@ -1,4 +1,5 @@
 const { z } = require('zod');
+const { longTextString } = require('./common.schema');
 
 const domicilioEstados = z.enum(['Pendiente', 'En Camino', 'Entregado', 'Cancelado']);
 
@@ -8,11 +9,11 @@ const createDomicilioBody = z
     pedidoId: z.coerce.number().int().positive().optional(),
     repartidor_id: z.coerce.number().int().positive().optional(),
     repartidorId: z.coerce.number().int().positive().optional(),
-    direccion: z.union([z.string(), z.record(z.unknown())]).optional(),
+    direccion: z.union([longTextString, z.record(z.unknown())]).optional(),
     fecha: z.string().trim().optional(),
     hora: z.string().nullable().optional(),
     estado: domicilioEstados.optional(),
-    detalle: z.string().nullable().optional(),
+    detalle: longTextString.nullable().optional(),
     numero_domicilio: z.string().trim().max(50).optional(),
     numeroDomicilio: z.string().trim().max(50).optional(),
     repartidor: z.string().trim().max(100).optional(),

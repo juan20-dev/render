@@ -7,6 +7,7 @@ import { Plus, Calendar, Search, Package, User } from 'lucide-react';
 import { api } from '../../../services/api';
 import { toast } from '../../AlertDialog';
 import type { EntregaInsumo, Usuario } from '../../../services/types';
+import { formatEntityCode } from '../../../services/mappers';
 
 function esRolProductor(u: Usuario) {
   return /^productor$/i.test(String(u.rol || '').trim());
@@ -155,7 +156,7 @@ export function EntregaInsumos() {
     {
       key: 'id',
       label: 'ID',
-      render: (value: number) => `#${String(value).padStart(4, '0')}`
+      render: (value: number) => formatEntityCode('E', value)
     },
     {
       key: 'insumo',
@@ -450,6 +451,7 @@ export function EntregaInsumos() {
                   onFocus={() => setMostrarListaInsumos(true)}
                   placeholder="Busca por nombre, ID o unidad, o haz clic para ver todos los insumos..."
                   className="w-full pl-10 pr-4 py-3 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-base bg-white"
+                  maxLength={60}
                   required
                 />
               </div>
@@ -537,6 +539,7 @@ export function EntregaInsumos() {
                   onFocus={() => setMostrarListaProductores(true)}
                   placeholder="Busca por nombre o ID, o haz clic para ver todos los productores..."
                   className="w-full pl-10 pr-4 py-3 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-base bg-white"
+                  maxLength={60}
                   required
                 />
               </div>

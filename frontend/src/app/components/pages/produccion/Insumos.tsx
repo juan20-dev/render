@@ -6,6 +6,7 @@ import { X } from 'lucide-react';
 import { api } from '../../../services/api';
 import { toast } from '../../AlertDialog';
 import type { Insumo } from '../../../services/types';
+import { formatEntityCode } from '../../../services/mappers';
 
 interface InsumoView extends Insumo {
   operarioNombre?: string;
@@ -45,7 +46,7 @@ export function Insumos() {
     {
       key: 'id',
       label: 'ID',
-      render: (value: number) => `#${String(value).padStart(4, '0')}`,
+      render: (value: number) => formatEntityCode('I', value),
     },
     {
       key: 'nombre',
@@ -195,7 +196,7 @@ export function Insumos() {
           <div className="space-y-6">
             <div className="flex items-center justify-between p-4 bg-accent/50 rounded-lg">
               <div>
-                <h3 className="text-lg">#{String(selectedInsumo.id).padStart(4, '0')}</h3>
+                <h3 className="text-lg">{formatEntityCode('I', selectedInsumo.id)}</h3>
                 <p className="font-medium mt-1">{selectedInsumo.nombre}</p>
               </div>
               <div className="text-right">
@@ -219,7 +220,7 @@ export function Insumos() {
               <div>
                 <label className="text-muted-foreground">ID producto</label>
                 <p className="mt-1 font-medium">
-                  {selectedInsumo.productoRelacionadoId != null ? `#${selectedInsumo.productoRelacionadoId}` : '—'}
+                  {selectedInsumo.productoRelacionadoId != null ? formatEntityCode('P', selectedInsumo.productoRelacionadoId) : '—'}
                 </p>
               </div>
               <div>

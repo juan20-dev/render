@@ -12,8 +12,32 @@ const {
   assertOwnClienteParam,
   assertOwnPedidoId,
 } = require('../utils/selfServiceAccess');
+const { sendPedidoCreatedEmail } = require('../services/email.service');
 
 const normalizeEstado = (value) => String(value || '').trim().toLowerCase();
+const PEDIDO_TRANSICIONES = {
+  Pendiente: ['En Proceso', 'Cancelado'],
+  'En Proceso': ['Completado', 'Cancelado'],
+  Completado: [],
+  Cancelado: [],
+};
+
+const canTransitionPedido = (fromEstado, toEstado) =>
+  Boolean(PEDIDO_TRANSICIONES[String(fromEstado || '').trim()]?.includes(String(toEstado || '').trim()));
+
+const buildPedidoUpdatePayload = (currentPedido, body = {}) => ({
+  numero_pedido: currentPedido.numero_pedido,
+  fecha: body.fecha !== undefined ? body.fecha : currentPedido.fecha,
+  fecha_entrega: body.fecha_entrega !== undefined ? body.fecha_entrega : currentPedido.fecha_entrega,
+  detalles: body.detalles !== undefined ? body.detalles : currentPedido.detalles,
+  direccion: body.direccion !== undefined ? body.direccion : currentPedido.direccion,
+  telefono: body.telefono !== undefined ? body.telefono : currentPedido.telefono,
+  total: body.total !== undefined ? body.total : currentPedido.total,
+  metodo_pago: body.metodo_pago !== undefined ? body.metodo_pago : currentPedido.metodo_pago,
+  esquema_abono: body.esquema_abono !== undefined ? body.esquema_abono : currentPedido.esquema_abono,
+  monto_abonado: body.monto_abonado !== undefined ? body.monto_abonado : currentPedido.monto_abonado,
+  estado: body.estado !== undefined ? body.estado : currentPedido.estado,
+});
 
 const recentPedidoCreateCache = new Map();
 const PEDIDO_DUPLICATE_WINDOW_MS = 15000;
@@ -214,6 +238,35 @@ module.exports = {
         console.error('No se pudo crear abono inicial para pedido', id, e.message);
       }
 
+      try {
+        const pedidoCreado = await models.Pedidos.getById(id);
+        const detallesPedido = await models.Pedidos.getDetalles(id);
+        if (pedidoCreado?.email) {
+          await sendPedidoCreatedEmail({
+            to: pedidoCreado.email,
+            clienteNombre: pedidoCreado.cliente,
+            numeroPedido: pedidoCreado.numero_pedido,
+            fechaPedido: pedidoCreado.fecha,
+            fechaEntrega: pedidoCreado.fecha_entrega,
+            estado: pedidoCreado.estado,
+            metodoPago: pedidoCreado.metodo_pago,
+            esquemaAbono: pedidoCreado.esquema_abono,
+            total: pedidoCreado.total,
+            direccion: pedidoCreado.direccion,
+            telefono: pedidoCreado.telefono,
+            detalles: pedidoCreado.detalles,
+            productos: detallesPedido.map((item) => ({
+              nombre: item.producto_nombre,
+              cantidad: item.cantidad,
+              precioUnitario: item.precio_unitario,
+              subtotal: item.subtotal,
+            })),
+          });
+        }
+      } catch (mailError) {
+        console.error('No se pudo enviar confirmación de pedido por correo', id, mailError?.message);
+      }
+
       return res.status(201).json({ success: true, id, message: 'Pedido creado exitosamente' });
     } catch (error) {
       if (error?.code === '23505') {
@@ -249,14 +302,6 @@ module.exports = {
         return res.status(404).json({ success: false, message: 'Pedido no encontrado' });
       }
 
-      // Definir transiciones permitidas de estado
-      const transiciones = {
-        'Pendiente': ['En Proceso', 'Completado', 'Cancelado'],
-        'En Proceso': ['Completado', 'Cancelado', 'Pendiente'],
-        'Completado': [], // Final
-        'Cancelado': [] // Final
-      };
-
       // CLIENTE: Solo puede editar si el pedido está en Pendiente
       if (isClienteUser(req)) {
         const estado = String(pedido?.estado || '');
@@ -270,14 +315,13 @@ module.exports = {
           fecha_entrega: req.body.fecha_entrega,
           detalles: req.body.detalles,
         };
-        const merged = {
-          numero_pedido: pedido.numero_pedido,
+        const merged = buildPedidoUpdatePayload(pedido, {
           fecha: pedido.fecha,
-          fecha_entrega: allowed.fecha_entrega !== undefined ? allowed.fecha_entrega : pedido.fecha_entrega,
-          detalles: allowed.detalles !== undefined ? allowed.detalles : pedido.detalles,
+          fecha_entrega: allowed.fecha_entrega,
+          detalles: allowed.detalles,
           total: pedido.total,
           estado: pedido.estado,
-        };
+        });
         await models.Pedidos.update(req.params.id, merged);
         return res.json({ success: true, message: 'Pedido actualizado exitosamente' });
       }
@@ -287,12 +331,11 @@ module.exports = {
         const estadoActual = String(pedido.estado || '').trim();
         const estadoNuevo = String(req.body.estado).trim();
 
-        // Validar transición
-        if (!transiciones[estadoActual]?.includes(estadoNuevo)) {
+        if (!canTransitionPedido(estadoActual, estadoNuevo)) {
           return res.status(400).json({
             success: false,
-            message: `Transición no permitida: ${estadoActual} ��� ${estadoNuevo}`,
-            permitidas: transiciones[estadoActual] || []
+            message: `Transición no permitida: ${estadoActual} -> ${estadoNuevo}`,
+            permitidas: PEDIDO_TRANSICIONES[estadoActual] || [],
           });
         }
 
@@ -311,7 +354,18 @@ module.exports = {
           }
         }
 
-        await models.Pedidos.update(req.params.id, { ...req.body, estado: estadoNuevo });
+        const bodyPatch = { ...req.body, estado: estadoNuevo };
+        if (Array.isArray(bodyPatch.productos)) {
+          if (estadoActual !== 'Pendiente') {
+            return res.status(409).json({
+              success: false,
+              message: 'Solo puede actualizar productos del pedido cuando está en estado Pendiente',
+            });
+          }
+          await models.Pedidos.replaceDetalles(req.params.id, bodyPatch.productos);
+          delete bodyPatch.productos;
+        }
+        await models.Pedidos.update(req.params.id, buildPedidoUpdatePayload(pedido, bodyPatch));
         return res.json({ success: true, message: 'Pedido actualizado exitosamente' });
       }
 
@@ -323,7 +377,12 @@ module.exports = {
         });
       }
 
-      await models.Pedidos.update(req.params.id, req.body);
+      if (Array.isArray(req.body.productos)) {
+        await models.Pedidos.replaceDetalles(req.params.id, req.body.productos);
+      }
+      const updateBody = { ...req.body };
+      delete updateBody.productos;
+      await models.Pedidos.update(req.params.id, buildPedidoUpdatePayload(pedido, updateBody));
       return res.json({ success: true, message: 'Pedido actualizado exitosamente' });
     } catch (error) {
       return res.status(error.statusCode || 500).json({ success: false, message: error.message });
@@ -334,11 +393,17 @@ module.exports = {
       if (isClienteUser(req)) {
         return res.status(403).json({ success: false, message: 'No autorizado' });
       }
-
-      await models.Pedidos.delete(req.params.id);
+      const motivo = typeof req.body?.motivo === 'string' ? req.body.motivo.trim() : '';
+      if (!motivo || motivo.length < 10 || motivo.length > 50) {
+        return res.status(400).json({
+          success: false,
+          message: 'El motivo de eliminacion es obligatorio y debe tener entre 10 y 50 caracteres',
+        });
+      }
+      await models.Pedidos.delete(req.params.id, { actor_id: req.user?.id || null, reason: motivo });
       return res.json({ success: true, message: 'Pedido eliminado exitosamente' });
     } catch (error) {
-      return res.status(500).json({ success: false, message: error.message });
+      return res.status(error.statusCode || 500).json({ success: false, message: error.message });
     }
   },
   updateStatus: async (req, res) => {
@@ -361,15 +426,7 @@ module.exports = {
         return res.status(404).json({ success: false, message: 'Pedido no encontrado' });
       }
 
-      // Validar transiciones de estado permitidas
-      const transicionesPermitidas = {
-        'Pendiente': ['En Proceso', 'Cancelado'],
-        'En Proceso': ['Completado', 'Cancelado'],
-        'Completado': [],
-        'Cancelado': []
-      };
-
-      if (!transicionesPermitidas[pedidoActual.estado]?.includes(estado)) {
+      if (!canTransitionPedido(pedidoActual.estado, estado)) {
         return res.status(400).json({ 
           success: false, 
           message: `No se puede cambiar de ${pedidoActual.estado} a ${estado}` 
@@ -407,7 +464,7 @@ module.exports = {
         datosActualizar.detalles = `${pedidoActual.detalles || ''} [CANCELADO: ${motivoLimpio}]`.trim();
       }
 
-      await models.Pedidos.update(req.params.id, datosActualizar);
+      await models.Pedidos.update(req.params.id, buildPedidoUpdatePayload(pedidoActual, datosActualizar));
       return res.json({ success: true, message: 'Estado actualizado exitosamente' });
     } catch (error) {
       return res.status(500).json({ success: false, message: error.message });

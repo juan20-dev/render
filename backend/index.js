@@ -71,7 +71,7 @@ const clearApiRateLimitLog = async () => {
 };
 
 const app = express();
-const UNLIMITED_RATE_LIMIT_ROLES = new Set(['Administrador', 'Asesor']);
+const UNLIMITED_RATE_LIMIT_ROLES = new Set(['Administrador']);
 const ApiResponseSchema = z
   .object({
     success: z.boolean(),
@@ -156,10 +156,10 @@ const rateLimitEnabled = process.env.RATE_LIMIT_ENABLED === 'true';
 if (rateLimitEnabled) {
   const globalApiLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: config.server.env === 'production' ? 1200 : 10000,
+    max: config.server.env === 'production' ? 400 : 10000,
     standardHeaders: true,
     legacyHeaders: false,
-    skip: (req) => isUnlimitedRoleRequest(req) || Boolean(getTokenFromRequest(req)),
+    skip: (req) => isUnlimitedRoleRequest(req),
     message: { success: false, message: 'Demasiadas solicitudes. Intenta de nuevo más tarde.' },
   });
   app.use('/api', globalApiLimiter);
@@ -275,21 +275,23 @@ app.listen(PORT, async () => {
   console.log(`✓ Ambiente: ${config.server.env}`);
   console.log(`✓ Base de Datos: Conectada`);
   console.log(`✓ Conexión App-Backend: Establecida`);
-  console.log(`\n📋 ENDPOINTS DISPONIBLES:`);
-  console.log(`   - GET    /api/health                 (Verificar estado)`);
-  console.log(`   - GET    /api/categorias             (Listar categorías)`);
-  console.log(`   - GET    /api/productos              (Listar productos)`);
-  console.log(`   - GET    /api/clientes               (Listar clientes)`);
-  console.log(`   - GET    /api/proveedores            (Listar proveedores)`);
-  console.log(`   - GET    /api/pedidos                (Listar pedidos)`);
-  console.log(`   - GET    /api/ventas                 (Listar ventas)`);
-  console.log(`   - GET    /api/abonos                 (Listar abonos)`);
-  console.log(`   - GET    /api/domicilios             (Listar domicilios)`);
-  console.log(`   - GET    /api/compras                (Listar compras)`);
-  console.log(`   - GET    /api/insumos                (Listar insumos)`);
-  console.log(`   - GET    /api/entregas-insumos       (Listar entregas)`);
-  console.log(`   - GET    /api/produccion             (Listar producción)`);
-  console.log(`   - GET    /api/producto-insumos       (Recetas producto–insumo)`);
+  if (config.server.env !== 'production') {
+    console.log(`\n📋 ENDPOINTS DISPONIBLES:`);
+    console.log(`   - GET    /api/health                 (Verificar estado)`);
+    console.log(`   - GET    /api/categorias             (Listar categorías)`);
+    console.log(`   - GET    /api/productos              (Listar productos)`);
+    console.log(`   - GET    /api/clientes               (Listar clientes)`);
+    console.log(`   - GET    /api/proveedores            (Listar proveedores)`);
+    console.log(`   - GET    /api/pedidos                (Listar pedidos)`);
+    console.log(`   - GET    /api/ventas                 (Listar ventas)`);
+    console.log(`   - GET    /api/abonos                 (Listar abonos)`);
+    console.log(`   - GET    /api/domicilios             (Listar domicilios)`);
+    console.log(`   - GET    /api/compras                (Listar compras)`);
+    console.log(`   - GET    /api/insumos                (Listar insumos)`);
+    console.log(`   - GET    /api/entregas-insumos       (Listar entregas)`);
+    console.log(`   - GET    /api/produccion             (Listar producción)`);
+    console.log(`   - GET    /api/producto-insumos       (Recetas producto–insumo)`);
+  }
   console.log(`\n🌐 URL Base: ${publicBaseUrl}`);
   console.log(`\n════════════════════════════════════════════════════════════\n`);
 });

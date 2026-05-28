@@ -438,6 +438,154 @@ const sendAccountDeletedNotification = async ({ to, name, motivo, changedBy, acc
   return sendWithLogging(message, 'accountDeleted');
 };
 
+const formatMoneyCop = (value) => {
+  const amount = Number(value || 0);
+  if (!Number.isFinite(amount)) return '$0';
+  return new Intl.NumberFormat('es-CO', {
+    style: 'currency',
+    currency: 'COP',
+    maximumFractionDigits: 0,
+  }).format(amount);
+};
+
+const sendPedidoCreatedEmail = async ({
+  to,
+  clienteNombre,
+  numeroPedido,
+  fechaPedido,
+  fechaEntrega,
+  estado,
+  metodoPago,
+  esquemaAbono,
+  total,
+  direccion,
+  telefono,
+  detalles,
+  productos = [],
+}) => {
+  const safeName = String(clienteNombre || '').trim() || 'cliente';
+  const safePedido = String(numeroPedido || '').trim() || 'N/D';
+  const safeFechaPedido = String(fechaPedido || '').trim() || 'N/D';
+  const safeFechaEntrega = String(fechaEntrega || '').trim() || 'N/D';
+  const safeEstado = String(estado || '').trim() || 'Pendiente';
+  const safeMetodoPago = String(metodoPago || '').trim() || 'Efectivo';
+  const safeEsquemaAbono = String(esquemaAbono || '').trim() || '100%';
+  const safeDireccion = String(direccion || '').trim() || 'Sin dirección registrada';
+  const safeTelefono = String(telefono || '').trim() || 'Sin teléfono registrado';
+  const safeDetalles = String(detalles || '').trim();
+  const lineas = Array.isArray(productos) ? productos : [];
+
+  const productosText = lineas.length
+    ? lineas
+        .map((item, index) => {
+          const nombre = String(item?.nombre || '').trim() || `Producto #${index + 1}`;
+          const cantidad = Number(item?.cantidad || 0);
+          const precioUnitario = Number(item?.precioUnitario || 0);
+          const subtotal = Number(item?.subtotal || precioUnitario * cantidad);
+          return `${index + 1}. ${nombre} | Cantidad: ${cantidad} | Precio: ${formatMoneyCop(
+            precioUnitario
+          )} | Subtotal: ${formatMoneyCop(subtotal)}`;
+        })
+        .join('\n')
+    : 'Sin productos detallados.';
+
+  const productosHtml = lineas.length
+    ? lineas
+        .map((item, index) => {
+          const nombre = String(item?.nombre || '').trim() || `Producto #${index + 1}`;
+          const cantidad = Number(item?.cantidad || 0);
+          const precioUnitario = Number(item?.precioUnitario || 0);
+          const subtotal = Number(item?.subtotal || precioUnitario * cantidad);
+          return `
+            <tr>
+              <td style="padding:8px;border-bottom:1px solid #e2e8f0">${index + 1}</td>
+              <td style="padding:8px;border-bottom:1px solid #e2e8f0">${escapeHtml(nombre)}</td>
+              <td style="padding:8px;border-bottom:1px solid #e2e8f0;text-align:right">${cantidad}</td>
+              <td style="padding:8px;border-bottom:1px solid #e2e8f0;text-align:right">${escapeHtml(
+                formatMoneyCop(precioUnitario)
+              )}</td>
+              <td style="padding:8px;border-bottom:1px solid #e2e8f0;text-align:right">${escapeHtml(
+                formatMoneyCop(subtotal)
+              )}</td>
+            </tr>
+          `;
+        })
+        .join('')
+    : '<tr><td colspan="5" style="padding:8px;color:#64748b">Sin productos detallados.</td></tr>';
+
+  const inner = `
+    <p style="margin:0 0 12px 0">Hola <strong>${escapeHtml(safeName)}</strong>,</p>
+    <p style="margin:0 0 12px 0">
+      Su pedido fue creado correctamente en <strong>Grandma's Liquors</strong>. A continuación encontrará el resumen completo:
+    </p>
+    <ul style="margin:0;padding-left:20px;color:#334155">
+      <li style="margin:6px 0"><strong>Pedido:</strong> ${escapeHtml(safePedido)}</li>
+      <li style="margin:6px 0"><strong>Fecha del pedido:</strong> ${escapeHtml(safeFechaPedido)}</li>
+      <li style="margin:6px 0"><strong>Fecha de entrega:</strong> ${escapeHtml(safeFechaEntrega)}</li>
+      <li style="margin:6px 0"><strong>Estado:</strong> ${escapeHtml(safeEstado)}</li>
+      <li style="margin:6px 0"><strong>Método de pago:</strong> ${escapeHtml(safeMetodoPago)}</li>
+      <li style="margin:6px 0"><strong>Esquema de abono:</strong> ${escapeHtml(safeEsquemaAbono)}</li>
+      <li style="margin:6px 0"><strong>Total:</strong> ${escapeHtml(formatMoneyCop(total))}</li>
+      <li style="margin:6px 0"><strong>Dirección de entrega:</strong> ${escapeHtml(safeDireccion)}</li>
+      <li style="margin:6px 0"><strong>Teléfono de contacto:</strong> ${escapeHtml(safeTelefono)}</li>
+      ${
+        safeDetalles
+          ? `<li style="margin:6px 0"><strong>Observaciones:</strong> ${escapeHtml(safeDetalles)}</li>`
+          : ''
+      }
+    </ul>
+
+    <h2 style="margin:18px 0 10px 0;font-size:16px;color:#0f172a">Productos del pedido</h2>
+    <table style="width:100%;border-collapse:collapse;font-size:14px">
+      <thead>
+        <tr style="background:#f8fafc;color:#0f172a">
+          <th style="text-align:left;padding:8px;border-bottom:1px solid #e2e8f0">#</th>
+          <th style="text-align:left;padding:8px;border-bottom:1px solid #e2e8f0">Producto</th>
+          <th style="text-align:right;padding:8px;border-bottom:1px solid #e2e8f0">Cantidad</th>
+          <th style="text-align:right;padding:8px;border-bottom:1px solid #e2e8f0">Precio</th>
+          <th style="text-align:right;padding:8px;border-bottom:1px solid #e2e8f0">Subtotal</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${productosHtml}
+      </tbody>
+    </table>
+  `;
+
+  const text = [
+    `Hola ${safeName},`,
+    '',
+    'Su pedido fue creado correctamente en Grandma\'s Liquors.',
+    '',
+    `Pedido: ${safePedido}`,
+    `Fecha del pedido: ${safeFechaPedido}`,
+    `Fecha de entrega: ${safeFechaEntrega}`,
+    `Estado: ${safeEstado}`,
+    `Método de pago: ${safeMetodoPago}`,
+    `Esquema de abono: ${safeEsquemaAbono}`,
+    `Total: ${formatMoneyCop(total)}`,
+    `Dirección de entrega: ${safeDireccion}`,
+    `Teléfono de contacto: ${safeTelefono}`,
+    safeDetalles ? `Observaciones: ${safeDetalles}` : null,
+    '',
+    'Productos:',
+    productosText,
+  ]
+    .filter(Boolean)
+    .join('\n');
+
+  return sendWithLogging(
+    {
+      from: config.mail.from,
+      to,
+      subject: `Grandma's Liquors — Confirmación de pedido ${safePedido}`,
+      text,
+      html: wrapBrandedHtml('Confirmación de pedido', inner),
+    },
+    'pedidoCreated'
+  );
+};
+
 module.exports = {
   sendTemporaryPasswordEmail,
   sendEmailChangeNotification,
@@ -445,4 +593,5 @@ module.exports = {
   sendUserStatusChangeNotification,
   sendAccountDeletedNotification,
   sendWelcomeEmail,
+  sendPedidoCreatedEmail,
 };
