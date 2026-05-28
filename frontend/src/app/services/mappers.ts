@@ -48,6 +48,98 @@ export const parseBoundedIntInput = (
   return n;
 };
 
+const normalizeFieldKey = (key: string) => String(key || '').trim().toLowerCase().replace(/_/g, '');
+
+const capitalizeWordPart = (part: string): string => {
+  if (!part) return part;
+  const lower = part.toLocaleLowerCase('es-CO');
+  return lower.charAt(0).toLocaleUpperCase('es-CO') + lower.slice(1);
+};
+
+const capitalizeToken = (token: string): string =>
+  token
+    .split(/(['-])/)
+    .map((chunk) => (chunk === "'" || chunk === '-' ? chunk : capitalizeWordPart(chunk)))
+    .join('');
+
+/** Primera letra de cada palabra en mayúscula (p. ej. "milo" → "Milo", "juan carlos" → "Juan Carlos"). */
+export const formatProperCase = (raw: string): string => {
+  const collapsed = String(raw ?? '').trim().replace(/\s+/g, ' ');
+  if (!collapsed) return '';
+  return collapsed.split(' ').map(capitalizeToken).join(' ');
+};
+
+/** Indica si un campo de texto debe normalizarse antes de enviarse a la API. */
+export const shouldFormatTextFieldKey = (key: string): boolean => {
+  const k = normalizeFieldKey(key);
+  if (!k) return false;
+
+  if (k === 'email' || k.includes('password') || k === 'rememberme') return false;
+  if (k === 'tipodocumento') return false;
+  if (k.includes('documento')) return false;
+  if (k === 'nit' || k.includes('telefono')) return false;
+  if (k === 'id' || k.endsWith('id')) return false;
+  if (k === 'tipo' || k === 'typo') return false;
+  if (k.includes('estado') || k.includes('metodo')) return false;
+  if (k.includes('fecha') || k.includes('hora')) return false;
+  if (k.includes('precio') || k.includes('monto') || k.includes('cantidad') || k.includes('stock')) return false;
+  if (k.includes('permiso') || k.includes('codigo') || k.includes('token') || k.includes('url')) return false;
+
+  return (
+    k.includes('nombre') ||
+    k.includes('apellido') ||
+    k.includes('direccion') ||
+    k.includes('descripcion') ||
+    k.includes('categoria') ||
+    k.includes('insumo') ||
+    k.includes('razon') ||
+    k.includes('ciudad') ||
+    k.includes('barrio') ||
+    k.includes('operario') ||
+    k.includes('productor') ||
+    k.includes('repartidor') ||
+    k.includes('motivo') ||
+    k.includes('unidad')
+  );
+};
+
+/** Aplica formatProperCase a strings de un payload JSON saliente (por nombre de campo). */
+export const formatOutgoingTextPayload = <T>(payload: T): T => {
+  if (payload === null || payload === undefined) return payload;
+
+  if (typeof payload === 'string') {
+    return payload;
+  }
+
+  if (Array.isArray(payload)) {
+    return payload.map((item) => {
+      if (typeof item === 'string') return item;
+      return formatOutgoingTextPayload(item);
+    }) as T;
+  }
+
+  if (typeof payload === 'object') {
+    const source = payload as Record<string, unknown>;
+    const out: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(source)) {
+      if (value === null || value === undefined) {
+        out[key] = value;
+        continue;
+      }
+      if (typeof value === 'string' && shouldFormatTextFieldKey(key)) {
+        out[key] = formatProperCase(value);
+      } else if (typeof value === 'object') {
+        out[key] = formatOutgoingTextPayload(value);
+      } else {
+        out[key] = value;
+      }
+    }
+    return out as T;
+  }
+
+  return payload;
+};
+
 export const pedidoEstadoUi = (s?: string | null) => {
   const t = String(s || '').trim().toLowerCase();
   if (!t) return 'pendiente';

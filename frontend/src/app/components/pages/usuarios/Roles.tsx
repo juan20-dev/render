@@ -99,6 +99,7 @@ export function Roles() {
   });
   // Estado de validación inline para el campo "Nombre del Rol".
   const [nombreError, setNombreError] = useState<string>('');
+  const [showEditPermisosNote, setShowEditPermisosNote] = useState(true);
   const { showAlert, AlertComponent } = useAlertDialog();
 
   // Valida el nombre del rol localmente con mensajes claros para el usuario.
@@ -286,6 +287,7 @@ export function Roles() {
   const handleEdit = (role: Role) => {
     setSelectedRole(role);
     setFormData({ nombre: role.nombre, descripcion: role.descripcion, estado: role.estado, permisos: role.permisos });
+    setShowEditPermisosNote(true);
     setIsEditModalOpen(true);
   };
 
@@ -507,7 +509,7 @@ export function Roles() {
                 setFormData({ ...formData, nombre: value });
                 setNombreError(validarNombreRol(value));
               }}
-              placeholder="Ej: Supervisor, Contador, etc. (3 a 50 caracteres)"
+              placeholder="Ej: Supervisor, Contador, etc."
               maxLength={50}
               minLength={3}
               className={`w-full px-4 py-2 bg-input-background border rounded-lg focus:outline-none focus:ring-2 transition-all ${
@@ -657,7 +659,7 @@ export function Roles() {
                 setFormData({ ...formData, nombre: value });
                 setNombreError(validarNombreRol(value, selectedRole?.id));
               }}
-              placeholder="Ej: Supervisor, Contador, etc. (3 a 50 caracteres)"
+              placeholder="Ej: Supervisor, Contador, etc."
               maxLength={50}
               minLength={3}
               className={`w-full px-4 py-2 bg-input-background border rounded-lg focus:outline-none focus:ring-2 transition-all ${
@@ -705,11 +707,23 @@ export function Roles() {
             maxLength={50}
           />
 
-          <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
-            <p className="text-sm text-blue-700">
-              Para gestionar los permisos de este rol, usa el botón "Gestionar Permisos" en la tabla principal.
-            </p>
-          </div>
+          {showEditPermisosNote ? (
+            <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
+              <div className="flex items-start justify-between gap-3">
+                <p className="text-sm text-blue-700">
+                  Para gestionar los permisos de este rol, usa el botón &quot;Gestionar Permisos&quot; en la tabla principal.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setShowEditPermisosNote(false)}
+                  className="rounded-md p-1 text-blue-700 transition-colors hover:bg-blue-100 hover:text-blue-900"
+                  aria-label="Cerrar nota informativa"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+          ) : null}
 
           <FormActions>
             <Button

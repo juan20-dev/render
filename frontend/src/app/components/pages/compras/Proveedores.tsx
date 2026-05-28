@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { DataTable, Column } from '../../DataTable';
 import { Modal } from '../../Modal';
 import { Form, FormField, FormActions } from '../../Form';
@@ -613,6 +613,7 @@ export function Proveedores() {
               placeholder="6015551000"
               required
               inputDigitRule="telefono10"
+              hideAutoHelper
               error={telefonoDuplicadoProv || undefined}
             />
 

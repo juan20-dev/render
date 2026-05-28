@@ -2,6 +2,7 @@
 import { DataTable, Column } from '../../DataTable';
 import { Modal } from '../../Modal';
 import { Form, FormField, FormActions, FieldError, FieldHelper } from '../../Form';
+import { formatProperCase } from '../../../services/mappers';
 import { Button } from '../../Button';
 import { Plus, Eye, Edit, Trash2 } from 'lucide-react';
 import { api } from '../../../services/api';
@@ -409,6 +410,12 @@ export function Categorias() {
               type="text"
               value={formData.nombre}
               onChange={(e) => setFormData({ ...formData, nombre: e.target.value })}
+              onBlur={(e) => {
+                const formatted = formatProperCase(e.target.value);
+                if (formatted !== formData.nombre) {
+                  setFormData((prev) => ({ ...prev, nombre: formatted }));
+                }
+              }}
               placeholder="Ej: Licores Artesanales (3 a 50 caracteres)"
               maxLength={50}
               minLength={3}

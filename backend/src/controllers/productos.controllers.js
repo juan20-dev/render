@@ -84,7 +84,12 @@ module.exports = {
       });
       res.json({ success: true, message: 'Producto actualizado exitosamente' });
     } catch (error) {
-      res.status(error.statusCode || 500).json({ success: false, message: error.message });
+      const status = error.statusCode || 500;
+      const message =
+        status >= 500
+          ? 'No se pudo actualizar el producto. Inténtalo de nuevo en unos momentos.'
+          : error.message;
+      res.status(status).json({ success: false, message });
     }
   },
   updateStatus: async (req, res) => {

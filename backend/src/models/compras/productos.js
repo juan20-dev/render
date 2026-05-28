@@ -225,6 +225,20 @@ const Productos = {
       throw error;
     }
 
+    const previous = await pool.query(
+      'SELECT categoria_id, stock, tipo_producto, stock_minimo FROM productos WHERE id = $1',
+      [id]
+    );
+    if (!previous.rows[0]) {
+      const error = new Error('Producto no encontrado');
+      error.statusCode = 404;
+      throw error;
+    }
+
+    const previousCategoriaId = previous.rows[0]?.categoria_id ?? null;
+    const stockActual = previous.rows[0]?.stock ?? 0;
+    const currentTipo = normalizeProductoTipoValue(previous.rows[0]?.tipo_producto);
+
     const duplicate = await pool.query(
       `SELECT id
        FROM productos
@@ -239,14 +253,6 @@ const Productos = {
       error.statusCode = 409;
       throw error;
     }
-
-    const previous = await pool.query(
-      'SELECT categoria_id, stock, tipo_producto, stock_minimo FROM productos WHERE id = $1',
-      [id]
-    );
-    const previousCategoriaId = previous.rows[0]?.categoria_id ?? null;
-    const stockActual = previous.rows[0]?.stock ?? 0;
-    const currentTipo = normalizeProductoTipoValue(previous.rows[0]?.tipo_producto);
     const prevStockMinimo = Number(previous.rows[0]?.stock_minimo ?? 10);
 
     const newTipo = currentTipo;

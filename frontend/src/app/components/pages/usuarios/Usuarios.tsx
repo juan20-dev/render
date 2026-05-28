@@ -1,9 +1,9 @@
-﻿import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { DataTable, Column } from '../../DataTable';
 import { Modal } from '../../Modal';
 import { Form, FormField, FormActions } from '../../Form';
 import { Button } from '../../Button';
-import { Plus, Eye, Edit, Trash2 } from 'lucide-react';
+import { Plus, Eye, Edit, Trash2, X } from 'lucide-react';
 import { AlertDialog } from '../../AlertDialog';
 import { api } from '../../../services/api';
 import type { Usuario } from '../../../services/types';
@@ -25,6 +25,7 @@ export function Usuarios() {
   } | null>(null);
   const [motivoEstado, setMotivoEstado] = useState('');
   const [motivoEliminacion, setMotivoEliminacion] = useState('');
+  const [showPasswordNote, setShowPasswordNote] = useState(true);
   const [alertState, setAlertState] = useState({
     isOpen: false,
     title: '',
@@ -310,6 +311,7 @@ export function Usuarios() {
       rol: rolesActivos[0]?.nombre ?? '',
       estado: 'activo'
     });
+    setShowPasswordNote(true);
     setIsModalOpen(true);
   };
 
@@ -643,9 +645,10 @@ export function Usuarios() {
               name="numeroDocumento"
               value={formData.numeroDocumento}
               onChange={(value) => setFormData({ ...formData, numeroDocumento: value as string })}
-              placeholder="Entre 6 y 12 dígitos"
+              placeholder="Ej: 1032456789"
               required
               inputDigitRule="documento6to12"
+              hideAutoHelper
               error={documentoDuplicadoU || undefined}
             />
           </div>
@@ -679,6 +682,7 @@ export function Usuarios() {
               placeholder="3001234567"
               required
               inputDigitRule="telefono10"
+              hideAutoHelper
               error={telefonoDuplicadoU || undefined}
             />
           </div>
@@ -694,12 +698,23 @@ export function Usuarios() {
             minLength={8}
           />
 
-          {/* Nota informativa sobre contraseñas */}
-          <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
-            <p className="text-sm text-blue-700">
-              <strong>Nota:</strong> La contraseña debe tener al menos 8 caracteres e incluir mayúsculas, minúsculas y números para mayor seguridad.
-            </p>
-          </div>
+          {showPasswordNote ? (
+            <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
+              <div className="flex items-start justify-between gap-3">
+                <p className="text-sm text-blue-700">
+                  <strong>Nota:</strong> La contraseña debe tener al menos 8 caracteres e incluir mayúsculas, minúsculas y números para mayor seguridad.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setShowPasswordNote(false)}
+                  className="rounded-md p-1 text-blue-700 transition-colors hover:bg-blue-100 hover:text-blue-900"
+                  aria-label="Cerrar nota informativa"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+          ) : null}
 
           <div className="grid grid-cols-2 gap-4">
             <FormField

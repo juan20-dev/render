@@ -186,12 +186,15 @@ export function EntregaInsumos() {
     {
       key: 'anulada',
       label: 'Estado',
-      render: (_: boolean, row: EntregaInsumoView) =>
-        row.anulada ? (
-          <span className="text-xs font-medium text-destructive">Anulada</span>
-        ) : (
-          <span className="text-xs font-medium text-green-700">Activa</span>
-        ),
+      render: (_: boolean, row: EntregaInsumoView) => (
+        <span
+          className={`px-3 py-1 rounded-full text-xs font-medium ${
+            row.anulada ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'
+          }`}
+        >
+          {row.anulada ? 'Anulada' : 'Activa'}
+        </span>
+      ),
     },
   ];
 

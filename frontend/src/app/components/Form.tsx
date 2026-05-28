@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { AlertCircle, Info, CheckCircle2, Eye, EyeOff } from 'lucide-react';
+import { formatProperCase, shouldFormatTextFieldKey } from '../services/mappers';
 
 /* ------------------------------------------------------------------
  * Primitivas estandarizadas para validación inline.
@@ -397,7 +398,19 @@ export function FormField({
 
   const handleBlur = () => {
     setTouched(true);
-    validateField(value ?? '');
+    let nextValue: string | number = value ?? '';
+    if (
+      (type === 'text' || type === 'textarea') &&
+      !inputDigitRule &&
+      shouldFormatTextFieldKey(name)
+    ) {
+      const formatted = formatProperCase(String(nextValue));
+      if (formatted !== String(nextValue)) {
+        nextValue = formatted;
+        onChange?.(formatted);
+      }
+    }
+    validateField(nextValue);
   };
 
   return (

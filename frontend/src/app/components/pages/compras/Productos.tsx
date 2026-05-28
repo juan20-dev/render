@@ -10,6 +10,20 @@ import { INSUMO_UNIDADES_API } from '../../../services/types';
 import { formatMoneyInput, parseMoneyInput, MAX_MONEY_DIGITS } from '../../../services/mappers';
 import { toast } from '../../AlertDialog';
 
+/** Mensaje claro para el usuario; oculta errores técnicos del servidor. */
+const mensajeErrorGuardarProducto = (error: unknown, modo: 'editar' | 'nuevo'): string => {
+  const raw = error instanceof Error ? error.message : String(error ?? '');
+  const tecnico = /before initialization|is not defined|referenceerror|internal server error/i.test(raw);
+
+  if (tecnico || !raw.trim()) {
+    return modo === 'editar'
+      ? 'No se pudieron guardar los cambios. Revisa los datos e inténtalo de nuevo; si el problema continúa, recarga la página.'
+      : 'No se pudo registrar el producto. Revisa los datos e inténtalo de nuevo; si el problema continúa, recarga la página.';
+  }
+
+  return raw;
+};
+
 export function Productos() {
   const [productos, setProductos] = useState<Producto[]>([]);
   const [categorias, setCategorias] = useState<Categoria[]>([]);
@@ -44,6 +58,7 @@ export function Productos() {
   const [precioVentaInput, setPrecioVentaInput] = useState('');
   const [imagenArchivo, setImagenArchivo] = useState<File | null>(null);
   const [imagenPreview, setImagenPreview] = useState<string | null>(null);
+  const [nombreErrorApi, setNombreErrorApi] = useState<string | undefined>();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [filtroCategoria, setFiltroCategoria] = useState<string>('Todos');
@@ -85,19 +100,46 @@ export function Productos() {
     }).format(value);
   };
 
-  // Validar nombre único
+  const etiquetaTipoProducto = (tipo: 'terminado' | 'de preparacion' | 'insumo') => {
+    if (tipo === 'de preparacion') return 'de preparación';
+    if (tipo === 'insumo') return 'insumo';
+    return 'terminado';
+  };
+
+  const productoIdEnFormulario =
+    productoFormularioModo === 'editar' ? selectedProducto?.id : undefined;
+
+  // Validar nombre único (mismo criterio que el backend: nombre + tipo)
   const validarNombreUnico = (
     nombre: string,
     tipo: 'terminado' | 'de preparacion' | 'insumo',
     idActual?: number
   ) => {
-    const existe = productos.find(p =>
-      p.nombre.toLowerCase() === nombre.toLowerCase() &&
-      p.typo === tipo &&
-      p.id !== idActual
+    const normalizado = nombre.trim().toLowerCase();
+    if (!normalizado) return true;
+    const existe = productos.some(
+      (p) =>
+        p.nombre.trim().toLowerCase() === normalizado &&
+        p.typo === tipo &&
+        p.id !== idActual
     );
     return !existe;
   };
+
+  const errorNombreProducto = useMemo(() => {
+    const nombre = formData.nombre.trim();
+    if (!nombre) return nombreErrorApi;
+    if (!validarNombreUnico(nombre, formData.typo, productoIdEnFormulario)) {
+      return `Ya existe un producto con el nombre "${nombre}" de tipo ${etiquetaTipoProducto(formData.typo)}. Elija otro nombre.`;
+    }
+    return nombreErrorApi;
+  }, [
+    formData.nombre,
+    formData.typo,
+    productos,
+    productoIdEnFormulario,
+    nombreErrorApi,
+  ]);
 
   // Filtrar productos
   const productosFiltrados = useMemo(() => (
@@ -232,6 +274,7 @@ export function Productos() {
   const cerrarModalProductoFormulario = () => {
     setIsModalOpen(false);
     setProductoFormularioModo('nuevo');
+    setNombreErrorApi(undefined);
     setImagenArchivo(null);
     setImagenPreview(null);
   };
@@ -273,6 +316,7 @@ export function Productos() {
       insumoCantidadMedida: 1,
     });
     setPrecioVentaInput('');
+    setNombreErrorApi(undefined);
     setImagenArchivo(null);
     setImagenPreview(null);
     setIsModalOpen(true);
@@ -307,6 +351,7 @@ export function Productos() {
             : 1,
     });
     setPrecioVentaInput(formatMoneyInput(Number(producto.precioVenta ?? 0)));
+    setNombreErrorApi(undefined);
     setImagenArchivo(null);
     setImagenPreview(producto.imagenUrl || null);
     setIsModalOpen(true);
@@ -367,11 +412,7 @@ export function Productos() {
       productoFormularioModo === 'editar' ||
       (productoFormularioModo === 'nuevo' && formData.typo === 'de preparacion');
 
-    // Validaciones
-    if (!validarNombreUnico(formData.nombre, formData.typo, productoFormularioModo === 'editar' ? selectedProducto?.id : undefined)) {
-      toast.error('Error de validación', {
-        description: 'Ya existe un producto con ese nombre para el mismo tipo'
-      });
+    if (errorNombreProducto) {
       return;
     }
 
@@ -464,10 +505,21 @@ export function Productos() {
 
       cerrarModalProductoFormulario();
       cargarDatos();
-    } catch (error: any) {
-      toast.error(productoFormularioModo === 'editar' ? 'Error al actualizar producto' : 'Error al crear producto', {
-        description: error.message
+    } catch (error: unknown) {
+      const esEdicion = productoFormularioModo === 'editar';
+      const raw = error instanceof Error ? error.message : String(error ?? '');
+      if (/ya existe un producto/i.test(raw)) {
+        setNombreErrorApi(
+          `Ya existe un producto con el nombre "${formData.nombre.trim()}" de tipo ${etiquetaTipoProducto(formData.typo)}. Elija otro nombre.`
+        );
+        return;
+      }
+      toast.error(esEdicion ? 'No se pudo actualizar el producto' : 'No se pudo crear el producto', {
+        description: mensajeErrorGuardarProducto(error, esEdicion ? 'editar' : 'nuevo'),
       });
+      if (import.meta.env.DEV) {
+        console.error(esEdicion ? 'Error al actualizar producto' : 'Error al crear producto', error);
+      }
     }
   };
 
@@ -593,23 +645,17 @@ export function Productos() {
             name="nombre"
             value={formData.nombre}
             onChange={(value) => {
+              setNombreErrorApi(undefined);
               setFormData({ ...formData, nombre: value as string });
-              if (
-                value &&
-                !validarNombreUnico(
-                  value as string,
-                  formData.typo,
-                  productoFormularioModo === 'editar' ? selectedProducto?.id : undefined
-                )
-              ) {
-                toast.warning('Advertencia', {
-                  description: 'Ya existe un producto con ese nombre para el mismo tipo',
-                  duration: 2000
-                });
-              }
             }}
             placeholder="Ej: Licor de Café Artesanal"
             required
+            error={errorNombreProducto}
+            helperText={
+              errorNombreProducto
+                ? undefined
+                : 'El nombre debe ser único dentro del mismo tipo (terminado, preparación o insumo).'
+            }
           />
 
           <FormField
@@ -671,6 +717,7 @@ export function Productos() {
               disabled={productoFormularioModo === 'editar'}
               onChange={(value) => {
                 const next = value as 'terminado' | 'de preparacion' | 'insumo';
+                setNombreErrorApi(undefined);
                 setFormData({
                   ...formData,
                   typo: next,
@@ -837,7 +884,7 @@ export function Productos() {
             <Button variant="outline" type="button" onClick={() => cerrarModalProductoFormulario()}>
               Cancelar
             </Button>
-            <Button type="submit">
+            <Button type="submit" disabled={Boolean(errorNombreProducto)}>
               {productoFormularioModo === 'editar' ? 'Actualizar' : 'Crear'} Producto
             </Button>
           </FormActions>

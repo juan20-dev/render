@@ -48,20 +48,28 @@ export function Insumos() {
       label: 'ID',
       render: (value: number) => formatEntityCode('I', value),
     },
-    {
-      key: 'nombre',
-      label: 'Nombre',
-      render: (v: string) => <span className="font-medium text-foreground">{v}</span>,
-    },
+    { key: 'nombre', label: 'Nombre' },
     {
       key: 'cantidad',
       label: 'Stock',
-      render: (_: number, row: InsumoView) => (
-        <span className="text-sm tabular-nums">
-          {row.cantidad}
-          {row.unidad ? <span className="text-muted-foreground"> ({row.unidad})</span> : null}
-        </span>
-      ),
+      render: (_: number, row: InsumoView) => {
+        const cantidad = Number(row.cantidad ?? 0);
+        const minimo = Number(row.stockMinimo ?? 0);
+        const unidad = row.unidad?.trim();
+        const etiqueta = unidad ? `${cantidad} ${unidad}` : String(cantidad);
+        const badgeClass =
+          minimo > 0 && cantidad <= minimo
+            ? 'bg-red-100 text-red-700'
+            : minimo > 0 && cantidad <= minimo * 1.5
+              ? 'bg-yellow-100 text-yellow-800'
+              : 'bg-green-100 text-green-700';
+
+        return (
+          <span className={`px-3 py-1 rounded-full text-xs tabular-nums ${badgeClass}`}>
+            {etiqueta}
+          </span>
+        );
+      },
     },
     {
       key: 'stockMinimo',
@@ -111,7 +119,7 @@ export function Insumos() {
       <div>
         <h2>Inventario de Insumos</h2>
         <p className="text-muted-foreground">
-          Administra el stock de productos tipo insumo (Gestión de productos y compras a proveedor).
+          Administra el stock de productos tipo insumo.
         </p>
       </div>
 

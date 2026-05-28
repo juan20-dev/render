@@ -1,3 +1,5 @@
+import { formatOutgoingTextPayload } from './mappers';
+
 export type ApiEnvelope<T = unknown> = {
   success?: boolean;
   message?: string;
@@ -24,7 +26,7 @@ export async function apiFetch<T = unknown>(
   let body: BodyInit | undefined = init?.body as BodyInit | undefined;
   if (init && 'json' in init && init.json !== undefined) {
     headers['Content-Type'] = 'application/json';
-    body = JSON.stringify(init.json);
+    body = JSON.stringify(formatOutgoingTextPayload(init.json));
   }
 
   const res = await fetch(path, {
