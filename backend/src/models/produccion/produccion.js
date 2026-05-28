@@ -535,8 +535,8 @@ const validateProduccionPayload = (data = {}) => {
     throw error;
   }
 
-  if (!Number.isFinite(tiempoPreparacion) || tiempoPreparacion <= 0) {
-    const error = new Error('tiempo_preparacion_minutos debe ser mayor a 0');
+  if (!Number.isFinite(tiempoPreparacion) || tiempoPreparacion < 0 || tiempoPreparacion > 120) {
+    const error = new Error('tiempo_preparacion_minutos debe estar entre 0 y 120');
     error.statusCode = 400;
     throw error;
   }
@@ -562,8 +562,8 @@ const validateProduccionCreateFromPedido = (data = {}) => {
     throw error;
   }
   const tiempoPreparacion = Number(data.tiempo_preparacion_minutos ?? 0);
-  if (!Number.isFinite(tiempoPreparacion) || tiempoPreparacion <= 0) {
-    const error = new Error('tiempo_preparacion_minutos debe ser mayor a 0');
+  if (!Number.isFinite(tiempoPreparacion) || tiempoPreparacion < 0 || tiempoPreparacion > 120) {
+    const error = new Error('tiempo_preparacion_minutos debe estar entre 0 y 120');
     error.statusCode = 400;
     throw error;
   }
@@ -574,9 +574,7 @@ const validateProduccionCreateFromPedido = (data = {}) => {
   }
   const consumo = data.consumo_insumos;
   if (!Array.isArray(consumo) || consumo.length === 0) {
-    const error = new Error(
-      'Debe definir el consumo de insumos (use «Seleccionar insumos rápidos» antes de crear la orden)'
-    );
+    const error = new Error('Debe definir el consumo de insumos para crear la orden de producción');
     error.statusCode = 400;
     throw error;
   }
@@ -693,7 +691,10 @@ const Produccion = {
 
     const pedidoId = Number(data.pedido_id);
     const productorIdNum = Number(data.productor_id);
-    const tiempoPrep = Math.max(1, Math.floor(Number(data.tiempo_preparacion_minutos ?? 0)));
+    const tiempoPrep = Math.min(
+      120,
+      Math.max(0, Math.floor(Number(data.tiempo_preparacion_minutos ?? 0))),
+    );
 
     const dupPedido = await pool.query('SELECT id FROM produccion WHERE pedido_id = $1 LIMIT 1', [pedidoId]);
     if (dupPedido.rows[0]) {

@@ -50,6 +50,26 @@ const ensureAdminUnblocked = async () => {
   }
 };
 
+const clearApiRateLimitLog = async () => {
+  if (process.env.RATE_LIMIT_ENABLED === 'true') return;
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS api_rate_limit_log (
+        id BIGSERIAL PRIMARY KEY,
+        route_key VARCHAR(120) NOT NULL,
+        identifier VARCHAR(255) NOT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    const cleared = await pool.query('DELETE FROM api_rate_limit_log');
+    if (cleared.rowCount > 0) {
+      console.log(`🔓 Registros de rate limit eliminados (${cleared.rowCount})`);
+    }
+  } catch (err) {
+    console.warn('⚠️  No se pudo limpiar api_rate_limit_log:', err.message);
+  }
+};
+
 const app = express();
 const UNLIMITED_RATE_LIMIT_ROLES = new Set(['Administrador', 'Asesor']);
 const ApiResponseSchema = z
@@ -131,15 +151,19 @@ const isUnlimitedRoleRequest = (req) => {
   }
 };
 
-const globalApiLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: config.server.env === 'production' ? 1200 : 10000,
-  standardHeaders: true,
-  legacyHeaders: false,
-  skip: isUnlimitedRoleRequest,
-  message: { success: false, message: 'Demasiadas solicitudes. Intenta de nuevo más tarde.' },
-});
-app.use('/api', globalApiLimiter);
+// Límite global desactivado por defecto (RATE_LIMIT_ENABLED=true en .env para activar).
+const rateLimitEnabled = process.env.RATE_LIMIT_ENABLED === 'true';
+if (rateLimitEnabled) {
+  const globalApiLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: config.server.env === 'production' ? 1200 : 10000,
+    standardHeaders: true,
+    legacyHeaders: false,
+    skip: (req) => isUnlimitedRoleRequest(req) || Boolean(getTokenFromRequest(req)),
+    message: { success: false, message: 'Demasiadas solicitudes. Intenta de nuevo más tarde.' },
+  });
+  app.use('/api', globalApiLimiter);
+}
 
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ limit: '2mb', extended: true }));
@@ -240,6 +264,7 @@ const publicBaseUrl =
 
 app.listen(PORT, async () => {
   await ensureAdminUnblocked();
+  await clearApiRateLimitLog();
   console.log(`\n`);
   console.log(`╔════════════════════════════════════════════════════════════╗`);
   console.log(`║        LIQUEUR SALES MANAGEMENT APP - BACKEND              ║`);

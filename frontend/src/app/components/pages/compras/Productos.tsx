@@ -7,6 +7,7 @@ import { Plus, Eye, Edit, Trash2 } from 'lucide-react';
 import { api } from '../../../services/api';
 import type { Producto, Categoria } from '../../../services/types';
 import { INSUMO_UNIDADES_API } from '../../../services/types';
+import { formatMoneyInput, parseMoneyInput, MAX_MONEY_DIGITS } from '../../../services/mappers';
 import { toast } from '../../AlertDialog';
 
 export function Productos() {
@@ -41,6 +42,8 @@ export function Productos() {
     insumoCantidadMedida: 1,
   });
   const [precioVentaInput, setPrecioVentaInput] = useState('');
+  const [imagenArchivo, setImagenArchivo] = useState<File | null>(null);
+  const [imagenPreview, setImagenPreview] = useState<string | null>(null);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [filtroCategoria, setFiltroCategoria] = useState<string>('Todos');
@@ -224,6 +227,30 @@ export function Productos() {
   const cerrarModalProductoFormulario = () => {
     setIsModalOpen(false);
     setProductoFormularioModo('nuevo');
+    setImagenArchivo(null);
+    setImagenPreview(null);
+  };
+
+  const handleImagenChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) {
+      setImagenArchivo(null);
+      setImagenPreview(null);
+      return;
+    }
+    const allowed = ['image/jpeg', 'image/png', 'image/webp'];
+    if (!allowed.includes(file.type)) {
+      toast.error('Formato no permitido', { description: 'Use JPG, PNG o WEBP' });
+      e.target.value = '';
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error('Imagen muy grande', { description: 'El tamaño máximo es 2 MB' });
+      e.target.value = '';
+      return;
+    }
+    setImagenArchivo(file);
+    setImagenPreview(URL.createObjectURL(file));
   };
 
   const handleAdd = () => {
@@ -241,6 +268,8 @@ export function Productos() {
       insumoCantidadMedida: 1,
     });
     setPrecioVentaInput('');
+    setImagenArchivo(null);
+    setImagenPreview(null);
     setIsModalOpen(true);
   };
 
@@ -272,7 +301,9 @@ export function Productos() {
             ? producto.insumoCantidadMedida
             : 1,
     });
-    setPrecioVentaInput(String(producto.precioVenta ?? 0));
+    setPrecioVentaInput(formatMoneyInput(Number(producto.precioVenta ?? 0)));
+    setImagenArchivo(null);
+    setImagenPreview(producto.imagenUrl || null);
     setIsModalOpen(true);
   };
 
@@ -316,7 +347,7 @@ export function Productos() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    const precioDesdeInput = parseInt((precioVentaInput || '').replace(/\D/g, '') || '0', 10);
+    const precioDesdeInput = parseMoneyInput(precioVentaInput);
     const precioVentaNormalizado =
       productoFormularioModo === 'editar' ||
       (productoFormularioModo === 'nuevo' && formData.typo === 'de preparacion')
@@ -345,6 +376,13 @@ export function Productos() {
     if (requierePrecioEnFormulario && precioVentaInput.trim() === '') {
       toast.error('Error de validación', {
         description: 'El precio de venta es obligatorio'
+      });
+      return;
+    }
+
+    if (requierePrecioEnFormulario && String(precioVentaNormalizado).replace(/\D/g, '').length > MAX_MONEY_DIGITS) {
+      toast.error('Error de validación', {
+        description: `El precio no puede superar ${MAX_MONEY_DIGITS} dígitos`,
       });
       return;
     }
@@ -385,7 +423,9 @@ export function Productos() {
     }
 
     try {
+      let productoId: number | undefined;
       if (productoFormularioModo === 'editar' && selectedProducto) {
+        productoId = selectedProducto.id;
         await api.productos.update(selectedProducto.id, {
           ...formData,
           precioVenta: precioVentaNormalizado,
@@ -396,8 +436,7 @@ export function Productos() {
           description: 'Los datos del producto han sido actualizados exitosamente'
         });
       } else {
-        // Al crear, stock 0 y precio de venta 0 hasta registrar compra al proveedor
-        await api.productos.create({
+        productoId = await api.productos.create({
           ...formData,
           stockMinimo: formData.typo === 'de preparacion' ? 0 : formData.stockMinimo,
           precioVenta: formData.typo === 'de preparacion' ? precioVentaNormalizado : 0,
@@ -408,6 +447,10 @@ export function Productos() {
         toast.success('Producto creado', {
           description: 'El producto ha sido creado exitosamente con stock inicial 0'
         });
+      }
+
+      if (imagenArchivo && productoId) {
+        await api.productos.uploadImagen(productoId, imagenArchivo);
       }
 
       cerrarModalProductoFormulario();
@@ -571,6 +614,28 @@ export function Productos() {
             maxLength={50}
           />
 
+          <div className="space-y-2">
+            <label htmlFor="imagenProducto" className="block text-sm font-medium">
+              Imagen del producto
+            </label>
+            <input
+              id="imagenProducto"
+              name="imagenProducto"
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              onChange={handleImagenChange}
+              className="w-full text-sm file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-primary file:text-primary-foreground"
+            />
+            <p className="text-xs text-muted-foreground">JPG, PNG o WEBP. Máximo 2 MB.</p>
+            {imagenPreview && (
+              <img
+                src={imagenPreview}
+                alt="Vista previa"
+                className="mt-2 h-32 w-32 object-cover rounded-lg border border-border"
+              />
+            )}
+          </div>
+
           <div className="grid grid-cols-2 gap-4">
             <FormField
               label="Categoría"
@@ -707,11 +772,11 @@ export function Productos() {
                   pattern="[0-9]*"
                   value={precioVentaInput}
                   onChange={(e) => {
-                    const soloNumeros = e.target.value.replace(/\D/g, '');
-                    setPrecioVentaInput(soloNumeros);
+                    const num = parseMoneyInput(e.target.value);
+                    setPrecioVentaInput(formatMoneyInput(num));
                     setFormData({
                       ...formData,
-                      precioVenta: soloNumeros === '' ? 0 : parseInt(soloNumeros, 10),
+                      precioVenta: num,
                     });
                   }}
                   placeholder="Ingrese el precio de venta"
@@ -728,11 +793,8 @@ export function Productos() {
                 type="number"
                 value={formData.stockMinimo === 0 ? '' : formData.stockMinimo}
                 onChange={(value) => {
-                  const num = parseInt(value as string) || 0;
-                  if (num < 0) {
-                    toast.warning('No se permiten números negativos');
-                    return;
-                  }
+                  const digits = String(value ?? '').replace(/\D/g, '').slice(0, 6);
+                  const num = digits ? Number(digits) : 0;
                   setFormData({ ...formData, stockMinimo: num });
                 }}
                 min={0}

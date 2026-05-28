@@ -10,6 +10,7 @@ const { parseMoneyCO } = require('../../controllers/normalizador-http');
 const {
   ensureVentasMoneyColumns,
   ensureProductoTipoColumn,
+  normalizeProductoTipoValue,
   reserveEntityIdAndCode,
   groupRowsBy,
 } = require('../shared/auditoria');
@@ -26,6 +27,7 @@ const aplicarDescuentoStockYLíneaDetalleVenta = async (
   productoId,
   cantidadRaw,
   precioUnitarioRaw,
+  options = {},
 ) => {
   const qty = Number(cantidadRaw);
   const price = parseMoneyCO(precioUnitarioRaw);
@@ -76,27 +78,34 @@ const aplicarDescuentoStockYLíneaDetalleVenta = async (
     throw error;
   }
 
-  const available = Number(row.stock || 0);
-  if (!Number.isFinite(available)) {
-    const error = new Error(`No hay stock disponible para "${nombre}".`);
-    error.statusCode = 409;
-    throw error;
-  }
+  const tipoNorm = normalizeProductoTipoValue(row.tipo_producto);
+  const esPreparacion =
+    tipoNorm === 'preparacion' ||
+    (options.pedidoId != null && options.preparacionIds?.has(Number(productoId)));
 
-  if (available < qty) {
-    const mensaje =
-      available <= 0
-        ? `No hay stock disponible para "${nombre}".`
-        : `Stock insuficiente para "${nombre}". Disponible: ${available}, solicitado: ${qty}.`;
-    const error = new Error(mensaje);
-    error.statusCode = 409;
-    throw error;
-  }
+  if (!esPreparacion) {
+    const available = Number(row.stock || 0);
+    if (!Number.isFinite(available)) {
+      const error = new Error(`No hay stock disponible para "${nombre}".`);
+      error.statusCode = 409;
+      throw error;
+    }
 
-  await client.query(
-    `UPDATE productos SET stock = COALESCE(stock, 0) - $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
-    [qty, productoId],
-  );
+    if (available < qty) {
+      const mensaje =
+        available <= 0
+          ? `No hay stock disponible para "${nombre}".`
+          : `Stock insuficiente para "${nombre}". Disponible: ${available}, solicitado: ${qty}.`;
+      const error = new Error(mensaje);
+      error.statusCode = 409;
+      throw error;
+    }
+
+    await client.query(
+      `UPDATE productos SET stock = COALESCE(stock, 0) - $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
+      [qty, productoId],
+    );
+  }
 
   const subtotal = qty * price;
   await client.query(
@@ -295,6 +304,7 @@ const Ventas = {
    */
   createCompleta: async (data, detailLines) => {
     await ensureVentasMoneyColumns();
+    await ensureProductoTipoColumn();
     await Ventas.validateClienteActivo(data.cliente_id);
 
     if (!Array.isArray(detailLines) || detailLines.length === 0) {
@@ -400,6 +410,20 @@ const Ventas = {
 
       const ventaId = inserted.rows[0].id;
 
+      const pedidoId = data.pedido_id ?? data.pedidoId ?? null;
+      let preparacionIds = null;
+      if (pedidoId != null) {
+        const prepRes = await client.query(
+          `SELECT DISTINCT pr.id
+           FROM detalle_pedidos dp
+           INNER JOIN productos pr ON pr.id = dp.producto_id
+           WHERE dp.pedido_id = $1
+             AND COALESCE(pr.tipo_producto, 'terminado') = 'preparacion'`,
+          [pedidoId],
+        );
+        preparacionIds = new Set(prepRes.rows.map((r) => Number(r.id)));
+      }
+
       for (const line of lines) {
         await aplicarDescuentoStockYLíneaDetalleVenta(
           client,
@@ -407,6 +431,7 @@ const Ventas = {
           line.productoId,
           line.cantidad,
           line.precioUnitario,
+          { pedidoId, preparacionIds },
         );
       }
 
@@ -425,6 +450,7 @@ const Ventas = {
   },
   addDetalle: async (ventaId, productoId, cantidad, precioUnitario) => {
     await ensureVentasMoneyColumns();
+    await ensureProductoTipoColumn();
     const client = await pool.connect();
     try {
       await client.query('BEGIN');

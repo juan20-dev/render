@@ -10,6 +10,11 @@ import { toast } from '../../AlertDialog';
 import type { Venta, Cliente, Producto, Pedido, PedidoProducto } from '../../../services/types';
 import { AlertDialog } from '../../AlertDialog';
 
+const esProductoPreparacion = (producto?: Producto | null) => {
+  const tipo = String(producto?.typo || '').toLowerCase().replace(/[\s-]+/g, '_');
+  return tipo === 'de_preparacion' || tipo === 'preparacion' || tipo.includes('prepar');
+};
+
 interface VentaView extends Venta {
   clienteNombre?: string;
   pedidoNumero?: string;
@@ -60,6 +65,10 @@ export function Ventas() {
   const validarStockProducto = (productoId: number, cantidad: number): { valido: boolean; stockDisponible: number; stockRestante: number } => {
     const producto = productos.find(p => Number(p.id) === Number(productoId));
     if (!producto) return { valido: false, stockDisponible: 0, stockRestante: 0 };
+
+    if (esProductoPreparacion(producto)) {
+      return { valido: cantidad > 0, stockDisponible: 0, stockRestante: 0 };
+    }
 
     const stockDisponible = Number(producto.stock ?? 0);
     const stockRestante = stockDisponible - cantidad;
@@ -381,7 +390,7 @@ export function Ventas() {
         const producto = productos.find((prod) => prod.id === p.productoId);
         return {
           productoId: p.productoId,
-          nombre: producto?.nombre || 'Desconocido',
+          nombre: producto?.nombre || p.nombre || 'Desconocido',
           cantidad: p.cantidad,
           precio: p.precio,
           subtotal: p.subtotal,
@@ -512,6 +521,8 @@ export function Ventas() {
     }
 
     for (const p of productosEnVenta) {
+      const productoCatalogo = productos.find((prod) => Number(prod.id) === Number(p.productoId));
+      if (esProductoPreparacion(productoCatalogo)) continue;
       const v = validarStockProducto(p.productoId, p.cantidad);
       if (!v.valido) {
         toast.error(
@@ -866,17 +877,19 @@ export function Ventas() {
                         </div>
 
                         {productosFiltrados.map(p => {
+                          const esPrep = esProductoPreparacion(p);
                           const stockDisponible = Number(p.stock ?? 0);
                           const enVenta = productosEnVenta.find(pv => Number(pv.productoId) === Number(p.id));
                           const cantidadEnVenta = enVenta ? enVenta.cantidad : 0;
-                          const stockRestante = stockDisponible - cantidadEnVenta;
+                          const stockRestante = esPrep ? 1 : stockDisponible - cantidadEnVenta;
+                          const puedeAgregar = esPrep || stockRestante > 0;
 
                           return (
                             <div
                               key={p.id}
-                              onClick={() => stockRestante > 0 ? agregarProductoDesdeBusqueda(p) : null}
+                              onClick={() => (puedeAgregar ? agregarProductoDesdeBusqueda(p) : null)}
                               className={`px-4 py-3 border-b border-border last:border-b-0 ${
-                                stockRestante > 0
+                                puedeAgregar
                                   ? 'hover:bg-accent cursor-pointer'
                                   : 'bg-gray-50 cursor-not-allowed opacity-60'
                               }`}
@@ -889,15 +902,15 @@ export function Ventas() {
                                   </div>
                                   <div className="text-sm text-muted-foreground mt-1">
                                     ID: {p.id} | Precio: {formatCurrency(p.precioVenta)} |
-                                    Stock: <span className={stockRestante <= 5 ? 'text-red-600 font-semibold' : 'text-green-600'}>
-                                      {stockRestante} disponibles
+                                    Stock: <span className={esPrep ? 'text-muted-foreground' : stockRestante <= 5 ? 'text-red-600 font-semibold' : 'text-green-600'}>
+                                      {esPrep ? 'No aplica (preparación)' : `${stockRestante} disponibles`}
                                     </span>
                                     {cantidadEnVenta > 0 && (
                                       <span className="ml-2 text-blue-600">({cantidadEnVenta} en esta venta)</span>
                                     )}
                                   </div>
                                 </div>
-                                {stockRestante > 0 && (
+                                {puedeAgregar && (
                                   <Plus className="w-5 h-5 text-primary" />
                                 )}
                               </div>
@@ -920,10 +933,11 @@ export function Ventas() {
                   </label>
                   {productosEnVenta.map((producto, index) => {
                     const productoData = productos.find(p => Number(p.id) === Number(producto.productoId));
+                    const esPrep = esProductoPreparacion(productoData);
                     const stockDisponible = Number(productoData?.stock ?? 0);
-                    const maxCantidad = Math.max(stockDisponible, producto.cantidad, 1);
+                    const maxCantidad = esPrep ? 9999 : Math.max(stockDisponible, producto.cantidad, 1);
                     const validacionStock = validarStockProducto(producto.productoId, producto.cantidad);
-                    const stockBajo = validacionStock.stockRestante <= 5 && validacionStock.stockRestante >= 0;
+                    const stockBajo = !esPrep && validacionStock.stockRestante <= 5 && validacionStock.stockRestante >= 0;
 
                     return (
                       <div key={index} className="bg-accent/30 border border-border rounded-lg p-4">
@@ -934,32 +948,33 @@ export function Ventas() {
                               <h4 className="font-medium">{producto.nombre}</h4>
                             </div>
                             <div className="text-sm text-muted-foreground mb-2">
-                              Precio unitario: {formatCurrency(producto.precio)} | Stock disponible: {maxCantidad}
+                              Precio unitario: {formatCurrency(producto.precio)}
+                              {esPrep ? ' | Producto de preparación (sin control de stock)' : ` | Stock disponible: ${maxCantidad}`}
                             </div>
 
                             {/* Validación visual de stock */}
-                            {!validacionStock.valido && (
+                            {!esPrep && !validacionStock.valido && (
                               <div className="mt-2">
                                 <FieldError>
                                   La cantidad excede el stock disponible ({maxCantidad} unidades).
                                 </FieldError>
                               </div>
                             )}
-                            {validacionStock.valido && validacionStock.stockRestante === 0 && (
+                            {!esPrep && validacionStock.valido && validacionStock.stockRestante === 0 && (
                               <div className="mt-2 p-2 bg-yellow-50 rounded border border-yellow-200">
                                 <p className="text-xs text-yellow-700">
                                   <strong>⚠️ Advertencia:</strong> Esta venta agotará el stock de este producto.
                                 </p>
                               </div>
                             )}
-                            {validacionStock.valido && stockBajo && validacionStock.stockRestante > 0 && (
+                            {!esPrep && validacionStock.valido && stockBajo && validacionStock.stockRestante > 0 && (
                               <div className="mt-2 p-2 bg-yellow-50 rounded border border-yellow-200">
                                 <p className="text-xs text-yellow-700">
                                   <strong>⚠️ Advertencia:</strong> Este producto tiene stock bajo. Quedarán {validacionStock.stockRestante} unidades disponibles.
                                 </p>
                               </div>
                             )}
-                            {validacionStock.valido && !stockBajo && validacionStock.stockRestante > 5 && (
+                            {!esPrep && validacionStock.valido && !stockBajo && validacionStock.stockRestante > 5 && (
                               <div className="mt-2 p-2 bg-green-50 rounded border border-green-200">
                                 <p className="text-xs text-green-700">
                                   ✓ Stock disponible. Quedarán {validacionStock.stockRestante} unidades.

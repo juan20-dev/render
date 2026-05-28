@@ -1,5 +1,8 @@
 // Rewire: el modelo Productos viene de archivos modulares.
 // entities.models.js queda como archivo intacto pero desconectado (sin importadores).
+const path = require('path');
+const fs = require('fs');
+const crypto = require('crypto');
 const models = {
   Productos: require('../models/compras/productos'),
 };
@@ -123,6 +126,48 @@ module.exports = {
     } catch (error) {
       res.status(error.statusCode || 500).json({ success: false, message: error.message });
     }
-  }
+  },
+  uploadImage: async (req, res) => {
+    try {
+      if (isClienteUser(req)) {
+        return res.status(403).json({ success: false, message: 'No autorizado' });
+      }
+      if (!req.file) {
+        return res.status(400).json({ success: false, message: 'Debes seleccionar una imagen.' });
+      }
+
+      const producto = await models.Productos.getById(req.params.id);
+      if (!producto) {
+        return res.status(404).json({ success: false, message: 'Producto no encontrado' });
+      }
+
+      const uploadsDir = path.join(__dirname, '../../uploads/productos');
+      fs.mkdirSync(uploadsDir, { recursive: true });
+
+      const extension = path.extname(req.file.originalname || '').toLowerCase() || '.jpg';
+      const filename = `producto_${req.params.id}_${Date.now()}_${crypto.randomBytes(6).toString('hex')}${extension}`;
+      const absolutePath = path.join(uploadsDir, filename);
+      const relativeUrl = `/uploads/productos/${filename}`;
+
+      fs.writeFileSync(absolutePath, req.file.buffer);
+
+      await models.Productos.update(req.params.id, {
+        nombre: producto.nombre,
+        categoria_id: producto.categoria_id,
+        descripcion: producto.descripcion,
+        precio: producto.precio,
+        imagen_url: relativeUrl,
+        actor_id: req.user?.id || null,
+      });
+
+      return res.json({
+        success: true,
+        message: 'Imagen del producto actualizada exitosamente',
+        data: { imagen_url: relativeUrl },
+      });
+    } catch (error) {
+      return res.status(error.statusCode || 500).json({ success: false, message: error.message });
+    }
+  },
 };
 

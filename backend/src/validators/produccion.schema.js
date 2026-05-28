@@ -18,8 +18,8 @@ const createProduccionBody = z
     productorId: z.coerce.number().int().positive().optional(),
     fecha: z.string().trim().min(1).optional(),
     fechaInicio: z.string().trim().min(1).optional(),
-    tiempo_preparacion_minutos: z.coerce.number().positive().optional(),
-    tiempoPreparacion: z.coerce.number().positive().optional(),
+    tiempo_preparacion_minutos: z.coerce.number().min(0).max(120).optional(),
+    tiempoPreparacion: z.coerce.number().min(0).max(120).optional(),
     responsable: z.string().trim().optional(),
     estado: z.string().trim().optional(),
     notes: z.string().nullable().optional(),
@@ -43,8 +43,13 @@ const createProduccionBody = z
     if (!fecha || String(fecha).trim().length === 0) {
       ctx.addIssue({ code: 'custom', message: 'fecha es obligatoria', path: ['fechaInicio'] });
     }
-    if (!tiempoPrep || tiempoPrep <= 0) {
-      ctx.addIssue({ code: 'custom', message: 'tiempo_preparacion_minutos debe ser mayor a 0', path: ['tiempoPreparacion'] });
+    const tiempoNum = Number(tiempoPrep);
+    if (!Number.isFinite(tiempoNum) || tiempoNum < 0 || tiempoNum > 120) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'tiempo_preparacion_minutos debe estar entre 0 y 120',
+        path: ['tiempoPreparacion'],
+      });
     }
     if (!Array.isArray(consumoInsumos) || consumoInsumos.length === 0) {
       ctx.addIssue({ code: 'custom', message: 'consumo_insumos es obligatorio', path: ['consumoInsumos'] });

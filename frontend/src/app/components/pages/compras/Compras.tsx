@@ -5,7 +5,7 @@ import { Form, FormField, FormActions } from '../../Form';
 import { Button } from '../../Button';
 import { Plus, Eye, Trash2, Package, Search, ShoppingCart, Edit } from 'lucide-react';
 import { api } from '../../../services/api';
-import { formatEntityCode } from '../../../services/mappers';
+import { formatEntityCode, formatMoneyInput, parseMoneyInput, MAX_MONEY_DIGITS } from '../../../services/mappers';
 import type { Compra, Producto, Proveedor, CompraProducto } from '../../../services/types';
 import { toast } from '../../AlertDialog';
 import { AlertDialog } from '../../AlertDialog';
@@ -132,14 +132,6 @@ export function Compras() {
       currency: 'COP',
       minimumFractionDigits: 0
     }).format(value);
-  };
-
-  const formatNumberWithThousands = (value: number) =>
-    value > 0 ? new Intl.NumberFormat('es-CO').format(value) : '';
-
-  const parseIntegerInput = (value: string | number) => {
-    const digits = String(value ?? '').replace(/\D/g, '');
-    return digits ? Number(digits) : 0;
   };
 
   const resetProductoForm = () => {
@@ -427,6 +419,11 @@ export function Compras() {
 
     if (productoActual.precioCompra <= 0) {
       toast.error('Error', { description: 'El precio de compra debe ser mayor a 0' });
+      return;
+    }
+
+    if (String(productoActual.precioCompra).replace(/\D/g, '').length > MAX_MONEY_DIGITS) {
+      toast.error('Error', { description: `El precio de compra no puede superar ${MAX_MONEY_DIGITS} dígitos` });
       return;
     }
 
@@ -789,61 +786,65 @@ export function Compras() {
               )}
             </div>
 
+            {productoActual.productoId === 0 ? (
+              <p className="text-sm text-muted-foreground bg-muted/40 border border-border rounded-lg px-3 py-2">
+                Seleccione un producto en el buscador para ingresar cantidad, precio de compra
+                {lineaCompraEsInsumo ? '' : ' y ganancia'}.
+              </p>
+            ) : (
             <div className={`grid gap-4 ${lineaCompraEsInsumo ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1 sm:grid-cols-3'}`}>
               <FormField
                 label="Cantidad *"
                 name="cantidad"
-                type="number"
-                value={productoActual.cantidad === 0 ? '' : productoActual.cantidad}
+                type="text"
+                value={productoActual.cantidad === 0 ? '' : String(productoActual.cantidad)}
                 onChange={(value) => {
-                  const num = parseInt(value as string) || 0;
+                  const digits = String(value ?? '').replace(/\D/g, '').slice(0, 6);
+                  const num = digits ? Number(digits) : 0;
                   if (num < 0) {
                     toast.warning('No se permiten números negativos');
                     return;
                   }
                   setProductoActual({ ...productoActual, cantidad: num });
                 }}
-                min={1}
+                placeholder="Ej: 10"
               />
 
               <FormField
-                label="Precio de Compra *"
+                label="Precio de Compra (COP) *"
                 name="precioCompra"
                 type="text"
-                value={formatNumberWithThousands(productoActual.precioCompra)}
+                value={formatMoneyInput(productoActual.precioCompra)}
                 onChange={(value) => {
-                  const num = parseIntegerInput(value as string);
+                  const num = parseMoneyInput(value as string);
                   setProductoActual({ ...productoActual, precioCompra: num });
                 }}
-                placeholder="Ej: 125.000"
+                placeholder="Ej: 125.000 (máx. 12 dígitos)"
               />
 
               {!lineaCompraEsInsumo && (
                 <FormField
                   label="Ganancia (%) *"
                   name="ganancia"
-                  type="number"
-                  value={productoActual.ganancia === 0 ? '' : productoActual.ganancia}
+                  type="text"
+                  value={productoActual.ganancia === 0 ? '' : String(productoActual.ganancia)}
                   onChange={(value) => {
-                    const num = parseInt(value as string) || 0;
+                    const digits = String(value ?? '').replace(/\D/g, '').slice(0, 3);
+                    const num = digits ? Math.min(100, Number(digits)) : 0;
                     if (num < 0) {
                       toast.warning('No se permiten números negativos');
                       return;
                     }
-                    if (num > 100) {
-                      toast.warning('La ganancia no puede ser mayor al 100%');
-                      return;
-                    }
                     setProductoActual({ ...productoActual, ganancia: num });
                   }}
-                  min={0}
-                  max={100}
+                  placeholder="0–100"
                 />
               )}
             </div>
+            )}
 
             <div className="flex gap-2">
-              <Button type="button" onClick={agregarProducto} size="sm">
+              <Button type="button" onClick={agregarProducto} size="sm" disabled={productoActual.productoId === 0}>
                 {editingProductoId !== null ? 'Guardar cambios' : 'Agregar Producto'}
               </Button>
               {editingProductoId !== null && (

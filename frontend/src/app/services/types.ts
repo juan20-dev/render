@@ -58,6 +58,7 @@ export interface Producto {
   insumoUnidadMedida?: string | null;
   /** Solo tipo insumo: cantidad/volumen de la presentación. */
   insumoCantidadMedida?: number | null;
+  imagenUrl?: string | null;
 }
 
 export interface Proveedor {

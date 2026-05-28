@@ -23,6 +23,31 @@ export const formatEntityCode = (prefix: string, value: number | string | null |
   return `${prefix}${String(Math.trunc(numericValue)).padStart(3, '0')}`;
 };
 
+/** Máximo de dígitos para montos COP en campos de entrada (sin centavos). */
+export const MAX_MONEY_DIGITS = 12;
+
+/** Formato visual de montos COP en campos de entrada (separador de miles cada 3 dígitos). */
+export const formatMoneyInput = (value: number) =>
+  value > 0 ? new Intl.NumberFormat('es-CO', { maximumFractionDigits: 0 }).format(value) : '';
+
+export const parseMoneyInput = (value: string | number, maxDigits = MAX_MONEY_DIGITS) => {
+  const digits = String(value ?? '').replace(/\D/g, '').slice(0, maxDigits);
+  return digits ? Number(digits) : 0;
+};
+
+/** Enteros con tope de dígitos y valor máximo (p. ej. minutos 0–120). */
+export const parseBoundedIntInput = (
+  value: string | number,
+  options: { maxDigits?: number; min?: number; max?: number } = {},
+) => {
+  const maxDigits = options.maxDigits ?? 6;
+  const digits = String(value ?? '').replace(/\D/g, '').slice(0, maxDigits);
+  let n = digits ? Number(digits) : 0;
+  if (options.min !== undefined) n = Math.max(options.min, n);
+  if (options.max !== undefined) n = Math.min(options.max, n);
+  return n;
+};
+
 export const pedidoEstadoUi = (s?: string | null) => {
   const t = String(s || '').trim().toLowerCase();
   if (!t) return 'pendiente';
@@ -192,6 +217,7 @@ export function mapProducto(r: any): Producto {
       r.insumo_cantidad_medida != null && r.insumo_cantidad_medida !== ''
         ? Number(r.insumo_cantidad_medida)
         : null,
+    imagenUrl: r.imagen_url != null && String(r.imagen_url).trim() !== '' ? String(r.imagen_url) : null,
   } as Producto;
 }
 

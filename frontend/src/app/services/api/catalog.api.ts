@@ -126,7 +126,7 @@ export const catalogApi = {
     getById: async (id: number) => mapProducto(await apiFetchData(`/api/productos/${id}`)),
     create: async (data: Partial<Producto>) => {
       const precio = Number(data.precioVenta ?? (data as { precio?: number }).precio ?? 0);
-      await apiFetch('/api/productos', {
+      const env = await apiFetch<{ id?: number }>('/api/productos', {
         method: 'POST',
         json: {
           nombre: data.nombre,
@@ -144,6 +144,19 @@ export const catalogApi = {
               }
             : {}),
         },
+      });
+      const id = Number(env.id);
+      if (!Number.isFinite(id) || id <= 0) {
+        throw new Error('No se recibió el id del producto creado');
+      }
+      return id;
+    },
+    uploadImagen: async (productoId: number, file: File) => {
+      const fd = new FormData();
+      fd.append('imagen', file);
+      await apiFetch(`/api/productos/${productoId}/imagen`, {
+        method: 'POST',
+        body: fd,
       });
     },
     update: async (id: number, updates: Partial<Producto>, _motivo?: string) => {

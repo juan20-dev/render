@@ -167,7 +167,7 @@ export const salesApi = {
         method: 'POST',
         json: {
           tipo: data.tipo === 'por pedido' ? 'Por Pedido' : 'Directa',
-          cliente_id: cid,
+          ...(cid != null ? { cliente_id: cid } : {}),
           pedido_id: data.pedidoId ?? null,
           fecha:
             typeof data.fecha === 'string' && data.fecha.trim() !== ''

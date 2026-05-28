@@ -110,21 +110,29 @@ CHECK (tipo_producto IN ('terminado','preparacion','insumo'))
 };
 
 let productoTipoColumnReady = null;
+let productoTipoPrecioColumnReady = null;
 const ensureProductoTipoColumn = async () => {
   if (!productoTipoColumnReady) {
-    productoTipoColumnReady = pool.query(
-      `ALTER TABLE productos ADD COLUMN IF NOT EXISTS tipo_producto VARCHAR(30) NOT NULL DEFAULT 'terminado'`
-    );
+    productoTipoColumnReady = (async () => {
+      await pool.query(
+        `ALTER TABLE productos ADD COLUMN IF NOT EXISTS tipo_producto VARCHAR(30) NOT NULL DEFAULT 'terminado'`
+      );
+    })();
   }
   try {
     await productoTipoColumnReady;
   } catch (_error) {
-    // ignore
+    productoTipoColumnReady = null;
+  }
+  if (!productoTipoPrecioColumnReady) {
+    productoTipoPrecioColumnReady = pool.query(
+      `ALTER TABLE productos ALTER COLUMN precio TYPE NUMERIC(18,2)`
+    );
   }
   try {
-    await pool.query(`ALTER TABLE productos ALTER COLUMN precio TYPE NUMERIC(18,2)`);
+    await productoTipoPrecioColumnReady;
   } catch (_e) {
-    /* ya ampliado o permisos */
+    productoTipoPrecioColumnReady = null;
   }
   await ensureProductoTipoCheckAllowsInsumo();
 };

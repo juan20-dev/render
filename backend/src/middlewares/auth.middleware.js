@@ -277,58 +277,63 @@ const ensureRateLimitTable = async () => {
   rateLimitTableReady = true;
 };
 
-const simpleRateLimit = (maxRequests = 5, windowMs = 15 * 60 * 1000, routeKey = 'default') => async (
-  req,
-  res,
-  next
-) => {
-  try {
-    await ensureRateLimitTable();
+const simpleRateLimit = (_maxRequests = 5, _windowMs = 15 * 60 * 1000, _routeKey = 'default') => {
+  if (process.env.RATE_LIMIT_ENABLED !== 'true') {
+    return (_req, _res, next) => next();
+  }
 
-    const identifier = `${routeKey}:${req.ip || req.socket?.remoteAddress || 'unknown'}`;
-    const nowMs = Date.now();
-    const windowStart = new Date(nowMs - windowMs);
+  return async (req, res, next) => {
+    try {
+      await ensureRateLimitTable();
 
-    await pool.query(
-      `DELETE FROM api_rate_limit_log
-       WHERE route_key = $1 AND identifier = $2 AND created_at < $3`,
-      [routeKey, identifier, windowStart]
-    );
+      const routeKey = _routeKey;
+      const windowMs = _windowMs;
+      const maxRequests = _maxRequests;
+      const identifier = `${routeKey}:${req.ip || req.socket?.remoteAddress || 'unknown'}`;
+      const nowMs = Date.now();
+      const windowStart = new Date(nowMs - windowMs);
 
-    const countResult = await pool.query(
-      `SELECT COUNT(*)::int AS count
-       FROM api_rate_limit_log
-       WHERE route_key = $1 AND identifier = $2 AND created_at >= $3`,
-      [routeKey, identifier, windowStart]
-    );
+      await pool.query(
+        `DELETE FROM api_rate_limit_log
+         WHERE route_key = $1 AND identifier = $2 AND created_at < $3`,
+        [routeKey, identifier, windowStart]
+      );
 
-    const count = Number(countResult.rows[0]?.count || 0);
-    if (count >= maxRequests) {
-      const oldestResult = await pool.query(
-        `SELECT MIN(created_at) AS oldest
+      const countResult = await pool.query(
+        `SELECT COUNT(*)::int AS count
          FROM api_rate_limit_log
          WHERE route_key = $1 AND identifier = $2 AND created_at >= $3`,
         [routeKey, identifier, windowStart]
       );
-      const oldest = oldestResult.rows[0]?.oldest ? new Date(oldestResult.rows[0].oldest).getTime() : nowMs;
-      const resetIn = Math.max(1, Math.ceil((oldest + windowMs - nowMs) / 1000));
-      return res.status(429).json({
-        success: false,
-        message: `Demasiadas solicitudes. Intenta de nuevo en ${resetIn} segundos.`,
-        retryAfter: resetIn,
-      });
+
+      const count = Number(countResult.rows[0]?.count || 0);
+      if (count >= maxRequests) {
+        const oldestResult = await pool.query(
+          `SELECT MIN(created_at) AS oldest
+           FROM api_rate_limit_log
+           WHERE route_key = $1 AND identifier = $2 AND created_at >= $3`,
+          [routeKey, identifier, windowStart]
+        );
+        const oldest = oldestResult.rows[0]?.oldest ? new Date(oldestResult.rows[0].oldest).getTime() : nowMs;
+        const resetIn = Math.max(1, Math.ceil((oldest + windowMs - nowMs) / 1000));
+        return res.status(429).json({
+          success: false,
+          message: `Demasiadas solicitudes. Intenta de nuevo en ${resetIn} segundos.`,
+          retryAfter: resetIn,
+        });
+      }
+
+      await pool.query(
+        'INSERT INTO api_rate_limit_log (route_key, identifier) VALUES ($1, $2)',
+        [routeKey, identifier]
+      );
+
+      return next();
+    } catch (error) {
+      console.error('Error en simpleRateLimit:', error);
+      return next();
     }
-
-    await pool.query(
-      'INSERT INTO api_rate_limit_log (route_key, identifier) VALUES ($1, $2)',
-      [routeKey, identifier]
-    );
-
-    return next();
-  } catch (error) {
-    console.error('Error en simpleRateLimit:', error);
-    return next();
-  }
+  };
 };
 
 const { authorizeAdministrador } = require('./scopeAccess');

@@ -119,15 +119,10 @@ export function Produccion() {
   const [insumosResumenProductor, setInsumosResumenProductor] = useState<
     (InsumoResumenRow & { clave: string; insumo_nombre?: string })[]
   >([]);
-  /** Consumo planificado para la orden (receta IA). */
-  const [consumoPlaneado, setConsumoPlaneado] = useState<
-    { clave: string; insumo_nombre: string; cantidad: number; unidad: string }[]
-  >([]);
   /** Insumos seleccionados manualmente con sus cantidades. */
   const [insumosSeleccionados, setInsumosSeleccionados] = useState<
     { clave: string; insumo_nombre: string; cantidad: number; unidad: string }[]
   >([]);
-  const [sugerenciaCargando, setSugerenciaCargando] = useState(false);
 
   const toggleInsumoSeleccionado = (insumo: any, cantidad: number) => {
     const existente = insumosSeleccionados.find(i => i.clave === insumo.clave);
@@ -181,11 +176,9 @@ export function Produccion() {
   useEffect(() => {
     if (!isModalOpen || !formData.productorId) {
       setInsumosResumenProductor([]);
-      setConsumoPlaneado([]);
       setInsumosSeleccionados([]);
       return;
     }
-    setConsumoPlaneado([]);
     let cancelled = false;
     void (async () => {
       try {
@@ -208,10 +201,6 @@ export function Produccion() {
       cancelled = true;
     };
   }, [isModalOpen, formData.productorId, insumosCatalogo]);
-
-  useEffect(() => {
-    setConsumoPlaneado([]);
-  }, [formData.pedidoId]);
 
   // Cerrar listas desplegables al hacer clic fuera
   useEffect(() => {
@@ -453,41 +442,8 @@ export function Produccion() {
     setFechaValida(true); // Fecha de hoy es válida
     setTiempoValido(true); // 60 minutos es válido
     setInsumosResumenProductor([]);
-    setConsumoPlaneado([]);
+    setInsumosSeleccionados([]);
     setIsModalOpen(true);
-  };
-
-  const handleSeleccionarInsumosRapidos = async () => {
-    if (!formData.pedidoId || !formData.productorId) {
-      toast.error('Seleccione pedido y productor antes de calcular insumos');
-      return;
-    }
-    if (!pedidoSeleccionado || productosPedidoDisponibles.length === 0) {
-      toast.error('El pedido no tiene productos de preparación');
-      return;
-    }
-    setSugerenciaCargando(true);
-    try {
-      const res = await api.produccion.sugerirConsumo(formData.pedidoId, formData.productorId);
-      setConsumoPlaneado(Array.isArray(res.sugerido) ? res.sugerido : []);
-      if (res.faltantes?.length) {
-        const detalle = res.faltantes
-          .map((f) => `${f.insumo_nombre}: faltan ${f.falta} ${f.unidad}`)
-          .join('; ');
-        toast.error('Insumos insuficientes en el productor', {
-          description: `${detalle}. Registre una nueva entrega de insumos al productor.`,
-        });
-      } else {
-        toast.success('Receta de insumos calculada', {
-          description: 'Revise el consumo propuesto antes de crear la orden.',
-        });
-      }
-    } catch (error: any) {
-      toast.error(error.message || 'No se pudo calcular la receta de insumos');
-      setConsumoPlaneado([]);
-    } finally {
-      setSugerenciaCargando(false);
-    }
   };
 
   const handleViewDetail = (orden: OrdenProduccionView) => {
@@ -626,8 +582,8 @@ export function Produccion() {
       return;
     }
 
-    if (formData.tiempoPreparacion < 15) {
-      toast.error('El tiempo de preparación debe ser al menos 15 minutos');
+    if (formData.tiempoPreparacion < 0 || formData.tiempoPreparacion > 120) {
+      toast.error('El tiempo de preparación debe estar entre 0 y 120 minutos');
       return;
     }
 
@@ -638,11 +594,9 @@ export function Produccion() {
       return;
     }
 
-    const insumosBrutos =
-      consumoPlaneado.length > 0 ? consumoPlaneado : insumosSeleccionados;
-    const insumosAUsar = insumosBrutos.filter((i) => Number(i.cantidad) > 0);
+    const insumosAUsar = insumosSeleccionados.filter((i) => Number(i.cantidad) > 0);
     if (!insumosAUsar.length) {
-      toast.error('Seleccione insumos para consumir en esta orden (manualmente o con «Seleccionar insumos rápidos»)');
+      toast.error('Seleccione insumos para consumir en esta orden de producción');
       return;
     }
 
@@ -946,17 +900,7 @@ export function Produccion() {
             </div>
 
             <div className="col-span-2 rounded-lg border border-border p-4 space-y-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <label className="block text-sm font-medium">Insumos entregados al productor</label>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  disabled={sugerenciaCargando || !formData.pedidoId || !formData.productorId}
-                  onClick={() => void handleSeleccionarInsumosRapidos()}
-                >
-                  {sugerenciaCargando ? 'Calculando…' : 'Seleccionar insumos rápidos'}
-                </Button>
-              </div>
+              <label className="block text-sm font-medium">Insumos entregados al productor</label>
               {!formData.productorId ? (
                 <p className="text-sm text-muted-foreground">Asigne un productor para ver su inventario de insumos.</p>
               ) : insumosResumenProductor.length === 0 ? (
@@ -1062,21 +1006,6 @@ export function Produccion() {
                   </div>
                 </div>
               )}
-              {consumoPlaneado.length > 0 && (
-                <div className="space-y-2 pt-2 border-t border-border">
-                  <p className="text-xs font-medium text-foreground">Consumo para esta orden (receta IA)</p>
-                  <div className="max-h-36 overflow-y-auto border border-border rounded-md p-2 bg-muted/20 space-y-1 text-sm">
-                    {consumoPlaneado.map((c) => (
-                      <div key={c.clave} className="flex justify-between gap-2">
-                        <span>{c.insumo_nombre}</span>
-                        <span className="tabular-nums shrink-0">
-                          {c.cantidad} {c.unidad}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
             </div>
 
             <div className="col-span-2 rounded-lg border border-border bg-accent/30 p-3 text-sm text-muted-foreground">
@@ -1121,15 +1050,16 @@ export function Produccion() {
             <div>
               <label className="block text-sm font-medium mb-2">Tiempo de Preparación (minutos) *</label>
               <input
-                type="number"
-                value={formData.tiempoPreparacion}
+                type="text"
+                inputMode="numeric"
+                value={formData.tiempoPreparacion === 0 ? '0' : String(formData.tiempoPreparacion)}
                 onChange={(e) => {
-                  const value = parseInt(e.target.value) || 0;
+                  const digits = e.target.value.replace(/\D/g, '').slice(0, 3);
+                  const value = digits === '' ? 0 : Math.min(120, Number(digits));
                   setFormData({ ...formData, tiempoPreparacion: value });
-                  setTiempoValido(value >= 15 && value <= 480);
+                  setTiempoValido(value >= 0 && value <= 120);
                 }}
-                placeholder="Ej: 60"
-                min="15"
+                placeholder="0–120"
                 className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 transition-all ${
                   tiempoValido === null ? 'border-border focus:ring-primary' :
                   tiempoValido ? 'border-green-500 ring-1 ring-green-500/20 focus:ring-green-500'
@@ -1137,20 +1067,13 @@ export function Produccion() {
                 }`}
                 required
               />
-              {tiempoValido === false && formData.tiempoPreparacion < 15 && (
+              {tiempoValido === false && (
                 <div className="mt-1.5">
-                  <FieldError>El tiempo mínimo es 15 minutos.</FieldError>
-                </div>
-              )}
-              {formData.tiempoPreparacion > 480 && (
-                <div className="mt-2 p-2 bg-yellow-50 rounded border border-yellow-200">
-                  <p className="text-xs text-yellow-700">
-                    <strong>⚠️ Advertencia:</strong> El tiempo de preparación es muy alto ({formData.tiempoPreparacion} minutos = {(formData.tiempoPreparacion / 60).toFixed(1)} horas). Verifica que sea correcto.
-                  </p>
+                  <FieldError>El tiempo debe estar entre 0 y 120 minutos.</FieldError>
                 </div>
               )}
               {tiempoValido === true && (
-                <p className="text-xs text-green-600 mt-1">✓ Tiempo válido ({(formData.tiempoPreparacion / 60).toFixed(1)} horas)</p>
+                <p className="text-xs text-green-600 mt-1">✓ Tiempo válido ({formData.tiempoPreparacion} min)</p>
               )}
             </div>
           </div>

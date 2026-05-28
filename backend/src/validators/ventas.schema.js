@@ -6,13 +6,14 @@ const createVentaBody = z
   .object({
     numero_venta: z.string().trim().optional(),
     tipo: z.string().trim().optional(),
-    cliente_id: z.coerce.number().int().positive().optional(),
+    cliente_id: z.coerce.number().int().positive().nullish(),
     pedido_id: z.coerce.number().int().positive().nullable().optional(),
     fecha: z.string().trim().optional(),
     metodopago: z.string().trim().optional(),
     total: z.coerce.number().nonnegative().optional(),
     estado: ventaEstados.optional(),
     productos: z.array(z.record(z.unknown())).optional(),
+    items: z.array(z.record(z.unknown())).optional(),
   })
   .passthrough();
 
