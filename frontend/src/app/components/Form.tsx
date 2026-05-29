@@ -308,8 +308,8 @@ export function FormField({
           setError('Solo se permiten 2 decimales en valores monetarios');
           return;
         }
-        if (numVal > 999999) {
-          setError('El valor monetario no puede ser mayor a 999999');
+        if (numVal > 100_000_000) {
+          setError('El valor monetario no puede superar $100.000.000 COP');
           return;
         }
       }

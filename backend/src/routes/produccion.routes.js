@@ -17,6 +17,17 @@ router.use(productorProduccionGuard);
 
 router.get('/', authorizePermissions('Ver Producción'), controller.getAll);
 router.get(
+  '/pedidos-disponibles',
+  authorizePermissions('Ver Producción', 'Registrar Producción'),
+  controller.getPedidosDisponibles
+);
+router.get(
+  '/pedido/:id',
+  authorizePermissions('Ver Producción', 'Registrar Producción'),
+  validate(idParam, 'params'),
+  controller.getPedidoParaOrden
+);
+router.get(
   '/insumos-disponibles/:productorId',
   authorizePermissions('Ver Producción'),
   validate(productorIdParam, 'params'),
@@ -44,8 +55,7 @@ router.post(
 router.get('/:id', authorizePermissions('Ver Producción'), validate(idParam, 'params'), controller.getById);
 router.post(
   '/',
-  authorizePermissions('Registrar Producción'),
-  denyRoles('Productor'),
+  authorizePermissions('Registrar Producción', 'Ver Producción'),
   validate(createProduccionBody),
   controller.create
 );

@@ -535,6 +535,13 @@ export function Ventas() {
     }
 
     const total = calcularTotal();
+    if (total > 100_000_000) {
+      toast.error('Total de venta demasiado alto', {
+        description:
+          'El total no puede superar $100.000.000 COP. Reduzca cantidades o precios de los productos.',
+      });
+      return;
+    }
     const productosVenta: PedidoProducto[] = productosEnVenta.map(p => ({
       productoId: p.productoId,
       cantidad: p.cantidad,
@@ -561,8 +568,16 @@ export function Ventas() {
       });
       setIsModalOpen(false);
       cargarDatos();
-    } catch (error: any) {
-      toast.error(error.message || 'Error al crear venta');
+    } catch (error: unknown) {
+      const raw = error instanceof Error ? error.message : String(error ?? '');
+      const msg =
+        /total|999999|100\.?000\.?000|validaci[oó]n|superar|monto/i.test(raw)
+          ? 'El total de la venta supera el máximo permitido ($100.000.000 COP). Revise cantidades y precios.'
+          : raw || 'Error al crear venta';
+      toast.error('No se pudo registrar la venta', { description: msg });
+      if (import.meta.env.DEV) {
+        console.error('Error al crear venta', error);
+      }
     } finally {
       setIsSubmittingVenta(false);
     }

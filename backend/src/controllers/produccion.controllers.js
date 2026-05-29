@@ -1,10 +1,21 @@
 const models = {
   Produccion: require('../models/produccion/produccion'),
+  Pedidos: require('../models/ventas/pedidos'),
 };
 const { asyncHandler } = require('../utils/asyncHandler');
 const { AppError } = require('../utils/AppError');
 
 const isProductorUser = (req) => String(req.user?.rol || '').trim().toLowerCase() === 'productor';
+
+const isTipoProductoPreparacion = (tipoRaw) => {
+  const t = String(tipoRaw || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, '_');
+  return t === 'preparacion' || t === 'de_preparacion' || t.includes('prepar');
+};
 
 const throwIfProductorForbidden = (req) => {
   if (isProductorUser(req)) {
@@ -41,6 +52,42 @@ exports.getAll = asyncHandler(async (req, res) => {
   res.json({ success: true, data: produccion });
 });
 
+exports.getPedidosDisponibles = asyncHandler(async (req, res) => {
+  const rows = await models.Produccion.getPedidosDisponibles();
+  res.json({ success: true, data: rows });
+});
+
+exports.getPedidoParaOrden = asyncHandler(async (req, res) => {
+  const pedidoId = Number(req.params.id);
+  const pedido = await models.Pedidos.getById(pedidoId);
+  if (!pedido) {
+    throw AppError.notFound('Pedido no encontrado');
+  }
+  const estadoPedido = String(pedido.estado || '').trim().toLowerCase();
+  if (!['pendiente', 'en proceso'].includes(estadoPedido)) {
+    throw AppError.badRequest(
+      'El pedido debe estar Pendiente o En Proceso para crear una orden de producción'
+    );
+  }
+  const yaTiene = await models.Produccion.hasOrdenForPedido(pedidoId);
+  if (yaTiene) {
+    throw new AppError('Este pedido ya tiene una orden de producción registrada', 409, 'CONFLICT');
+  }
+  const detallesAll = await models.Pedidos.getDetalles(pedidoId);
+  const detalles = detallesAll.filter((d) => isTipoProductoPreparacion(d.tipo_producto || d.tipoProducto));
+  if (!detalles.length) {
+    throw AppError.badRequest('El pedido no tiene productos de preparación para crear una orden de producción');
+  }
+  res.json({
+    success: true,
+    data: {
+      ...pedido,
+      productos: detalles,
+      detalles,
+    },
+  });
+});
+
 exports.getById = asyncHandler(async (req, res) => {
   const produccion = await models.Produccion.getById(req.params.id);
   if (!produccion) {
@@ -51,12 +98,14 @@ exports.getById = asyncHandler(async (req, res) => {
 });
 
 exports.create = asyncHandler(async (req, res) => {
-  throwIfProductorForbidden(req);
   try {
     const b = req.body || {};
+    const productorId = isProductorUser(req)
+      ? Number(req.user.id)
+      : Number(b.productor_id ?? b.productorId);
     const payload = {
       pedido_id: b.pedido_id ?? b.pedidoId,
-      productor_id: b.productor_id ?? b.productorId,
+      productor_id: productorId,
       fecha: b.fecha ?? b.fechaInicio,
       tiempo_preparacion_minutos: b.tiempo_preparacion_minutos ?? b.tiempoPreparacion,
       estado: b.estado,

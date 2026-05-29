@@ -6,6 +6,7 @@ const config = require('../../config');
 let cachedTransporter = null;
 let cachedTransporterMode = null;
 let cachedLogoDataUri = null;
+let cachedLogoFilePath;
 const PRIORITY_HEADERS = {
   'X-Priority': '1',
   'X-MSMail-Priority': 'High',
@@ -16,17 +17,21 @@ const hasSmtpConfig = () =>
   Boolean(config.mail.host && config.mail.user && config.mail.password);
 
 const LOGO_RELATIVE_PATH = path.join('assets', 'brand', 'logo.png');
+const BACKEND_ROOT = path.join(__dirname, '..', '..');
 
-/** Rutas probadas en orden: env, raíz del app (Beanstalk /var/app/current), relativa al servicio. */
+/** Logo oficial del proyecto (PNG, sin reescalar en disco). */
 const getLogoCandidatePaths = () => {
-  const fromEnv = process.env.MAIL_LOGO_PATH ? path.resolve(process.env.MAIL_LOGO_PATH) : null;
+  const fromEnv = process.env.MAIL_LOGO_PATH
+    ? path.isAbsolute(process.env.MAIL_LOGO_PATH)
+      ? path.normalize(process.env.MAIL_LOGO_PATH)
+      : path.join(BACKEND_ROOT, process.env.MAIL_LOGO_PATH)
+    : null;
   const appRoot = process.cwd();
   const candidates = [
     fromEnv,
+    path.join(BACKEND_ROOT, LOGO_RELATIVE_PATH),
     path.join(appRoot, LOGO_RELATIVE_PATH),
-    path.join(__dirname, '..', '..', 'assets', 'brand', 'logo.png'),
-    path.join(__dirname, '..', '..', '..', 'frontend', 'public', 'favicon', 'android-chrome-192x192.png'),
-    path.join(__dirname, '..', '..', '..', 'frontend', 'public', 'favicon', 'apple-touch-icon.png'),
+    path.join(appRoot, 'backend', LOGO_RELATIVE_PATH),
   ].filter(Boolean);
   return [...new Set(candidates.map((p) => path.normalize(p)))];
 };
@@ -66,9 +71,52 @@ const getLogoDataUri = () => {
   return cachedLogoDataUri;
 };
 
+const resolveLogoFilePath = () => {
+  if (cachedLogoFilePath !== undefined) return cachedLogoFilePath;
+  cachedLogoFilePath = '';
+  for (const logoPath of getLogoCandidatePaths()) {
+    try {
+      if (fs.existsSync(logoPath) && fs.statSync(logoPath).isFile()) {
+        cachedLogoFilePath = logoPath;
+        console.log(`[mail] Logo embebido (CID): ${logoPath}`);
+        return cachedLogoFilePath;
+      }
+    } catch {
+      /* siguiente candidato */
+    }
+  }
+  return cachedLogoFilePath;
+};
+
+const getLogoAttachments = () => {
+  const filePath = resolveLogoFilePath();
+  if (!filePath) return [];
+  return [
+    {
+      filename: 'logo.png',
+      path: filePath,
+      cid: 'brand-logo',
+      contentDisposition: 'inline',
+    },
+  ];
+};
+
 const buildEmailLogoHtml = () => {
+  if (resolveLogoFilePath()) {
+    return (
+      '<div style="margin:0 0 20px 0;text-align:center">' +
+      '<img src="cid:brand-logo" alt="Grandma\'s Liquors" width="120" style="display:block;margin:0 auto;max-width:120px;height:auto;border-radius:10px" />' +
+      '</div>'
+    );
+  }
   const dataUri = getLogoDataUri();
-  return '<div style="margin:0 0 20px 0;text-align:center"><img src="' + dataUri + '" alt="Grandma\'s Liquors" width="64" height="64" style="display:block;margin:0 auto;border-radius:10px" /></div>';
+  return (
+    '<div style="margin:0 0 20px 0;text-align:center">' +
+    '<img src="' +
+    dataUri +
+    '" alt="Grandma\'s Liquors" width="120" style="display:block;margin:0 auto;max-width:120px;height:auto;border-radius:10px" />' +
+    '</div>'
+  );
 };
 
 const createTransporter = () => {
@@ -106,14 +154,23 @@ const createTransporter = () => {
 
 const sendWithLogging = async (message, label) => {
   const transporter = createTransporter();
+  const fromAddress = config.mail.from || config.mail.user;
+  const toAddress = message.to;
+  const logoAttachments = getLogoAttachments();
+  const existingAttachments = Array.isArray(message.attachments) ? message.attachments : [];
   const prioritizedMessage = {
     ...message,
+    from: message.from || fromAddress,
     priority: 'high',
+    attachments: [...existingAttachments, ...logoAttachments],
     headers: {
       ...PRIORITY_HEADERS,
       ...(message?.headers || {}),
     },
   };
+  if (!prioritizedMessage.from) {
+    throw new Error('Remitente de correo no configurado (MAIL_FROM / MAIL_USER)');
+  }
   try {
     const result = await transporter.sendMail(prioritizedMessage);
     if (cachedTransporterMode === 'json') {

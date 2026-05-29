@@ -7,7 +7,7 @@ import { Plus, FileText, Calendar, Search, Package, ShoppingCart } from 'lucide-
 import { api } from '../../../services/api';
 import { toast } from '../../AlertDialog';
 import type { OrdenProduccion, Producto, Usuario, Pedido } from '../../../services/types';
-import { formatEntityCode } from '../../../services/mappers';
+import { formatEntityCode, pedidoEstadoUi } from '../../../services/mappers';
 import { MotivoModal } from '../../MotivoModal';
 import { AlertDialog } from '../../AlertDialog';
 import { useAuth } from '../../AuthContext';
@@ -223,7 +223,12 @@ export function Produccion() {
     try {
       const ordenesData = await api.produccion.getAll();
 
-      if (esProductor) {
+      if (esProductor && user?.id) {
+        const uid = Number(user.id);
+        const [pedidosDisp, insumosInv] = await Promise.all([
+          api.produccion.getPedidosDisponibles(),
+          api.insumos.getAll().catch(() => [] as Awaited<ReturnType<typeof api.insumos.getAll>>),
+        ]);
         const ordenesConInfo = ordenesData.map((orden) => ({
           ...orden,
           productoNombre: orden.productoNombre || 'Producto',
@@ -231,33 +236,51 @@ export function Produccion() {
             orden.productorNombre || (user ? `${user.nombre} ${user.apellido}`.trim() : 'Asignado a mí'),
         }));
         setOrdenes(ordenesConInfo);
+        setPedidos(pedidosDisp.map(mapPedidoDisponible));
+        setInsumosCatalogo(
+          insumosInv
+            .filter((i) => i.estado === 'activo')
+            .map((i) => ({
+              id: i.productoRelacionadoId && i.productoRelacionadoId > 0 ? i.productoRelacionadoId : i.id,
+              nombre: i.nombre,
+              descripcion: i.descripcion || '',
+              categoriaId: 0,
+              typo: 'insumo' as const,
+              precioVenta: 0,
+              stockMinimo: i.stockMinimo ?? 0,
+              estado: 'activo' as const,
+              insumoUnidadMedida: i.presentacionUnidad || 'Unidades',
+              insumoCantidadMedida: i.presentacionCantidad ?? 1,
+            }))
+        );
+        setProductores([
+          {
+            id: uid,
+            nombre: user.nombre,
+            apellido: user.apellido,
+            email: user.email || '',
+            rol: 'Productor',
+            estado: 'activo',
+            tipoDocumento: 'CC',
+            numeroDocumento: user.numeroDocumento || '',
+            telefono: user.telefono || '',
+          } as Usuario,
+        ]);
         setProductos([]);
-        setPedidos([]);
-        setProductores([]);
         return;
       }
 
-      const [productosData, usuariosData, pedidosData] = await Promise.all([
+      const [productosData, usuariosData, pedidosDisp] = await Promise.all([
         api.productos.getAll(),
         api.usuarios.getAll(),
-        api.pedidos.getAll(),
+        api.produccion.getPedidosDisponibles(),
       ]);
-
-      const pedidoIdsConProduccion = new Set(
-        ordenesData
-          .map((o) => (o.pedidoId != null && Number(o.pedidoId) > 0 ? Number(o.pedidoId) : null))
-          .filter((id): id is number => id != null)
-      );
 
       const productoresData = usuariosData.filter((u) => u.rol === 'Productor' && u.estado === 'activo');
       setProductores(productoresData);
       setProductos(productosData.filter((p) => p.typo === 'de preparacion' && p.estado === 'activo'));
       setInsumosCatalogo(productosData.filter((p) => p.typo === 'insumo' && p.estado === 'activo'));
-      setPedidos(
-        pedidosData.filter(
-          (p) => p.estado === 'en proceso' && !pedidoIdsConProduccion.has(Number(p.id))
-        )
-      );
+      setPedidos(pedidosDisp.map(mapPedidoDisponible));
 
       const ordenesConInfo = ordenesData.map((orden) => {
         const det = orden.detallePreparacion;
@@ -278,14 +301,37 @@ export function Produccion() {
       });
 
       setOrdenes(ordenesConInfo);
-    } catch (error) {
-      toast.error('Error al cargar datos');
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Error al cargar datos';
+      toast.error('No se pudieron cargar los datos de producción', { description: msg });
+      if (import.meta.env.DEV) {
+        console.error('Produccion cargarDatos', error);
+      }
     }
   };
 
   useEffect(() => {
-    cargarDatos();
-  }, []);
+    if (!user) return;
+    void cargarDatos();
+  }, [user?.id, user?.rol]);
+
+  const mapPedidoDisponible = (p: {
+    id: number;
+    fecha?: string;
+    fecha_entrega?: string;
+    estado?: string;
+    total?: number;
+  }): Pedido => ({
+    id: Number(p.id),
+    clienteId: 0,
+    fechaPedido: String(p.fecha || '').split('T')[0],
+    fechaEntrega: String(p.fecha_entrega || '').split('T')[0],
+    metodoPago: 'efectivo',
+    porcentajeAbono: 100,
+    total: Number(p.total) || 0,
+    estado: pedidoEstadoUi(p.estado) as Pedido['estado'],
+    productos: [],
+  });
 
   // Filtrar pedidos y productos dentro del pedido seleccionado
   const pedidosFiltrados = pedidos.filter((p) => {
@@ -304,14 +350,22 @@ export function Produccion() {
 
   const seleccionarPedido = async (pedido: Pedido) => {
     try {
-      const detalle = await api.pedidos.getById(pedido.id);
-      const prepIds = new Set(productos.map((x) => Number(x.id)));
-      const ids = new Set(
-        detalle.productos
-          .map((d) => Number(d.productoId))
-          .filter((id) => Number.isFinite(id) && id > 0 && prepIds.has(id))
-      );
-      const disponibles = productos.filter((p) => ids.has(Number(p.id)));
+      const detalle = await api.produccion.getPedidoParaOrden(pedido.id);
+      const disponibles = (detalle.productos || [])
+        .filter((d) => Number(d.productoId) > 0)
+        .map(
+          (d) =>
+            ({
+              id: Number(d.productoId),
+              nombre: d.nombre || `Producto #${d.productoId}`,
+              descripcion: '',
+              categoriaId: 0,
+              typo: 'de preparacion',
+              precioVenta: Number(d.precio) || 0,
+              stockMinimo: 0,
+              estado: 'activo',
+            }) as Producto
+        );
       if (disponibles.length === 0) {
         toast.error('El pedido no tiene productos de preparación disponibles para producción');
         return;
@@ -324,8 +378,12 @@ export function Produccion() {
       });
       setBusquedaPedido(formatEntityCode('P', pedido.id));
       setMostrarListaPedidos(false);
-    } catch {
-      toast.error('No se pudo cargar el detalle del pedido seleccionado');
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'No se pudo cargar el detalle del pedido seleccionado';
+      toast.error('No se pudo seleccionar el pedido', { description: msg });
+      if (import.meta.env.DEV) {
+        console.error('Produccion seleccionarPedido', error);
+      }
     }
   };
 
@@ -427,16 +485,19 @@ export function Produccion() {
   const handleAdd = () => {
     setSelectedOrden(null);
     const fechaHoy = new Date().toISOString().split('T')[0];
+    const productorIdInicial = esProductor && user?.id ? Number(user.id) : 0;
     setFormData({
       pedidoId: 0,
-      productorId: 0,
+      productorId: productorIdInicial,
       fechaInicio: fechaHoy,
       tiempoPreparacion: 60
     });
     setPedidoSeleccionado(null);
     setProductosPedidoDisponibles([]);
     setBusquedaPedido('');
-    setBusquedaProductor('');
+    setBusquedaProductor(
+      esProductor && user ? `${user.nombre} ${user.apellido}`.trim() : ''
+    );
     setMostrarListaPedidos(false);
     setMostrarListaProductores(false);
     // Resetear validaciones
@@ -450,6 +511,26 @@ export function Produccion() {
   const handleViewDetail = (orden: OrdenProduccionView) => {
     setSelectedOrden(orden);
     setIsDetailModalOpen(true);
+    void (async () => {
+      try {
+        const full = await api.produccion.getById(orden.id);
+        setSelectedOrden((prev) =>
+          prev && prev.id === orden.id
+            ? {
+                ...prev,
+                ...full,
+                productoNombre: prev.productoNombre || full.productoNombre,
+                productorNombre: prev.productorNombre || full.productorNombre,
+              }
+            : prev
+        );
+      } catch (error) {
+        if (import.meta.env.DEV) {
+          console.error('Error al cargar detalle de orden', error);
+        }
+        toast.error('No se pudo cargar el detalle completo de la orden');
+      }
+    })();
   };
 
   const ejecutarProduccionCambio = async (
@@ -673,11 +754,9 @@ export function Produccion() {
           <h2>Gestión de Producción</h2>
           <p className="text-muted-foreground">Administra las órdenes de producción de bebidas</p>
         </div>
-        {!esProductor ? (
-          <Button icon={<Plus className="w-5 h-5" />} onClick={handleAdd}>
-            Nueva Orden
-          </Button>
-        ) : null}
+        <Button icon={<Plus className="w-5 h-5" />} onClick={handleAdd}>
+          Nueva Orden
+        </Button>
       </div>
 
       <div className="bg-white rounded-lg border border-border p-4">
@@ -843,16 +922,20 @@ export function Produccion() {
                 type="text"
                 value={busquedaProductor}
                 onChange={(e) => {
+                  if (esProductor) return;
                   setBusquedaProductor(e.target.value);
                   setMostrarListaProductores(true);
                 }}
-                onFocus={() => setMostrarListaProductores(true)}
+                onFocus={() => {
+                  if (!esProductor) setMostrarListaProductores(true);
+                }}
                 placeholder="Escribe ID, nombre o apellido..."
                 className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
                 maxLength={60}
+                readOnly={esProductor}
                 required
               />
-              {mostrarListaProductores && (
+              {mostrarListaProductores && !esProductor && (
                 <div className="absolute z-10 w-full mt-1 bg-white border border-border rounded-lg shadow-lg max-h-60 overflow-y-auto">
                   {productoresFiltrados.length > 0 ? (
                     productoresFiltrados.map((p) => (
@@ -1163,6 +1246,33 @@ export function Produccion() {
               ) : (
                 <p className="text-sm text-muted-foreground">
                   Detalle por producto no disponible para esta orden (registros anteriores a la actualización).
+                </p>
+              )}
+            </div>
+
+            <div className="space-y-3">
+              <h4 className="text-sm font-medium">Insumos de la orden</h4>
+              {Array.isArray(selectedOrden.insumosGastados) && selectedOrden.insumosGastados.length > 0 ? (
+                <ul className="space-y-2 rounded-lg border border-border p-3 text-sm">
+                  {selectedOrden.insumosGastados.map((ins, idx) => {
+                    const cant = Number(ins.cantidad_descontada ?? ins.cantidad ?? 0);
+                    const unidad = String(ins.unidad || 'Unidades').trim();
+                    return (
+                      <li
+                        key={`${ins.insumo_nombre || 'insumo'}-${idx}`}
+                        className="flex items-center justify-between border-b border-border pb-2 last:border-0 last:pb-0"
+                      >
+                        <span className="font-medium">{ins.insumo_nombre || 'Insumo'}</span>
+                        <span className="tabular-nums text-muted-foreground">
+                          {formatoCantidadInsumo(cant, unidad)} {unidad}
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  No hay insumos registrados para esta orden.
                 </p>
               )}
             </div>

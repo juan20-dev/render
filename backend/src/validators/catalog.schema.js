@@ -8,6 +8,7 @@ const {
   telefonoString,
   longTextString,
   moneyNumber,
+  moneyNumberCompra,
   stockInt,
 } = require('./common.schema');
 
@@ -94,7 +95,9 @@ const createCompraBody = z
   .object({
     proveedor_id: z.coerce.number().int().positive().optional(),
     fecha: z.string().trim().optional(),
-    total: moneyNumber.optional(),
+    total: moneyNumberCompra.optional(),
+    subtotal: moneyNumberCompra.optional(),
+    iva: moneyNumberCompra.optional(),
     estado: z.string().trim().optional(),
     productos: z.array(z.record(z.unknown())).optional(),
   })

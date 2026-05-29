@@ -6,6 +6,7 @@ import { Button } from '../../Button';
 import { Plus, Calendar, Search, Package, User } from 'lucide-react';
 import { api } from '../../../services/api';
 import { toast } from '../../AlertDialog';
+import { useAuth } from '../../AuthContext';
 import type { EntregaInsumo, Usuario } from '../../../services/types';
 import { formatEntityCode } from '../../../services/mappers';
 
@@ -57,6 +58,8 @@ function cantidadEntregaParaTabla(
 }
 
 export function EntregaInsumos() {
+  const { user } = useAuth();
+  const esProductor = String(user?.rol || '').trim().toLowerCase() === 'productor';
   const [entregas, setEntregas] = useState<EntregaInsumoView[]>([]);
   const [catalogoInsumos, setCatalogoInsumos] = useState<
     (CatalogoInsumoEntrega & {
@@ -89,8 +92,9 @@ export function EntregaInsumos() {
   const [mostrarListaProductores, setMostrarListaProductores] = useState(false);
 
   useEffect(() => {
-    cargarDatos();
-  }, []);
+    if (!user) return;
+    void cargarDatos();
+  }, [user?.id, user?.rol]);
 
   // Cerrar las listas desplegables al hacer clic fuera
   useEffect(() => {
@@ -109,11 +113,9 @@ export function EntregaInsumos() {
 
   const cargarDatos = async () => {
     try {
-      const [entregasData, usuariosData, insumosInv] = await Promise.all([
-        api.entregasInsumos.getAll(),
-        api.usuarios.getAll(),
-        api.insumos.getAll(),
-      ]);
+      const entregasData = await api.entregasInsumos.getAll();
+      const usuariosData = esProductor ? [] : await api.usuarios.getAll();
+      const insumosInv = esProductor ? [] : await api.insumos.getAll();
 
       setCatalogoInsumos(
         insumosInv.map((i) => {
@@ -140,15 +142,20 @@ export function EntregaInsumos() {
 
       const entregasConInfo = entregasData.map((entrega) => {
         const productor = usuariosData.find((u) => u.id === entrega.operarioId);
+        const nombreApi = (entrega as EntregaInsumoView).productorNombre;
         return {
           ...entrega,
-          productorNombre: productor ? `${productor.nombre} ${productor.apellido}` : 'Desconocido',
+          productorNombre: nombreApi || (productor ? `${productor.nombre} ${productor.apellido}` : 'Desconocido'),
         };
       });
 
       setEntregas(entregasConInfo);
-    } catch (error) {
-      toast.error('Error al cargar datos');
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Error al cargar datos';
+      toast.error('No se pudieron cargar las entregas', { description: msg });
+      if (import.meta.env.DEV) {
+        console.error('EntregaInsumos cargarDatos', error);
+      }
     }
   };
 
@@ -353,12 +360,16 @@ export function EntregaInsumos() {
         <div>
           <h2>Entrega de Insumos</h2>
           <p className="text-muted-foreground">
-            Registra entregas de insumos a usuarios con rol Productor
+            {esProductor
+              ? 'Historial de insumos entregados a su usuario (solo consulta)'
+              : 'Registra entregas de insumos a usuarios con rol Productor'}
           </p>
         </div>
-        <Button icon={<Plus className="w-5 h-5" />} onClick={handleAdd}>
-          Nueva Entrega
-        </Button>
+        {!esProductor ? (
+          <Button icon={<Plus className="w-5 h-5" />} onClick={handleAdd}>
+            Nueva Entrega
+          </Button>
+        ) : null}
       </div>
 
       <div className="bg-white rounded-lg border border-border p-4">
@@ -384,18 +395,20 @@ export function EntregaInsumos() {
                 className="w-full pl-10 pr-3 py-2.5 border border-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-primary text-gray-500"
               />
             </div>
-            <select
-              value={filtroProductor}
-              onChange={(e) => setFiltroProductor(e.target.value)}
-              className="px-3 py-2.5 border border-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-primary min-w-[200px] text-gray-500"
-            >
-              <option value="">Filtrar por productor</option>
-              {productores.map((p) => (
-                <option key={p.id} value={String(p.id)}>
-                  {etiquetaProductorEnLista(p)}
-                </option>
-              ))}
-            </select>
+            {!esProductor ? (
+              <select
+                value={filtroProductor}
+                onChange={(e) => setFiltroProductor(e.target.value)}
+                className="px-3 py-2.5 border border-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-primary min-w-[200px] text-gray-500"
+              >
+                <option value="">Filtrar por productor</option>
+                {productores.map((p) => (
+                  <option key={p.id} value={String(p.id)}>
+                    {etiquetaProductorEnLista(p)}
+                  </option>
+                ))}
+              </select>
+            ) : null}
             <Button
               variant="outline"
               onClick={() => {
@@ -415,12 +428,16 @@ export function EntregaInsumos() {
         columns={columns}
         data={entregasFiltradas}
         rowClassName={(row: EntregaInsumoView) => (row.anulada ? 'opacity-60' : undefined)}
-        actions={[
-          commonActions.cancel(handleAnular, {
-            disabled: (row: EntregaInsumoView) => !!row.anulada,
-            disabledTitle: 'La entrega ya está anulada',
-          }),
-        ]}
+        actions={
+          esProductor
+            ? []
+            : [
+                commonActions.cancel(handleAnular, {
+                  disabled: (row: EntregaInsumoView) => !!row.anulada,
+                  disabledTitle: 'La entrega ya está anulada',
+                }),
+              ]
+        }
       />
 
       {/* Modal de formulario */}

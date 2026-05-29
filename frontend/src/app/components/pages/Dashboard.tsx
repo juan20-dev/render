@@ -10,6 +10,14 @@ import {
 } from 'lucide-react';
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
 import { api } from '../../services/api';
+import { formatEntityCode } from '../../services/mappers';
+
+function etiquetaFechaPedido(fecha?: string): string {
+  if (!fecha || !String(fecha).trim()) return 'Sin fecha';
+  const raw = String(fecha).trim();
+  const d = /^\d{4}-\d{2}-\d{2}$/.test(raw) ? new Date(`${raw}T12:00:00`) : new Date(raw);
+  return Number.isNaN(d.getTime()) ? 'Sin fecha' : d.toLocaleDateString('es-CO');
+}
 
 const COLORS = ['rgb(114, 47, 55)', 'rgb(134, 67, 75)', 'rgb(154, 87, 95)', 'rgb(174, 107, 115)', 'rgb(194, 127, 135)'];
 
@@ -174,7 +182,7 @@ export function Dashboard() {
                   <div className="flex-1">
                     <p>{order.cliente}</p>
                     <p className="text-sm text-muted-foreground">
-                      #{order.id} - {new Date(order.fecha).toLocaleDateString('es-CO')}
+                      {order.numeroPedido || formatEntityCode('P', order.id)} — {etiquetaFechaPedido(order.fecha)}
                     </p>
                   </div>
                   <div className="text-right">

@@ -45,7 +45,13 @@ export async function apiFetch<T = unknown>(
   }
 
   if (!res.ok) {
-    const msg = typeof json.message === 'string' ? json.message : res.statusText;
+    let msg = typeof json.message === 'string' ? json.message : res.statusText;
+    if (/<html|gateway time-out|504/i.test(msg)) {
+      msg =
+        res.status === 504
+          ? 'El servidor tardó demasiado en responder. Intente de nuevo en unos segundos.'
+          : 'Error de comunicación con el servidor. Intente de nuevo.';
+    }
     if (
       res.status === 401 &&
       typeof window !== 'undefined' &&

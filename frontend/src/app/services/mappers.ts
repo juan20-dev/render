@@ -574,6 +574,26 @@ export function mapProduccion(r: any): OrdenProduccion {
     }));
   }
 
+  let insumosGastados: OrdenProduccion['insumosGastados'];
+  const rawInsumos = r.insumos_gastados;
+  let insArr: unknown[] | null = null;
+  if (Array.isArray(rawInsumos)) insArr = rawInsumos;
+  else if (typeof rawInsumos === 'string' && rawInsumos.trim()) {
+    try {
+      insArr = JSON.parse(rawInsumos);
+    } catch {
+      insArr = null;
+    }
+  }
+  if (Array.isArray(insArr)) {
+    insumosGastados = insArr.map((x: Record<string, unknown>) => ({
+      insumo_nombre: x.insumo_nombre != null ? String(x.insumo_nombre) : x.insumoNombre != null ? String(x.insumoNombre) : undefined,
+      cantidad: Number(x.cantidad_descontada ?? x.cantidad ?? 0),
+      cantidad_descontada: Number(x.cantidad_descontada ?? x.cantidad ?? 0),
+      unidad: x.unidad != null ? String(x.unidad) : undefined,
+    }));
+  }
+
   return {
     id: Number(r.id),
     idOrden: Number(r.id),
@@ -589,6 +609,7 @@ export function mapProduccion(r: any): OrdenProduccion {
     createdAt: r.created_at || '',
     updatedAt: r.updated_at || '',
     ...(detallePreparacion ? { detallePreparacion } : {}),
+    ...(insumosGastados && insumosGastados.length ? { insumosGastados } : {}),
     ...(r.producto_nombre ? { productoNombre: r.producto_nombre } : {}),
     ...(r.productor_nombre ? { productorNombre: r.productor_nombre } : r.responsable ? { productorNombre: r.responsable } : {}),
   } as OrdenProduccion;

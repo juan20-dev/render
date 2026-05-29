@@ -618,6 +618,34 @@ const Produccion = {
   getInsumosEntregadosByProductor,
   getInsumosAgregadosByProductor,
   sugerirConsumoInsumos,
+  hasOrdenForPedido: async (pedidoId) => {
+    const r = await pool.query('SELECT id FROM produccion WHERE pedido_id = $1 LIMIT 1', [pedidoId]);
+    return Boolean(r.rows[0]);
+  },
+  getPedidosDisponibles: async () => {
+    const result = await pool.query(
+      `SELECT pe.id, pe.numero_pedido, pe.fecha, pe.fecha_entrega, pe.total, pe.estado
+       FROM pedidos pe
+       WHERE LOWER(TRIM(pe.estado)) IN ('pendiente', 'en proceso')
+         AND NOT EXISTS (SELECT 1 FROM produccion p WHERE p.pedido_id = pe.id)
+         AND EXISTS (
+           SELECT 1
+           FROM detalle_pedidos dp
+           JOIN productos pr ON pr.id = dp.producto_id
+           WHERE dp.pedido_id = pe.id
+             AND COALESCE(pr.tipo_producto, 'terminado') = 'preparacion'
+         )
+       ORDER BY
+         CASE LOWER(TRIM(pe.estado))
+           WHEN 'pendiente' THEN 0
+           WHEN 'en proceso' THEN 1
+           ELSE 2
+         END,
+         pe.fecha DESC,
+         pe.id DESC`
+    );
+    return result.rows;
+  },
   getAll: async (options = {}) => {
     await ensureProduccionDetallePreparacion();
     await repairPedidosConOrdenProduccionCompletada();

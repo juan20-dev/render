@@ -587,9 +587,11 @@ INSERT INTO roles (nombre, descripcion, permisos, estado) VALUES
   'Ver Producción', 'Registrar Producción',
   'Ver Producto-Insumos', 'Crear Producto-Insumos', 'Editar Producto-Insumos', 'Eliminar Producto-Insumos'
 ], 'Activo'),
-('Productor', 'Solo órdenes de producción asignadas: consulta y cambio de estado', ARRAY[
+('Productor', 'Producción propia, entregas de insumos asignadas (solo consulta) y cambio de estado', ARRAY[
   'Ver Dashboard',
-  'Ver Producción'
+  'Ver Producción',
+  'Registrar Producción',
+  'Ver Insumos'
 ], 'Activo'),
 ('Repartidor', 'Puede gestionar domicilios y entregas', ARRAY[
   'Ver Dashboard',

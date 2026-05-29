@@ -5,9 +5,9 @@
  *   1. Verifica conectividad con PostgreSQL y avisa de forma clara si la base
  *      de datos no existe o las credenciales son erroneas (evita el "exit 1"
  *      sin contexto que confundia a quien clona por primera vez).
- *   2. Si la base está vacía, ejecuta el schema base `db.pgsql` para bootstrap.
- *      Si la base ya tiene tablas del sistema, NO ejecuta `db.pgsql` para evitar
- *      el comportamiento destructivo de drop + create.
+ *   2. Si no existe el esquema de la app (tabla `roles`), ejecuta `db.pgsql`.
+ *      Si ya existe el esquema completo, omite `db.pgsql` (evita DROP + CREATE).
+ *      Use `npm run migrate -- --bootstrap` para forzar db.pgsql (borra datos del proyecto).
  *   3. Ejecuta cualquier archivo .sql adicional en `historias-migraciones/`
  *      en orden alfabetico, si la carpeta existe (es opcional). Asi se evita
  *      que el script falle/avise por archivos que no estan versionados.
@@ -42,6 +42,30 @@ const dbConfig = {
 
 const pool = new Pool(dbConfig);
 
+/** Tabla mínima que indica que db.pgsql ya se aplicó en esta base. */
+const APP_SCHEMA_MARKER_TABLE = 'roles';
+
+const parseArgs = () => {
+  const args = process.argv.slice(2);
+  return {
+    bootstrap: args.includes('--bootstrap') || args.includes('--schema'),
+    skipHistorias: args.includes('--skip-historias'),
+  };
+};
+
+async function hasAppSchema(client) {
+  const r = await client.query(
+    `SELECT EXISTS (
+       SELECT 1
+       FROM information_schema.tables
+       WHERE table_schema = 'public'
+         AND table_name = $1
+     ) AS ok`,
+    [APP_SCHEMA_MARKER_TABLE]
+  );
+  return Boolean(r.rows[0]?.ok);
+}
+
 const printConnectionHelp = (error) => {
   const code = error?.code || '';
   console.error('');
@@ -66,6 +90,7 @@ const printConnectionHelp = (error) => {
 };
 
 async function runMigrations() {
+  const opts = parseArgs();
   let client;
   try {
     client = await pool.connect();
@@ -76,50 +101,62 @@ async function runMigrations() {
 
   try {
     console.log('Iniciando migraciones de base de datos...\n');
+    console.log(`  base: ${dbConfig.database} @ ${dbConfig.host}\n`);
 
-    // 1) Schema inicial (solo bootstrap sobre BD vacía).
+    // 1) Esquema completo desde db.pgsql (tablas, datos semilla, triggers).
     const schemaPath = path.join(__dirname, 'db.pgsql');
-    if (fs.existsSync(schemaPath)) {
-      const schemaState = await client.query(`
-        SELECT COUNT(*)::int AS total
-        FROM information_schema.tables
-        WHERE table_schema = 'public'
-          AND table_type = 'BASE TABLE'
-      `);
-      const existingTables = Number(schemaState.rows[0]?.total || 0);
-
-      if (existingTables === 0) {
-        console.log('-> Base vacía detectada. Ejecutando bootstrap inicial (db.pgsql)...');
-        const schema = fs.readFileSync(schemaPath, 'utf8');
-        await client.query(schema);
-        console.log('   OK bootstrap inicial completado\n');
-      } else {
-        console.log(
-          '-> Base existente detectada. Se omite db.pgsql para evitar recrear tablas y se aplican solo migraciones/ALTERs.\n'
-        );
-      }
-    } else {
+    if (!fs.existsSync(schemaPath)) {
       throw new Error('No se encontro backend/db.pgsql. Verifica que clonaste el repositorio completo.');
     }
 
-    // 2) Migraciones extra opcionales en historias-migraciones/.
+    const schemaPresent = await hasAppSchema(client);
+    const shouldRunDbPgsql = opts.bootstrap || !schemaPresent;
+
+    if (shouldRunDbPgsql) {
+      if (schemaPresent && opts.bootstrap) {
+        console.log('-> --bootstrap: ejecutando db.pgsql (elimina y recrea tablas del proyecto)...\n');
+      } else if (!schemaPresent) {
+        console.log(
+          `-> No existe la tabla «${APP_SCHEMA_MARKER_TABLE}». Ejecutando esquema completo (db.pgsql)...\n`
+        );
+      }
+      const schema = fs.readFileSync(schemaPath, 'utf8');
+      await client.query(schema);
+      console.log('   OK db.pgsql aplicado (estructura + datos iniciales)\n');
+    } else {
+      console.log(
+        '-> Esquema de la app ya presente. Se omite db.pgsql; solo migraciones incrementales y ALTERs.\n'
+      );
+    }
+
+    // 2) Migraciones extra opcionales en historias-migraciones/ (requieren tablas de db.pgsql).
     //    Se cargan en orden alfabetico solo si la carpeta existe y contiene .sql.
     const migrationsDir = path.join(__dirname, 'historias-migraciones');
-    if (fs.existsSync(migrationsDir) && fs.statSync(migrationsDir).isDirectory()) {
-      const sqlFiles = fs
-        .readdirSync(migrationsDir)
-        .filter((file) => file.toLowerCase().endsWith('.sql'))
-        .sort();
+    if (
+      !opts.skipHistorias &&
+      fs.existsSync(migrationsDir) &&
+      fs.statSync(migrationsDir).isDirectory()
+    ) {
+      if (!(await hasAppSchema(client))) {
+        console.warn(
+          '-> Se omiten historias-migraciones/: el esquema base no está listo (falta db.pgsql).\n'
+        );
+      } else {
+        const sqlFiles = fs
+          .readdirSync(migrationsDir)
+          .filter((file) => file.toLowerCase().endsWith('.sql'))
+          .sort();
 
-      if (sqlFiles.length > 0) {
-        console.log(`-> Aplicando ${sqlFiles.length} migracion(es) adicional(es) desde historias-migraciones/`);
-        for (const file of sqlFiles) {
-          const filePath = path.join(migrationsDir, file);
-          console.log(`   * ${file}`);
-          const migration = fs.readFileSync(filePath, 'utf8');
-          await client.query(migration);
+        if (sqlFiles.length > 0) {
+          console.log(`-> Aplicando ${sqlFiles.length} migracion(es) adicional(es) desde historias-migraciones/`);
+          for (const file of sqlFiles) {
+            const filePath = path.join(migrationsDir, file);
+            console.log(`   * ${file}`);
+            const migration = fs.readFileSync(filePath, 'utf8');
+            await client.query(migration);
+          }
+          console.log('   OK migraciones adicionales completadas\n');
         }
-        console.log('   OK migraciones adicionales completadas\n');
       }
     }
 

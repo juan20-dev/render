@@ -86,7 +86,7 @@ const menuItems: MenuItem[] = [
     roles: ['Administrador', 'Asesor', 'Productor'],
     subItems: [
       { name: 'Producción', icon: <Boxes className="w-4 h-4" />, path: '/produccion/produccion', module: 'produccion/produccion', roles: ['Administrador', 'Asesor', 'Productor'] },
-      { name: 'Entrega de Insumos', icon: <Truck className="w-4 h-4" />, path: '/produccion/entrega-insumos', module: 'produccion', roles: ['Administrador', 'Asesor'] },
+      { name: 'Entrega de Insumos', icon: <Truck className="w-4 h-4" />, path: '/produccion/entrega-insumos', module: 'produccion/entrega-insumos', roles: ['Administrador', 'Asesor', 'Productor'] },
       { name: 'Insumos', icon: <Package className="w-4 h-4" />, path: '/produccion/insumos', module: 'produccion', roles: ['Administrador', 'Asesor'] }
     ]
   },

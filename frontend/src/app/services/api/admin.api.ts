@@ -39,8 +39,12 @@ export const adminApi = {
         })),
         pedidosRecientes: (d.pedidosRecientes || []).map((o) => ({
           id: Number(o.id),
-          cliente: o.client,
-          fecha: o.date,
+          numeroPedido:
+            o.numero_pedido != null && String(o.numero_pedido).trim()
+              ? String(o.numero_pedido).trim()
+              : undefined,
+          cliente: o.client || (o as { cliente?: string }).cliente || '—',
+          fecha: o.date || (o as { fecha?: string }).fecha || '',
           total: o.total,
           estado: pedidoEstadoUi(o.status),
         })),

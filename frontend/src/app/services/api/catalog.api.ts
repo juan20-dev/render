@@ -288,6 +288,10 @@ export const catalogApi = {
       const rows = await apiFetchData<any[]>('/api/produccion');
       return rows.map(mapProduccion);
     },
+    getById: async (id: number) => mapProduccion(await apiFetchData(`/api/produccion/${id}`)),
+    getPedidosDisponibles: async () => apiFetchData<any[]>('/api/produccion/pedidos-disponibles'),
+    getPedidoParaOrden: async (pedidoId: number) =>
+      mapPedidoDetail(await apiFetchData(`/api/produccion/pedido/${pedidoId}`)),
     create: async (
       data: Partial<OrdenProduccion> & {
         consumoInsumos?: Array<{
@@ -413,7 +417,11 @@ export const catalogApi = {
               r.motivo_anulacion != null && r.motivo_anulacion !== ''
                 ? String(r.motivo_anulacion)
                 : null,
-          }) as EntregaInsumo
+            productorNombre:
+              r.operario_nombre != null && String(r.operario_nombre).trim()
+                ? String(r.operario_nombre).trim()
+                : undefined,
+          }) as EntregaInsumo & { productorNombre?: string }
       );
     },
     create: async (

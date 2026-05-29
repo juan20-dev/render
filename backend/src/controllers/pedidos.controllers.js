@@ -238,34 +238,43 @@ module.exports = {
         console.error('No se pudo crear abono inicial para pedido', id, e.message);
       }
 
-      try {
-        const pedidoCreado = await models.Pedidos.getById(id);
-        const detallesPedido = await models.Pedidos.getDetalles(id);
-        if (pedidoCreado?.email) {
-          await sendPedidoCreatedEmail({
-            to: pedidoCreado.email,
-            clienteNombre: pedidoCreado.cliente,
-            numeroPedido: pedidoCreado.numero_pedido,
-            fechaPedido: pedidoCreado.fecha,
-            fechaEntrega: pedidoCreado.fecha_entrega,
-            estado: pedidoCreado.estado,
-            metodoPago: pedidoCreado.metodo_pago,
-            esquemaAbono: pedidoCreado.esquema_abono,
-            total: pedidoCreado.total,
-            direccion: pedidoCreado.direccion,
-            telefono: pedidoCreado.telefono,
-            detalles: pedidoCreado.detalles,
-            productos: detallesPedido.map((item) => ({
-              nombre: item.producto_nombre,
-              cantidad: item.cantidad,
-              precioUnitario: item.precio_unitario,
-              subtotal: item.subtotal,
-            })),
-          });
-        }
-      } catch (mailError) {
-        console.error('No se pudo enviar confirmación de pedido por correo', id, mailError?.message);
-      }
+      const pedidoIdCreado = id;
+      setImmediate(() => {
+        void (async () => {
+          try {
+            const pedidoCreado = await models.Pedidos.getById(pedidoIdCreado);
+            const detallesPedido = await models.Pedidos.getDetalles(pedidoIdCreado);
+            if (pedidoCreado?.email) {
+              await sendPedidoCreatedEmail({
+                to: pedidoCreado.email,
+                clienteNombre: pedidoCreado.cliente,
+                numeroPedido: pedidoCreado.numero_pedido,
+                fechaPedido: pedidoCreado.fecha,
+                fechaEntrega: pedidoCreado.fecha_entrega,
+                estado: pedidoCreado.estado,
+                metodoPago: pedidoCreado.metodo_pago,
+                esquemaAbono: pedidoCreado.esquema_abono,
+                total: pedidoCreado.total,
+                direccion: pedidoCreado.direccion,
+                telefono: pedidoCreado.telefono,
+                detalles: pedidoCreado.detalles,
+                productos: detallesPedido.map((item) => ({
+                  nombre: item.producto_nombre,
+                  cantidad: item.cantidad,
+                  precioUnitario: item.precio_unitario,
+                  subtotal: item.subtotal,
+                })),
+              });
+            }
+          } catch (mailError) {
+            console.error(
+              'No se pudo enviar confirmación de pedido por correo',
+              pedidoIdCreado,
+              mailError?.message
+            );
+          }
+        })();
+      });
 
       return res.status(201).json({ success: true, id, message: 'Pedido creado exitosamente' });
     } catch (error) {

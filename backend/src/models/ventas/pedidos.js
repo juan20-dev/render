@@ -25,7 +25,16 @@ const Pedidos = {
           LEFT JOIN detalle_pedidos dp ON p.id = dp.pedido_id
           WHERE LOWER(TRIM(p.estado)) = LOWER(TRIM($1))
           GROUP BY p.id, c.nombre, c.apellido, c.email
-          ORDER BY p.fecha DESC
+          ORDER BY
+            CASE LOWER(TRIM(p.estado))
+              WHEN 'pendiente' THEN 0
+              WHEN 'en proceso' THEN 1
+              WHEN 'completado' THEN 3
+              WHEN 'cancelado' THEN 4
+              ELSE 2
+            END,
+            p.fecha DESC,
+            p.id DESC
         `, [String(estado).trim()]);
         return result.rows;
       }
@@ -39,7 +48,16 @@ const Pedidos = {
         JOIN clientes c ON p.cliente_id = c.id
         LEFT JOIN detalle_pedidos dp ON p.id = dp.pedido_id
         GROUP BY p.id, c.nombre, c.apellido, c.email
-        ORDER BY p.fecha DESC
+        ORDER BY
+          CASE LOWER(TRIM(p.estado))
+            WHEN 'pendiente' THEN 0
+            WHEN 'en proceso' THEN 1
+            WHEN 'completado' THEN 3
+            WHEN 'cancelado' THEN 4
+            ELSE 2
+          END,
+          p.fecha DESC,
+          p.id DESC
       `);
       return result.rows;
     } catch (error) {
@@ -86,7 +104,8 @@ const Pedidos = {
   },
   getDetalles: async (pedidoId) => {
     const result = await pool.query(`
-      SELECT dp.*, pr.nombre as producto_nombre
+      SELECT dp.*, pr.nombre as producto_nombre,
+             COALESCE(pr.tipo_producto, 'terminado') AS tipo_producto
       FROM detalle_pedidos dp
       JOIN productos pr ON dp.producto_id = pr.id
       WHERE dp.pedido_id = $1

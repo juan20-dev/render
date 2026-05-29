@@ -39,17 +39,30 @@ const repartidorDomiciliosGuard = (req, res, next) => {
   });
 };
 
-/** Productor: solo GET y cambio de estado en órdenes de producción. */
+/** Productor: GET, crear órdenes propias y cambio de estado en producción. */
 const productorProduccionGuard = (req, res, next) => {
   if (!isProductor(req)) return next();
   if (req.method === 'GET') return next();
   const path = req.path || '';
+  if (req.method === 'POST' && (path === '/' || path === '')) {
+    return next();
+  }
   if ((req.method === 'PUT' || req.method === 'PATCH') && /\/estado\/?$/.test(path)) {
     return next();
   }
   return res.status(403).json({
     success: false,
-    message: 'El productor solo puede ver sus órdenes asignadas y actualizar su estado',
+    message: 'El productor solo puede consultar sus órdenes, registrar nuevas órdenes propias y actualizar su estado',
+  });
+};
+
+/** Productor: solo lectura de entregas de insumos asignadas a él. */
+const productorEntregasGuard = (req, res, next) => {
+  if (!isProductor(req)) return next();
+  if (req.method === 'GET') return next();
+  return res.status(403).json({
+    success: false,
+    message: 'El productor solo puede consultar sus entregas de insumos',
   });
 };
 
@@ -73,5 +86,6 @@ module.exports = {
   authorizeAdministrador,
   repartidorDomiciliosGuard,
   productorProduccionGuard,
+  productorEntregasGuard,
   denyRoles,
 };

@@ -90,6 +90,8 @@ const normalizeMetodoPago = (value) => {
 };
 
 /** Montos en COP: número o texto con puntos como separador de miles (ej. "2.500.000" → 2500000). */
+const MONEY_MAX_COP = 100_000_000;
+
 const parseMoneyCO = (value) => {
   if (value === undefined || value === null || value === '') return undefined;
   if (typeof value === 'number' && Number.isFinite(value)) return value;
@@ -115,6 +117,11 @@ const normalizeVentaPayload = (payload = {}) => {
     }
     if (total < 0) {
       return { error: 'Total de venta no puede ser negativo.' };
+    }
+    if (total > MONEY_MAX_COP) {
+      return {
+        error: `El total de la venta no puede superar $${MONEY_MAX_COP.toLocaleString('es-CO')} COP.`,
+      };
     }
     data.total = total;
   }

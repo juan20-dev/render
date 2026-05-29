@@ -102,7 +102,11 @@ export function routeAllowsAccess(route: string, permisos: string[], roleName: s
   }
 
   if (roleName === 'Productor') {
-    return normalized === 'dashboard' || normalized === 'produccion/produccion';
+    return (
+      normalized === 'dashboard' ||
+      normalized === 'produccion/produccion' ||
+      normalized === 'produccion/entrega-insumos'
+    );
   }
 
   if (roleName === 'Cliente') {

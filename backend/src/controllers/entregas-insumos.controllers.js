@@ -5,10 +5,15 @@ const models = {
   EntregasInsumos: require('../models/produccion/entregas-insumos'),
 };
 
+const isProductorUser = (req) => String(req.user?.rol || '').trim().toLowerCase() === 'productor';
+
 module.exports = {
   getAll: async (req, res) => {
     try {
-      const entregas = await models.EntregasInsumos.getAll();
+      const operarioId = isProductorUser(req) ? Number(req.user.id) : null;
+      const entregas = await models.EntregasInsumos.getAll(
+        operarioId && Number.isFinite(operarioId) ? { operarioId } : {}
+      );
       res.json({ success: true, data: entregas });
     } catch (error) {
       res.status(error.statusCode || 500).json({ success: false, message: error.message });
@@ -18,6 +23,9 @@ module.exports = {
     try {
       const entrega = await models.EntregasInsumos.getById(req.params.id);
       if (!entrega) return res.status(404).json({ success: false, message: 'Entrega no encontrada' });
+      if (isProductorUser(req) && Number(entrega.operario_id) !== Number(req.user.id)) {
+        return res.status(403).json({ success: false, message: 'No autorizado' });
+      }
       res.json({ success: true, data: entrega });
     } catch (error) {
       res.status(error.statusCode || 500).json({ success: false, message: error.message });

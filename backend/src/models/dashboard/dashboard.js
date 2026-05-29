@@ -77,7 +77,7 @@ const Dashboard = {
                 TRIM(CONCAT(COALESCE(c.nombre, ''), ' ', COALESCE(c.apellido, ''))) AS cliente,
                 p.total,
                 p.estado,
-                p.fecha
+                COALESCE(p.fecha, p.created_at::date) AS fecha
          FROM pedidos p
          JOIN clientes c ON c.id = p.cliente_id
          ORDER BY p.id DESC
@@ -104,14 +104,23 @@ const Dashboard = {
         quantity: r.quantity,
         sales: Number(r.sales),
       })),
-      pedidosRecientes: pedidosRecientes.rows.map((r) => ({
-        id: String(r.id),
-        numero_pedido: r.numero_pedido,
-        client: r.cliente?.trim() || '—',
-        total: Number(r.total ?? 0),
-        status: String(r.estado ?? ''),
-        date: r.fecha != null ? String(r.fecha).split('T')[0] : '',
-      })),
+      pedidosRecientes: pedidosRecientes.rows.map((r) => {
+        const fechaRaw = r.fecha != null ? r.fecha : null;
+        const fechaStr =
+          fechaRaw instanceof Date
+            ? fechaRaw.toISOString().split('T')[0]
+            : fechaRaw != null
+              ? String(fechaRaw).split('T')[0]
+              : '';
+        return {
+          id: String(r.id),
+          numero_pedido: r.numero_pedido != null ? String(r.numero_pedido) : '',
+          client: r.cliente?.trim() || '—',
+          total: Number(r.total ?? 0),
+          status: String(r.estado ?? ''),
+          date: fechaStr,
+        };
+      }),
     };
   },
 

@@ -7,10 +7,12 @@ export function useOrders(user?: UserData) {
   const [pedidos, setPedidos] = useState<PedidoRecord[]>([]);
   const [misPedidosLoading, setMisPedidosLoading] = useState(false);
 
-  const refreshPedidos = async () => {
+  const refreshPedidos = async (options?: { light?: boolean }) => {
     try {
       setMisPedidosLoading(true);
-      const rows = await api.pedidos.getAllWithDetails();
+      const rows = options?.light
+        ? await api.pedidos.getAll()
+        : await api.pedidos.getAllWithDetails();
       setPedidos(Array.isArray(rows) ? (rows as PedidoRecord[]) : []);
     } catch {
       setPedidos([]);

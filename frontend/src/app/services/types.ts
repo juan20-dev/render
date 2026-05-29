@@ -122,6 +122,12 @@ export interface OrdenProduccion {
   createdAt: string;
   updatedAt: string;
   detallePreparacion?: ProduccionDetallePreparacionLine[];
+  insumosGastados?: Array<{
+    insumo_nombre?: string;
+    cantidad?: number;
+    cantidad_descontada?: number;
+    unidad?: string;
+  }>;
 }
 
 export interface EntregaInsumo {

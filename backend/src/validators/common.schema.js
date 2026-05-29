@@ -60,12 +60,18 @@ const telefonoString = z
   .trim()
   .regex(/^\d{10}$/, 'El teléfono debe tener exactamente 10 dígitos');
 
+const MONEY_MAX_COP = 100_000_000;
+
+/** Montos COP en ventas, abonos y precios generales (hasta 100 millones). */
 const moneyNumber = z
   .coerce
   .number()
   .nonnegative('No puede ser negativo')
-  .max(999999, 'No debe superar 999999')
+  .max(MONEY_MAX_COP, 'El monto no puede superar $100.000.000 COP')
   .refine((n) => decimalScale(n) <= 2, 'Solo se permiten 2 decimales');
+
+/** Totales de compra (mismo tope de 100 millones COP). */
+const moneyNumberCompra = moneyNumber;
 
 const stockInt = z
   .coerce
@@ -85,6 +91,7 @@ const motivoCancelacionBody = z.object({
 });
 
 module.exports = {
+  MONEY_MAX_COP,
   estadoActivoInactivo,
   collapseSpaces,
   humanNameString,
@@ -94,6 +101,7 @@ module.exports = {
   documentoString,
   telefonoString,
   moneyNumber,
+  moneyNumberCompra,
   stockInt,
   motivoEstadoBody,
   motivoCancelacionBody,

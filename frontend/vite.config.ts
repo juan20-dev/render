@@ -4,10 +4,10 @@ import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 
 /**
- * En desarrollo el frontend consume el backend local por defecto.
- * Si se necesita otro destino, puede sobrescribirse con `VITE_API_PROXY_TARGET`.
+ * Por defecto el frontend usa la API desplegada en AWS.
+ * Puede sobrescribirse con `VITE_API_PROXY_TARGET` para otros entornos.
  */
-const DEFAULT_API_PROXY_TARGET = 'http://localhost:3002'
+const DEFAULT_API_PROXY_TARGET = 'http://localhost:3002/'
 
 
 function figmaAssetResolver() {

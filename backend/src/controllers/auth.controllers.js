@@ -634,13 +634,15 @@ module.exports = {
       // Auto-registro del cliente: enviar SOLO correo de bienvenida con la
       // informacion del registro (sin credenciales, ya que el cliente eligio
       // su propia contrasena en el formulario de registro).
-      void sendWelcomeEmail({
-        to: normalizedEmail,
-        name: `${normalizedNombre} ${normalizedApellido}`.trim(),
-        email: normalizedEmail,
-      }).catch((error) => {
+      try {
+        await sendWelcomeEmail({
+          to: normalizedEmail,
+          name: `${normalizedNombre} ${normalizedApellido}`.trim(),
+          email: normalizedEmail,
+        });
+      } catch (error) {
         console.error('Error enviando correo de bienvenida (auto-registro):', error);
-      });
+      }
 
       res.status(201).json({
         success: true,

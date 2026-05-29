@@ -73,7 +73,17 @@ const config = {
     secure: String(process.env.MAIL_SECURE || 'false').toLowerCase() === 'true',
     user: process.env.MAIL_USER || '',
     password: process.env.MAIL_PASSWORD || '',
-    from: process.env.MAIL_FROM || process.env.MAIL_USER || 'no-reply@grandmas-liquors.local',
+    from: (() => {
+      const user = String(process.env.MAIL_USER || '').trim();
+      let from = String(process.env.MAIL_FROM || '').trim();
+      if ((from.startsWith('"') && from.endsWith('"')) || (from.startsWith("'") && from.endsWith("'"))) {
+        from = from.slice(1, -1).trim();
+      }
+      if (!from || (from.includes("'") && !from.includes('<')) || from.length < 5) {
+        return user || 'no-reply@grandmas-liquors.local';
+      }
+      return from;
+    })(),
   },
 };
 

@@ -190,15 +190,17 @@ module.exports = {
       // generada de forma segura por el backend o haber sido digitada por el
       // administrador.
       if (welcomePassword) {
-        void sendWelcomeEmail({
-          to: normalizedEmail,
-          name: `${normalizedNombre} ${normalizedApellido}`.trim(),
-          email: normalizedEmail,
-          password: welcomePassword,
-          emailCredentialExpiresHours: 2,
-        }).catch((error) => {
+        try {
+          await sendWelcomeEmail({
+            to: normalizedEmail,
+            name: `${normalizedNombre} ${normalizedApellido}`.trim(),
+            email: normalizedEmail,
+            password: welcomePassword,
+            emailCredentialExpiresHours: 2,
+          });
+        } catch (error) {
           console.error('Error enviando correo de bienvenida al cliente:', error);
-        });
+        }
       }
 
       return res.status(201).json({

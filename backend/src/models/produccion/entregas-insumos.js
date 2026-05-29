@@ -66,17 +66,24 @@ async function assertProductoInsumoActivo(client, productoId) {
 }
 
 const EntregasInsumos = {
-  getAll: async () => {
+  getAll: async (options = {}) => {
     await ensureEntregasInsumoProductoCatalogo();
-    const result = await pool.query(`
+    const operarioId = Number(options.operarioId);
+    const filterProductor = Number.isFinite(operarioId) && operarioId > 0;
+    const params = filterProductor ? [operarioId] : [];
+    const result = await pool.query(
+      `
       SELECT ei.*, COALESCE(i.nombre, pr.nombre) AS insumo_nombre,
              CONCAT(COALESCE(u.nombre, ''), ' ', COALESCE(u.apellido, '')) AS operario_nombre
       FROM entregas_insumos ei
       LEFT JOIN insumos i ON ei.insumo_id = i.id
       LEFT JOIN productos pr ON pr.id = ei.producto_catalogo_id
       LEFT JOIN usuarios u ON ei.operario_id = u.id
-      ORDER BY ei.fecha DESC
-    `);
+      ${filterProductor ? 'WHERE ei.operario_id = $1' : ''}
+      ORDER BY ei.fecha DESC, ei.id DESC
+    `,
+      params
+    );
     return result.rows;
   },
   getById: async (id) => {

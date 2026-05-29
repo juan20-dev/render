@@ -168,14 +168,16 @@ module.exports = {
 
       // Correo de bienvenida con credenciales (siempre que el alta sea correcta).
       // - Para alta hecha por admin se envian Email + Contrasena para iniciar sesion.
-      void sendWelcomeEmail({
-        to: payload.email,
-        name: `${payload.nombre} ${payload.apellido}`.trim(),
-        email: payload.email,
-        password: passwordToHash,
-      }).catch((error) => {
+      try {
+        await sendWelcomeEmail({
+          to: payload.email,
+          name: `${payload.nombre} ${payload.apellido}`.trim(),
+          email: payload.email,
+          password: passwordToHash,
+        });
+      } catch (error) {
         console.error('Error enviando correo de bienvenida (usuario):', error);
-      });
+      }
 
       res.status(201).json({
         success: true,

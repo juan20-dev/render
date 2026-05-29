@@ -620,18 +620,36 @@ export function Pedidos() {
     setMostrarListaClientes(false);
   };
 
-  const pedidosFiltrados = pedidos.filter(pedido => {
-    const matchBusqueda = busqueda.length === 0 ||
-      busqueda.length >= 2 &&
-      (pedido.clienteNombre?.toLowerCase().includes(busqueda.toLowerCase()) ||
-       String(pedido.id).includes(busqueda));
+  const pedidoEstadoOrden = (estado: Pedido['estado']) => {
+    if (estado === 'pendiente') return 0;
+    if (estado === 'en proceso') return 1;
+    if (estado === 'completado') return 3;
+    if (estado === 'cancelado') return 4;
+    return 2;
+  };
 
-    const matchEstado = !filtroEstado || pedido.estado === filtroEstado;
-    const matchMetodoPago = !filtroMetodoPago || pedido.metodoPago === filtroMetodoPago;
-    const matchFecha = !filtroFecha || pedido.fechaPedido === filtroFecha;
+  const pedidosFiltrados = pedidos
+    .filter((pedido) => {
+      const matchBusqueda =
+        busqueda.length === 0 ||
+        (busqueda.length >= 2 &&
+          (pedido.clienteNombre?.toLowerCase().includes(busqueda.toLowerCase()) ||
+            String(pedido.id).includes(busqueda)));
 
-    return matchBusqueda && matchEstado && matchMetodoPago && matchFecha;
-  });
+      const matchEstado = !filtroEstado || pedido.estado === filtroEstado;
+      const matchMetodoPago = !filtroMetodoPago || pedido.metodoPago === filtroMetodoPago;
+      const matchFecha = !filtroFecha || pedido.fechaPedido === filtroFecha;
+
+      return matchBusqueda && matchEstado && matchMetodoPago && matchFecha;
+    })
+    .sort((a, b) => {
+      const porEstado = pedidoEstadoOrden(a.estado) - pedidoEstadoOrden(b.estado);
+      if (porEstado !== 0) return porEstado;
+      const ta = new Date(a.createdAt || a.fechaPedido || 0).getTime();
+      const tb = new Date(b.createdAt || b.fechaPedido || 0).getTime();
+      if (tb !== ta) return tb - ta;
+      return Number(b.id) - Number(a.id);
+    });
 
   return (
     <div className="space-y-6">

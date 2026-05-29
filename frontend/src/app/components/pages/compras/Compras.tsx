@@ -547,6 +547,14 @@ export function Compras() {
       const iva = subtotal * 0.19;
       const total = subtotal + iva;
 
+      if (total > 100_000_000) {
+        toast.error('Total de compra demasiado alto', {
+          description:
+            'El total con IVA no puede superar $100.000.000 COP. Reduzca cantidades o precios de compra.',
+        });
+        return;
+      }
+
       const nuevaCompra = {
         proveedorId: formData.proveedorId,
         fecha: formData.fecha,
@@ -566,9 +574,16 @@ export function Compras() {
       setIsModalOpen(false);
       cargarDatos();
     } catch (error: unknown) {
-      const msg =
+      const raw =
         error instanceof Error ? error.message : typeof error === 'string' ? error : 'Error desconocido al guardar';
+      const msg =
+        /total|999999|100\.?000\.?000|validaci[oó]n/i.test(raw) && /superar|monto|total/i.test(raw)
+          ? 'El total de la compra supera el máximo permitido ($100.000.000 COP con IVA). Revise cantidades y precios.'
+          : raw;
       toast.error('No se pudo crear la compra', { description: msg });
+      if (import.meta.env.DEV) {
+        console.error('Error al crear compra', error);
+      }
     } finally {
       setIsSubmittingCompra(false);
     }
