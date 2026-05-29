@@ -15,6 +15,7 @@ interface HeaderProps {
   onNavigateToLogin: () => void;
   onNavigateToRegister: () => void;
   onOpenCart: () => void;
+  onScrollToTop: () => void;
 }
 
 export function Header({
@@ -28,6 +29,7 @@ export function Header({
   onNavigateToLogin,
   onNavigateToRegister,
   onOpenCart,
+  onScrollToTop,
 }: HeaderProps) {
   return (
     <nav className="bg-primary text-white sticky top-0 z-40 shadow-lg flex-shrink-0">
@@ -44,7 +46,12 @@ export function Header({
             <SearchBar value={busqueda} onChange={onBusquedaChange} />
           </div>
 
-          <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-2 sm:gap-3">
+          <button
+            type="button"
+            onClick={onScrollToTop}
+            className="absolute left-1/2 -translate-x-1/2 flex items-center gap-2 sm:gap-3 hover:opacity-90 transition-opacity"
+            aria-label="Volver al inicio"
+          >
             <div className="w-8 h-8 sm:w-9 sm:h-9 md:w-10 md:h-10 bg-white rounded-lg flex items-center justify-center overflow-hidden flex-shrink-0">
               <img
                 src={LOGO_URL}
@@ -52,11 +59,11 @@ export function Header({
                 className="w-full h-full object-cover"
               />
             </div>
-            <div className="hidden sm:block">
+            <div className="hidden sm:block text-left">
               <h2 className="text-white text-sm md:text-base lg:text-lg">Grandma&apos;s Liqueurs</h2>
               <p className="text-xs text-white/80">Licores Premium</p>
             </div>
-          </div>
+          </button>
 
           <NavButtons
             user={user}

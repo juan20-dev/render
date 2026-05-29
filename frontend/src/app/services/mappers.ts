@@ -374,6 +374,7 @@ export function mapCliente(r: any): Cliente {
     telefono: r.telefono || '',
     email: r.email || '',
     direccion: r.direccion || '',
+    foto: r.foto_url != null && String(r.foto_url).trim() !== '' ? String(r.foto_url) : undefined,
     comprasRealizadas: Number(r.compras ?? r.compras_realizadas ?? 0),
     ultimaCompra: ultima ? String(ultima).split('T')[0] : undefined,
     estado: uiAct(r.estado) as Cliente['estado'],

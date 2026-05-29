@@ -8,11 +8,8 @@
  *   2. Si no existe el esquema de la app (tabla `roles`), ejecuta `db.pgsql`.
  *      Si ya existe el esquema completo, omite `db.pgsql` (evita DROP + CREATE).
  *      Use `npm run migrate -- --bootstrap` para forzar db.pgsql (borra datos del proyecto).
- *   3. Ejecuta cualquier archivo .sql adicional en `historias-migraciones/`
- *      en orden alfabetico, si la carpeta existe (es opcional). Asi se evita
- *      que el script falle/avise por archivos que no estan versionados.
- *   4. Aplica ALTERs de sincronizacion idempotentes para bases preexistentes
- *      que pudieran venir de versiones anteriores (ON CONFLICT IF NOT EXISTS).
+ *   3. Aplica ALTERs de sincronizacion idempotentes para bases preexistentes
+ *      que pudieran venir de versiones anteriores (IF NOT EXISTS / IF EXISTS).
  *
  * Uso:
  *   - Desde la carpeta `backend/`: `npm run migrate`
@@ -45,13 +42,9 @@ const pool = new Pool(dbConfig);
 /** Tabla mínima que indica que db.pgsql ya se aplicó en esta base. */
 const APP_SCHEMA_MARKER_TABLE = 'roles';
 
-const parseArgs = () => {
-  const args = process.argv.slice(2);
-  return {
-    bootstrap: args.includes('--bootstrap') || args.includes('--schema'),
-    skipHistorias: args.includes('--skip-historias'),
-  };
-};
+const parseArgs = () => ({
+  bootstrap: process.argv.slice(2).includes('--bootstrap') || process.argv.slice(2).includes('--schema'),
+});
 
 async function hasAppSchema(client) {
   const r = await client.query(
@@ -125,42 +118,11 @@ async function runMigrations() {
       console.log('   OK db.pgsql aplicado (estructura + datos iniciales)\n');
     } else {
       console.log(
-        '-> Esquema de la app ya presente. Se omite db.pgsql; solo migraciones incrementales y ALTERs.\n'
+        '-> Esquema de la app ya presente. Se omite db.pgsql; solo ALTERs de sincronizacion.\n'
       );
     }
 
-    // 2) Migraciones extra opcionales en historias-migraciones/ (requieren tablas de db.pgsql).
-    //    Se cargan en orden alfabetico solo si la carpeta existe y contiene .sql.
-    const migrationsDir = path.join(__dirname, 'historias-migraciones');
-    if (
-      !opts.skipHistorias &&
-      fs.existsSync(migrationsDir) &&
-      fs.statSync(migrationsDir).isDirectory()
-    ) {
-      if (!(await hasAppSchema(client))) {
-        console.warn(
-          '-> Se omiten historias-migraciones/: el esquema base no está listo (falta db.pgsql).\n'
-        );
-      } else {
-        const sqlFiles = fs
-          .readdirSync(migrationsDir)
-          .filter((file) => file.toLowerCase().endsWith('.sql'))
-          .sort();
-
-        if (sqlFiles.length > 0) {
-          console.log(`-> Aplicando ${sqlFiles.length} migracion(es) adicional(es) desde historias-migraciones/`);
-          for (const file of sqlFiles) {
-            const filePath = path.join(migrationsDir, file);
-            console.log(`   * ${file}`);
-            const migration = fs.readFileSync(filePath, 'utf8');
-            await client.query(migration);
-          }
-          console.log('   OK migraciones adicionales completadas\n');
-        }
-      }
-    }
-
-    // 3) ALTERs idempotentes de sincronizacion para bases preexistentes que
+    // 2) ALTERs idempotentes de sincronizacion para bases preexistentes que
     //    pudieran venir de versiones anteriores. En una BD recien creada con
     //    db.pgsql todos estos cambios ya estan aplicados, asi que no hacen
     //    nada (IF NOT EXISTS / IF EXISTS).
@@ -229,6 +191,64 @@ async function runMigrations() {
         ADD CONSTRAINT productos_preparacion_stock_cero_chk
         CHECK (tipo_producto <> 'preparacion' OR COALESCE(stock, 0) = 0)
       `);
+
+      const productSeedImages = [
+        ['Whisky Andino 750ml', '/uploads/productos/seed_01.webp'],
+        ['Whisky Reserva Roble 750ml', '/uploads/productos/seed_02.webp'],
+        ['Ron Caribe Dorado 750ml', '/uploads/productos/seed_03.webp'],
+        ['Ron Anejo Gran Barrica 750ml', '/uploads/productos/seed_04.webp'],
+        ['Vino Tinto Casa Vieja 750ml', '/uploads/productos/seed_05.webp'],
+        ['Vino Blanco Monteluna 750ml', '/uploads/productos/seed_06.webp'],
+        ['Espumoso Brisa Rosa 750ml', '/uploads/productos/seed_07.webp'],
+        ['Cerveza Rubia Artesanal 330ml', '/uploads/productos/seed_08.webp'],
+        ['Cerveza Roja Artesanal 330ml', '/uploads/productos/seed_09.webp'],
+        ['Cerveza Negra Porter 330ml', '/uploads/productos/seed_10.webp'],
+        ['Tequila Agave Azul 750ml', '/uploads/productos/seed_11.webp'],
+        ['Tequila Reposado Sierra 750ml', '/uploads/productos/seed_12.webp'],
+        ['Vodka Cristal 700ml', '/uploads/productos/seed_13.webp'],
+        ['Vodka Citrus 700ml', '/uploads/productos/seed_14.webp'],
+        ['Crema de Cafe 700ml', '/uploads/productos/seed_15.webp'],
+        ['Crema de Coco 700ml', '/uploads/productos/seed_16.webp'],
+        ['Ginebra Botanica 750ml', '/uploads/productos/seed_17.webp'],
+        ['Ginebra Limonaria 750ml', '/uploads/productos/seed_18.webp'],
+        ['Aguardiente Tradicion 750ml', '/uploads/productos/seed_19.webp'],
+        ['Aguardiente Sin Azucar 750ml', '/uploads/productos/seed_20.webp'],
+        ['Base de Limoncello', '/uploads/productos/seed_21.webp'],
+        ['Base de Crema Irlandesa', '/uploads/productos/seed_22.webp'],
+        ['Macerado de Frutos Rojos', '/uploads/productos/seed_23.webp'],
+        ['Macerado de Cafe', '/uploads/productos/seed_24.webp'],
+        ['Preparacion Pina Colada', '/uploads/productos/seed_25.webp'],
+        ['Preparacion Mojito Artesanal', '/uploads/productos/seed_26.webp'],
+        ['Preparacion Maracuya', '/uploads/productos/seed_27.webp'],
+        ['Preparacion Naranja Especiada', '/uploads/productos/seed_28.webp'],
+        ['Preparacion Hierbabuena', '/uploads/productos/seed_29.webp'],
+        ['Preparacion Canelazo', '/uploads/productos/seed_30.webp'],
+        ['Preparacion Crema de Whisky', '/uploads/productos/seed_31.webp'],
+        ['Preparacion Licor de Coco', '/uploads/productos/seed_32.webp'],
+        ['Preparacion Tamarindo', '/uploads/productos/seed_33.webp'],
+        ['Preparacion Jamaica', '/uploads/productos/seed_34.webp'],
+        ['Preparacion Frambuesa', '/uploads/productos/seed_35.webp'],
+        ['Alcohol Etilico Food Grade', '/uploads/productos/seed_36.webp'],
+        ['Azucar Refinada x 25kg', '/uploads/productos/seed_37.webp'],
+        ['Botella Transparente 750ml', '/uploads/productos/seed_38.webp'],
+        ['Tapa Rosca Dorada', '/uploads/productos/seed_39.webp'],
+        ['Etiqueta Premium', '/uploads/productos/seed_40.webp'],
+        ['Esencia de Vainilla x 1L', '/uploads/productos/seed_41.webp'],
+        ['Pulpa de Mora x 5kg', '/uploads/productos/seed_42.webp'],
+        ['Pulpa de Maracuya x 5kg', '/uploads/productos/seed_43.webp'],
+        ['Jarabe Simple x 5L', '/uploads/productos/seed_44.webp'],
+        ['Glicerina Alimentaria x 1L', '/uploads/productos/seed_45.webp'],
+      ];
+      for (const [nombre, imagenUrl] of productSeedImages) {
+        await client.query(
+          `UPDATE productos
+              SET imagen_url = $2
+            WHERE nombre = $1
+              AND (imagen_url IS NULL OR TRIM(imagen_url) = '' OR imagen_url LIKE 'https://%')`,
+          [nombre, imagenUrl]
+        );
+      }
+
       console.log('   OK alteraciones aplicadas\n');
     } catch (err) {
       console.warn('   (aviso) error al aplicar alteraciones de sincronizacion:', err.message);

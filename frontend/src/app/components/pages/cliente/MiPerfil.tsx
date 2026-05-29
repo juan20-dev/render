@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Card } from '../../Card';
 import { Button } from '../../Button';
 import { Form, FormField, FormActions, FieldSuccess } from '../../Form';
@@ -19,8 +19,12 @@ interface PerfilCliente {
   foto?: string;
 }
 
+const ALLOWED_FOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+const MAX_FOTO_BYTES = 2 * 1024 * 1024;
+
 export function MiPerfil() {
   const { user } = useAuth();
+  const fotoInputRef = useRef<HTMLInputElement>(null);
   const [perfil, setPerfil] = useState<PerfilCliente>({
     nombre: '',
     apellido: '',
@@ -35,41 +39,64 @@ export function MiPerfil() {
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState(perfil);
   const [fotoPreview, setFotoPreview] = useState<string | null>(perfil.foto || null);
+  const [fotoArchivo, setFotoArchivo] = useState<File | null>(null);
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
   const [passwordData, setPasswordData] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
   const [currentPwdOk, setCurrentPwdOk] = useState<boolean | null>(null);
+
+  const mapPerfilFromUser = (source: {
+    nombre?: string;
+    apellido?: string;
+    email?: string;
+    telefono?: string;
+    direccion?: string;
+    tipoDocumento?: string;
+    numeroDocumento?: string;
+    foto?: string;
+  }): PerfilCliente => ({
+    nombre: source.nombre || '',
+    apellido: source.apellido || '',
+    email: source.email || '',
+    telefono: source.telefono || '',
+    direccion: source.direccion || '',
+    tipoDocumento: (source.tipoDocumento || 'CC') as PerfilCliente['tipoDocumento'],
+    numeroDocumento: source.numeroDocumento || '',
+    foto: source.foto,
+  });
 
   useEffect(() => {
     const load = async () => {
       try {
         const me = await api.auth.me();
-        const full = await api.usuarios.getById(Number(me.id));
-        const p: PerfilCliente = {
-          nombre: full.nombre || '',
-          apellido: full.apellido || '',
-          email: full.email || '',
-          telefono: full.telefono || '',
-          direccion: full.direccion || '',
-          tipoDocumento: (full.tipoDocumento || 'CC') as any,
-          numeroDocumento: full.numeroDocumento || '',
-          foto: undefined,
-        };
+        let foto: string | undefined;
+        try {
+          const cliente = await api.clientes.getByUsuarioId(Number(me.id));
+          foto = cliente.foto;
+        } catch (clienteError) {
+          if (import.meta.env.DEV) {
+            console.error('No se pudo cargar la foto del cliente', clienteError);
+          }
+        }
+
+        const p = mapPerfilFromUser({
+          nombre: me.nombre,
+          apellido: me.apellido,
+          email: me.email,
+          telefono: me.telefono,
+          direccion: me.direccion,
+          tipoDocumento: me.tipoDocumento,
+          numeroDocumento: me.numeroDocumento,
+          foto,
+        });
         setPerfil(p);
         setFormData(p);
+        setFotoPreview(foto || null);
       } catch {
         if (user) {
-          const p: PerfilCliente = {
-            nombre: user.nombre || '',
-            apellido: user.apellido || '',
-            email: user.email || '',
-            telefono: user.telefono || '',
-            direccion: user.direccion || '',
-            tipoDocumento: (user.tipoDocumento || 'CC') as any,
-            numeroDocumento: user.numeroDocumento || '',
-            foto: undefined,
-          };
+          const p = mapPerfilFromUser(user);
           setPerfil(p);
           setFormData(p);
+          setFotoPreview(p.foto || null);
         }
       }
     };
@@ -101,11 +128,22 @@ export function MiPerfil() {
 
   const handleFotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => setFotoPreview(reader.result as string);
-      reader.readAsDataURL(file);
+    if (!file) {
+      setFotoArchivo(null);
+      return;
     }
+    if (!ALLOWED_FOTO_TYPES.includes(file.type)) {
+      toast.error('Formato no permitido', { description: 'Use JPG, PNG o WEBP.' });
+      e.target.value = '';
+      return;
+    }
+    if (file.size > MAX_FOTO_BYTES) {
+      toast.error('Imagen muy grande', { description: 'El tamaño máximo es 2 MB.' });
+      e.target.value = '';
+      return;
+    }
+    setFotoArchivo(file);
+    setFotoPreview(URL.createObjectURL(file));
   };
 
   const handleSaveChanges = async (e: React.FormEvent) => {
@@ -121,21 +159,44 @@ export function MiPerfil() {
         email: formData.email,
         telefono: formData.telefono,
       } as any);
-      setPerfil({ ...formData, foto: fotoPreview || formData.foto });
+
+      let nextFoto = perfil.foto;
+      if (fotoArchivo) {
+        try {
+          nextFoto = await api.clientes.uploadProfilePhoto(fotoArchivo);
+        } catch (uploadError: unknown) {
+          const uploadMsg =
+            uploadError instanceof Error ? uploadError.message : 'No se pudo guardar la foto de perfil.';
+          toast.error('Foto no guardada', { description: uploadMsg });
+          if (import.meta.env.DEV) {
+            console.error('Error al subir foto de perfil', uploadError);
+          }
+          return;
+        }
+      }
+
+      const updated = { ...formData, foto: nextFoto };
+      setPerfil(updated);
+      setFormData(updated);
+      setFotoPreview(nextFoto || null);
+      setFotoArchivo(null);
       setIsEditing(false);
       toast.success('Perfil actualizado', {
         description: 'Tu información fue actualizada exitosamente.',
       });
-    } catch (error: any) {
-      toast.error('Error al actualizar el perfil', {
-        description: error.message || 'No se pudo actualizar el perfil.',
-      });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'No se pudo actualizar el perfil.';
+      toast.error('Error al actualizar el perfil', { description: message });
+      if (import.meta.env.DEV) {
+        console.error('Error al actualizar perfil', error);
+      }
     }
   };
 
   const handleCancelEdit = () => {
     setFormData(perfil);
     setFotoPreview(perfil.foto || null);
+    setFotoArchivo(null);
     setIsEditing(false);
   };
 
@@ -170,8 +231,8 @@ export function MiPerfil() {
       setIsChangePasswordOpen(false);
       setPasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
       setCurrentPwdOk(null);
-    } catch (error: any) {
-      const rawMsg = error?.message || 'No se pudo cambiar la contraseña';
+    } catch (error: unknown) {
+      const rawMsg = error instanceof Error ? error.message : 'No se pudo cambiar la contraseña';
       const msg =
         rawMsg.includes('ultimas 3')
           ? 'La nueva contraseña no puede coincidir con ninguna de tus últimas 3 contraseñas.'
@@ -181,6 +242,15 @@ export function MiPerfil() {
       toast.error(msg);
     }
   };
+
+  const renderFoto = () =>
+    fotoPreview ? (
+      <img src={fotoPreview} alt="Foto de perfil" className="w-32 h-32 rounded-full object-cover border-4 border-border" />
+    ) : (
+      <div className="w-32 h-32 rounded-full bg-primary/10 flex items-center justify-center border-4 border-border">
+        <User className="w-16 h-16 text-primary" />
+      </div>
+    );
 
   return (
     <div className="space-y-6">
@@ -202,15 +272,7 @@ export function MiPerfil() {
       {!isEditing ? (
         <Card>
           <div className="flex items-start gap-6">
-            <div className="relative">
-              {fotoPreview ? (
-                <img src={fotoPreview} alt="Foto de perfil" className="w-32 h-32 rounded-full object-cover border-4 border-border" />
-              ) : (
-                <div className="w-32 h-32 rounded-full bg-primary/10 flex items-center justify-center border-4 border-border">
-                  <User className="w-16 h-16 text-primary" />
-                </div>
-              )}
-            </div>
+            <div className="relative">{renderFoto()}</div>
 
             <div className="flex-1 space-y-4">
               <div>
@@ -234,17 +296,26 @@ export function MiPerfil() {
             <div className="mb-6">
               <label className="block mb-3">Foto de Perfil</label>
               <div className="flex items-center gap-6">
-                {fotoPreview ? (
-                  <img src={fotoPreview} alt="Preview" className="w-32 h-32 rounded-full object-cover border-4 border-border" />
-                ) : (
-                  <div className="w-32 h-32 rounded-full bg-muted flex items-center justify-center border-4 border-border"><Upload className="w-12 h-12 text-muted-foreground" /></div>
-                )}
-                <label className="flex-1">
-                  <input type="file" accept="image/*" onChange={handleFotoChange} className="hidden" />
-                  <Button type="button" variant="outline" onClick={() => document.querySelector('input[type="file"]')?.click()} icon={<Upload className="w-4 h-4" />}>
-                    Cambiar Foto
+                {renderFoto()}
+                <div className="flex-1 space-y-2">
+                  <input
+                    ref={fotoInputRef}
+                    id="perfilFotoInput"
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    onChange={handleFotoChange}
+                    className="hidden"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => fotoInputRef.current?.click()}
+                    icon={<Upload className="w-4 h-4" />}
+                  >
+                    Seleccionar foto
                   </Button>
-                </label>
+                  <p className="text-xs text-muted-foreground">JPG, PNG o WEBP. Máximo 2 MB.</p>
+                </div>
               </div>
             </div>
 
@@ -257,7 +328,7 @@ export function MiPerfil() {
             <FormField label="Dirección" name="direccion" type="textarea" value={formData.direccion} onChange={(value) => setFormData({ ...formData, direccion: value as string })} placeholder="Dirección completa" rows={2} required />
 
             <div className="grid grid-cols-2 gap-4">
-              <FormField label="Tipo de Documento" name="tipoDocumento" type="select" value={formData.tipoDocumento} onChange={(value) => setFormData({ ...formData, tipoDocumento: value as any })} options={[{ value: 'CC', label: 'Cédula de Ciudadanía' }, { value: 'CE', label: 'Cédula de Extranjería' }, { value: 'Pasaporte', label: 'Pasaporte' }]} required />
+              <FormField label="Tipo de Documento" name="tipoDocumento" type="select" value={formData.tipoDocumento} onChange={(value) => setFormData({ ...formData, tipoDocumento: value as PerfilCliente['tipoDocumento'] })} options={[{ value: 'CC', label: 'Cédula de Ciudadanía' }, { value: 'CE', label: 'Cédula de Extranjería' }, { value: 'Pasaporte', label: 'Pasaporte' }]} required />
               <FormField label="Número de Documento" name="numeroDocumento" value={formData.numeroDocumento} onChange={(value) => setFormData({ ...formData, numeroDocumento: value as string })} placeholder="Entre 6 y 12 dígitos" required inputDigitRule="documento6to12" />
             </div>
 

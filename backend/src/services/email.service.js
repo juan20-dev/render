@@ -47,17 +47,19 @@ const buildFallbackLogoDataUri = () => {
 
 const getLogoDataUri = () => {
   if (cachedLogoDataUri !== null) return cachedLogoDataUri;
+  const buf = readLogoPngBuffer();
+  if (buf) {
+    cachedLogoDataUri = `data:image/png;base64,${buf.toString('base64')}`;
+    return cachedLogoDataUri;
+  }
   const candidates = getLogoCandidatePaths();
   for (const logoPath of candidates) {
     try {
       if (!fs.existsSync(logoPath)) continue;
-      const buf = fs.readFileSync(logoPath);
-      if (!buf.length) continue;
-      const ext = path.extname(logoPath).toLowerCase();
-      const mime =
-        ext === '.png' ? 'image/png' : ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' : 'image/png';
-      cachedLogoDataUri = `data:${mime};base64,${buf.toString('base64')}`;
-      console.log(`[mail] Logo de correo cargado: ${logoPath} (${buf.length} bytes)`);
+      const fallbackBuf = fs.readFileSync(logoPath);
+      if (!fallbackBuf.length || !isValidPngBuffer(fallbackBuf)) continue;
+      cachedLogoDataUri = `data:image/png;base64,${fallbackBuf.toString('base64')}`;
+      console.log(`[mail] Logo de correo cargado: ${logoPath} (${fallbackBuf.length} bytes)`);
       return cachedLogoDataUri;
     } catch (err) {
       console.warn(`[mail] No se pudo leer logo en ${logoPath}:`, err.message);
@@ -71,41 +73,64 @@ const getLogoDataUri = () => {
   return cachedLogoDataUri;
 };
 
-const resolveLogoFilePath = () => {
-  if (cachedLogoFilePath !== undefined) return cachedLogoFilePath;
-  cachedLogoFilePath = '';
+const isValidPngBuffer = (buf) =>
+  Buffer.isBuffer(buf) &&
+  buf.length > 8 &&
+  buf[0] === 0x89 &&
+  buf[1] === 0x50 &&
+  buf[2] === 0x4e &&
+  buf[3] === 0x47;
+
+let cachedLogoBuffer = null;
+
+const readLogoPngBuffer = () => {
+  if (cachedLogoBuffer !== null) return cachedLogoBuffer;
   for (const logoPath of getLogoCandidatePaths()) {
     try {
-      if (fs.existsSync(logoPath) && fs.statSync(logoPath).isFile()) {
-        cachedLogoFilePath = logoPath;
-        console.log(`[mail] Logo embebido (CID): ${logoPath}`);
-        return cachedLogoFilePath;
+      if (!fs.existsSync(logoPath) || !fs.statSync(logoPath).isFile()) continue;
+      const buf = fs.readFileSync(logoPath);
+      if (!isValidPngBuffer(buf)) {
+        console.warn(`[mail] Archivo no es PNG valido: ${logoPath}`);
+        continue;
       }
-    } catch {
-      /* siguiente candidato */
+      cachedLogoBuffer = buf;
+      cachedLogoFilePath = logoPath;
+      console.log(`[mail] Logo PNG listo para correo: ${logoPath} (${buf.length} bytes)`);
+      return cachedLogoBuffer;
+    } catch (err) {
+      console.warn(`[mail] No se pudo leer logo en ${logoPath}:`, err.message);
     }
   }
-  return cachedLogoFilePath;
+  cachedLogoBuffer = false;
+  cachedLogoFilePath = '';
+  return null;
+};
+
+const resolveLogoFilePath = () => {
+  if (cachedLogoFilePath !== undefined && cachedLogoFilePath) return cachedLogoFilePath;
+  readLogoPngBuffer();
+  return cachedLogoFilePath || '';
 };
 
 const getLogoAttachments = () => {
-  const filePath = resolveLogoFilePath();
-  if (!filePath) return [];
+  const buf = readLogoPngBuffer();
+  if (!buf) return [];
   return [
     {
-      filename: 'logo.png',
-      path: filePath,
-      cid: 'brand-logo',
+      filename: 'grandmas-liquors-logo.png',
+      content: buf,
+      contentType: 'image/png',
+      cid: 'brand-logo@grandmas',
       contentDisposition: 'inline',
     },
   ];
 };
 
 const buildEmailLogoHtml = () => {
-  if (resolveLogoFilePath()) {
+  if (readLogoPngBuffer()) {
     return (
       '<div style="margin:0 0 20px 0;text-align:center">' +
-      '<img src="cid:brand-logo" alt="Grandma\'s Liquors" width="120" style="display:block;margin:0 auto;max-width:120px;height:auto;border-radius:10px" />' +
+      '<img src="cid:brand-logo@grandmas" alt="Grandma\'s Liquors" width="140" style="display:block;margin:0 auto;max-width:140px;width:140px;height:auto;border:0;outline:none;text-decoration:none" />' +
       '</div>'
     );
   }

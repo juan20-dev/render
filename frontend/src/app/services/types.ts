@@ -195,6 +195,7 @@ export interface Cliente {
   email: string;
   telefono: string;
   direccion: string;
+  foto?: string;
   estado: 'activo' | 'inactivo';
   comprasRealizadas: number;
   ultimaCompra?: string;

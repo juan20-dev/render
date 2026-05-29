@@ -16,6 +16,21 @@ export const salesApi = {
       return rows.map(mapCliente);
     },
     getById: async (id: number) => mapCliente(await apiFetchData(`/api/clientes/${id}`)),
+    getByUsuarioId: async (usuarioId: number) =>
+      mapCliente(await apiFetchData(`/api/clientes/usuario/${usuarioId}`)),
+    uploadProfilePhoto: async (file: File) => {
+      const fd = new FormData();
+      fd.append('foto', file);
+      const env = await apiFetch<{ foto_url?: string }>('/api/clientes/perfil/foto', {
+        method: 'POST',
+        body: fd,
+      });
+      const fotoUrl = env.data?.foto_url;
+      if (!fotoUrl) {
+        throw new Error('No se recibió la URL de la foto de perfil.');
+      }
+      return String(fotoUrl);
+    },
     create: async (data: Partial<Cliente> & { estado?: string }) => {
       await apiFetch('/api/clientes', {
         method: 'POST',

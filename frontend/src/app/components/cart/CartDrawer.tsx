@@ -13,6 +13,7 @@ interface CartDrawerProps {
   totalCarrito: number;
   hayErroresDeStock: boolean;
   onClose: () => void;
+  onExploreProducts: () => void;
   onCheckout: () => void;
   onDecrement: (productoId: string) => void;
   onIncrement: (productoId: string) => void;
@@ -30,6 +31,7 @@ export function CartDrawer({
   totalCarrito,
   hayErroresDeStock,
   onClose,
+  onExploreProducts,
   onCheckout,
   onDecrement,
   onIncrement,
@@ -69,7 +71,7 @@ export function CartDrawer({
               <p className="text-sm text-muted-foreground mb-6">
                 Agrega productos para comenzar tu compra
               </p>
-              <Button onClick={onClose} className="bg-primary text-white">
+              <Button onClick={onExploreProducts} className="bg-primary text-white">
                 Explorar Productos
               </Button>
             </div>

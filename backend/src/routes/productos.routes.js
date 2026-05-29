@@ -42,7 +42,7 @@ router.get('/:id', authorizePermissions('Ver Productos'), validate(idParam, 'par
 router.post('/', authorizePermissions('Crear Productos'), validate(createProductoBody), controller.create);
 router.post(
   '/:id/imagen',
-  authorizePermissions('Editar Productos'),
+  authorizePermissions('Editar Productos', 'Crear Productos'),
   validate(idParam, 'params'),
   uploadProductoImagenHandler,
   controller.uploadImage,

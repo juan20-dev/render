@@ -36,8 +36,16 @@ export default defineConfig(({ mode }) => {
   ],
   server: {
     port: 3000,
+    // Necesario para compartir vía Cursor PORTS, ngrok o cloudflared
+    host: true,
+    allowedHosts: true,
     proxy: {
       '/api': {
+        target: apiProxyTarget,
+        changeOrigin: true,
+        secure: apiProxyTarget.startsWith('https'),
+      },
+      '/uploads': {
         target: apiProxyTarget,
         changeOrigin: true,
         secure: apiProxyTarget.startsWith('https'),

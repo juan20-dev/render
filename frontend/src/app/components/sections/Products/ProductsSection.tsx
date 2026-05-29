@@ -1,29 +1,24 @@
 import React, { useRef } from 'react';
 import { ChevronLeft, ChevronRight, X } from 'lucide-react';
-import { Button } from '../../Button';
-import { Producto, UserData } from '../../hooks/landingShared';
+import { Producto } from '../../hooks/landingShared';
 import { ProductCard } from './ProductCard';
 
 interface ProductsSectionProps {
   categorias: string[];
   categoriaSeleccionada: string;
   productosFiltrados: Producto[];
-  user?: UserData;
   onSelectCategoria: (categoria: string) => void;
   onAddToCart: (producto: Producto) => void;
   isProductAvailable: (producto: Producto) => boolean;
-  onNavigateToRegister: () => void;
 }
 
 export function ProductsSection({
   categorias,
   categoriaSeleccionada,
   productosFiltrados,
-  user,
   onSelectCategoria,
   onAddToCart,
   isProductAvailable,
-  onNavigateToRegister,
 }: ProductsSectionProps) {
   const categoriasScrollRef = useRef<HTMLDivElement | null>(null);
 
@@ -115,16 +110,6 @@ export function ProductsSection({
             </p>
           </div>
         )}
-
-        <div className="text-center mt-12">
-          <Button
-            onClick={user ? () => {} : onNavigateToRegister}
-            size="lg"
-            className="bg-primary text-white"
-          >
-            Ver Todos los Productos
-          </Button>
-        </div>
       </div>
     </section>
   );

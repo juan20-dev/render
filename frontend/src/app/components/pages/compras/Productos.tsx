@@ -500,7 +500,19 @@ export function Productos() {
       }
 
       if (imagenArchivo && productoId) {
-        await api.productos.uploadImagen(productoId, imagenArchivo);
+        try {
+          await api.productos.uploadImagen(productoId, imagenArchivo);
+        } catch (uploadError: unknown) {
+          const uploadMsg =
+            uploadError instanceof Error ? uploadError.message : 'No se pudo guardar la imagen del producto.';
+          toast.error('Imagen no guardada', { description: uploadMsg });
+          if (import.meta.env.DEV) {
+            console.error('Error al subir imagen de producto', uploadError);
+          }
+          cerrarModalProductoFormulario();
+          cargarDatos();
+          return;
+        }
       }
 
       cerrarModalProductoFormulario();

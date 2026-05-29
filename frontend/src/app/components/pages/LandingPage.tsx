@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { AlertDialog } from '../AlertDialog';
 import { CartDrawer } from '../cart/CartDrawer';
 import { AgeVerificationModal } from '../modals/AgeVerificationModal';
@@ -10,7 +10,7 @@ import { useAgeVerification } from '../hooks/useAgeVerification';
 import { useLandingAuth } from '../hooks/useAuth';
 import { useCart } from '../hooks/useCart';
 import { useCheckout } from '../hooks/useCheckout';
-import { LandingPageProps, productoDisponibleParaPedido, scrollToSection } from '../hooks/landingShared';
+import { LandingPageProps, consumeLandingScroll, productoDisponibleParaPedido, scrollToSection } from '../hooks/landingShared';
 import { useOrders } from '../hooks/useOrders';
 import { useProducts } from '../hooks/useProducts';
 import { CarouselSection } from '../sections/Carousel/CarouselSection';
@@ -143,6 +143,18 @@ export function LandingPage({
     scrollToSection('productos');
   };
 
+  useEffect(() => {
+    const target = consumeLandingScroll();
+    if (target) {
+      scrollToSection(target);
+    }
+  }, []);
+
+  const handleExploreProducts = () => {
+    setIsCarritoOpen(false);
+    scrollToSection('productos');
+  };
+
   return (
     <div className="min-h-screen h-screen overflow-y-auto bg-background main-content-scroll">
       <Header
@@ -156,6 +168,7 @@ export function LandingPage({
         onNavigateToLogin={onNavigateToLogin}
         onNavigateToRegister={onNavigateToRegister}
         onOpenCart={() => setIsCarritoOpen(true)}
+        onScrollToTop={() => scrollToSection('inicio')}
       />
 
       <SideMenu
@@ -202,6 +215,7 @@ export function LandingPage({
         totalCarrito={totalCarrito}
         hayErroresDeStock={hayErroresDeStock}
         onClose={() => setIsCarritoOpen(false)}
+        onExploreProducts={handleExploreProducts}
         onCheckout={() => {
           const startedCheckout = realizarPedido();
           if (startedCheckout) {
@@ -222,16 +236,15 @@ export function LandingPage({
         categorias={categorias}
         categoriaSeleccionada={categoriaSeleccionada}
         productosFiltrados={productosFiltrados}
-        user={user}
         onSelectCategoria={setCategoriaSeleccionada}
         onAddToCart={agregarAlCarrito}
         isProductAvailable={productoDisponibleParaPedido}
-        onNavigateToRegister={onNavigateToRegister}
       />
 
       <ContactSection
         onNavigateToNosotros={onNavigateToNosotros}
         onShowAllProducts={handleShowAllProducts}
+        onScrollToTop={() => scrollToSection('inicio')}
       />
 
       <CheckoutModal

@@ -26,6 +26,7 @@ import { Abonos } from './components/pages/ventas/Abonos';
 import { Pedidos } from './components/pages/ventas/Pedidos';
 import { Domicilios } from './components/pages/ventas/Domicilios';
 import { SessionIdleWatcher } from './components/SessionIdleWatcher';
+import { requestLandingScroll } from './components/hooks/landingShared';
 
 const pageTitles: Record<string, string> = {
   '/dashboard': 'Dashboard',
@@ -181,6 +182,10 @@ function AppContent() {
         <NosotrosPage
           onNavigateToRegister={() => setShowAuth('register')}
           onBackToHome={() => setShowAuth('landing')}
+          onViewCatalog={() => {
+            requestLandingScroll('productos');
+            setShowAuth('landing');
+          }}
         />
       );
     }
@@ -214,6 +219,10 @@ function AppContent() {
       <NosotrosPage
         onNavigateToRegister={() => setShowAuth('register')}
         onBackToHome={() => setShowAuth('landing')}
+        onViewCatalog={() => {
+          requestLandingScroll('productos');
+          setShowAuth('landing');
+        }}
       />
     );
   }

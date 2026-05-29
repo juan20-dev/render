@@ -250,3 +250,21 @@ html {
 .main-content-scroll::-webkit-scrollbar-thumb:hover {
   background: var(--background);
 }
+
+/* Ocultar flechas de incremento/decremento en campos de fecha y numéricos */
+input[type='date']::-webkit-inner-spin-button,
+input[type='datetime-local']::-webkit-inner-spin-button {
+  display: none;
+  -webkit-appearance: none;
+}
+
+input[type='number']::-webkit-inner-spin-button,
+input[type='number']::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type='number'] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}

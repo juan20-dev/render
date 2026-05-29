@@ -5,7 +5,8 @@
     "type": "module",
     "scripts": {
         "build": "vite build",
-        "dev": "vite"
+        "dev": "vite",
+        "tunnel": "npx --yes localtunnel --port 3000"
     },
     "dependencies": {
         "@radix-ui/react-accordion": "1.2.3",

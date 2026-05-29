@@ -1,15 +1,25 @@
 import React from 'react';
 import { Facebook, Instagram, Mail, MapPin, Phone } from 'lucide-react';
-import { LOGO_URL } from '../../hooks/landingShared';
+import {
+  CONTACTO_CIUDAD,
+  CONTACTO_DIRECCION,
+  CONTACTO_EMAIL,
+  CONTACTO_MAPS_URL,
+  CONTACTO_TELEFONO,
+  CONTACTO_TELEFONO_DISPLAY,
+  LOGO_URL,
+} from '../../hooks/landingShared';
 
 interface ContactSectionProps {
   onNavigateToNosotros: () => void;
   onShowAllProducts: () => void;
+  onScrollToTop: () => void;
 }
 
 export function ContactSection({
   onNavigateToNosotros,
   onShowAllProducts,
+  onScrollToTop,
 }: ContactSectionProps) {
   return (
     <>
@@ -32,13 +42,18 @@ export function ContactSection({
                     <MapPin className="w-8 h-8 text-primary" />
                   </div>
                   <h4 className="mb-2">Dirección</h4>
-                  <p className="text-sm text-muted-foreground">
-                    Calle 104 # 79D – 65
+                  <a
+                    href={CONTACTO_MAPS_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sm text-muted-foreground hover:text-primary transition-colors"
+                  >
+                    {CONTACTO_DIRECCION}
                     <br />
-                    Medellín, Laureles
+                    {CONTACTO_CIUDAD}
                     <br />
                     Antioquia, Colombia
-                  </p>
+                  </a>
                 </div>
 
                 <div className="flex flex-col items-center text-center p-6 bg-background rounded-lg hover:shadow-lg transition-shadow">
@@ -47,7 +62,12 @@ export function ContactSection({
                   </div>
                   <h4 className="mb-2">Teléfono</h4>
                   <p className="text-sm text-muted-foreground">
-                    324 610 2339
+                    <a
+                      href={`tel:+57${CONTACTO_TELEFONO}`}
+                      className="hover:text-primary transition-colors"
+                    >
+                      {CONTACTO_TELEFONO_DISPLAY}
+                    </a>
                     <br />
                     Lunes a Sábado: 9:00 AM - 8:00 PM
                     <br />
@@ -61,7 +81,12 @@ export function ContactSection({
                   </div>
                   <h4 className="mb-2">Email</h4>
                   <p className="text-sm text-muted-foreground">
-                    info@grandmasliqueurs.com
+                    <a
+                      href={`mailto:${CONTACTO_EMAIL}`}
+                      className="hover:text-primary transition-colors"
+                    >
+                      {CONTACTO_EMAIL}
+                    </a>
                     <br />
                     ventas@grandmasliqueurs.com
                   </p>
@@ -102,7 +127,12 @@ export function ContactSection({
         <div className="max-w-7xl mx-auto px-3 sm:px-4 md:px-6 lg:px-8">
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6 sm:gap-8 mb-6 sm:mb-8">
             <div className="col-span-1 md:col-span-2">
-              <div className="flex items-center gap-3 mb-4">
+              <button
+                type="button"
+                onClick={onScrollToTop}
+                className="flex items-center gap-3 mb-4 hover:opacity-90 transition-opacity text-left"
+                aria-label="Volver al inicio"
+              >
                 <div className="w-12 h-12 bg-white rounded-lg flex items-center justify-center overflow-hidden">
                   <img
                     src={LOGO_URL}
@@ -114,7 +144,7 @@ export function ContactSection({
                   <h3 className="text-white">Grandma&apos;s Liqueurs</h3>
                   <p className="text-sm text-white/80">Licores Premium desde 2015</p>
                 </div>
-              </div>
+              </button>
               <p className="text-white/80 mb-4">
                 Somos una empresa dedicada a la comercialización de licores premium en Medellín.
                 Contamos con 12 colaboradores comprometidos con ofrecer productos de la más alta
@@ -158,19 +188,28 @@ export function ContactSection({
               <ul className="space-y-3 text-white/80">
                 <li className="flex items-start gap-2">
                   <MapPin className="w-5 h-5 flex-shrink-0 mt-0.5" />
-                  <span>
-                    Calle 104 # 79D – 65
+                  <a
+                    href={CONTACTO_MAPS_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="hover:text-white transition-colors"
+                  >
+                    {CONTACTO_DIRECCION}
                     <br />
-                    Medellín, Laureles
-                  </span>
+                    {CONTACTO_CIUDAD}
+                  </a>
                 </li>
                 <li className="flex items-center gap-2">
                   <Phone className="w-5 h-5 flex-shrink-0" />
-                  <span>324 610 2339</span>
+                  <a href={`tel:+57${CONTACTO_TELEFONO}`} className="hover:text-white transition-colors">
+                    {CONTACTO_TELEFONO_DISPLAY}
+                  </a>
                 </li>
                 <li className="flex items-center gap-2">
                   <Mail className="w-5 h-5 flex-shrink-0" />
-                  <span>info@grandmasliqueurs.com</span>
+                  <a href={`mailto:${CONTACTO_EMAIL}`} className="hover:text-white transition-colors">
+                    {CONTACTO_EMAIL}
+                  </a>
                 </li>
               </ul>
             </div>

@@ -5,9 +5,10 @@ import { Button } from '../Button';
 interface NosotrosPageProps {
   onNavigateToRegister: () => void;
   onBackToHome: () => void;
+  onViewCatalog: () => void;
 }
 
-export function NosotrosPage({ onNavigateToRegister, onBackToHome }: NosotrosPageProps) {
+export function NosotrosPage({ onNavigateToRegister, onBackToHome, onViewCatalog }: NosotrosPageProps) {
   return (
     <div className="min-h-screen bg-background">
       {/* Hero Section */}
@@ -243,7 +244,7 @@ export function NosotrosPage({ onNavigateToRegister, onBackToHome }: NosotrosPag
               Crear mi Cuenta
             </Button>
             <Button
-              onClick={onBackToHome}
+              onClick={onViewCatalog}
               size="lg"
               variant="outline"
               className="border-white text-white hover:bg-white/10"

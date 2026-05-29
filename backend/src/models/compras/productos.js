@@ -226,7 +226,7 @@ const Productos = {
     }
 
     const previous = await pool.query(
-      'SELECT categoria_id, stock, tipo_producto, stock_minimo FROM productos WHERE id = $1',
+      'SELECT categoria_id, stock, tipo_producto, stock_minimo, imagen_url, insumo_unidad_medida, insumo_cantidad_medida FROM productos WHERE id = $1',
       [id]
     );
     if (!previous.rows[0]) {
@@ -256,7 +256,17 @@ const Productos = {
     const prevStockMinimo = Number(previous.rows[0]?.stock_minimo ?? 10);
 
     const newTipo = currentTipo;
-    const { u: insumoUnidad, q: insumoCantidad } = parseInsumoMedidasForProduct(newTipo, data);
+    const prevRow = previous.rows[0];
+    const mergedData = {
+      ...data,
+      insumo_unidad_medida:
+        data.insumo_unidad_medida ?? data.insumoUnidadMedida ?? prevRow.insumo_unidad_medida,
+      insumo_cantidad_medida:
+        data.insumo_cantidad_medida ?? data.insumoCantidadMedida ?? prevRow.insumo_cantidad_medida,
+    };
+    const { u: insumoUnidad, q: insumoCantidad } = parseInsumoMedidasForProduct(newTipo, mergedData);
+    const imagenUrl =
+      data.imagen_url !== undefined && data.imagen_url !== null ? data.imagen_url : prevRow.imagen_url;
     const stockMinimoVal =
       newTipo === 'preparacion'
         ? 0
@@ -293,7 +303,7 @@ const Productos = {
         data.precio,
         newTipo === 'preparacion' ? 0 : stockActual,
         stockMinimoVal,
-        data.imagen_url,
+        imagenUrl,
         newTipo,
         insumoUnidad,
         insumoCantidad,

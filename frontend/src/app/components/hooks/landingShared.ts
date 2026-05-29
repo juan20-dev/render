@@ -2,6 +2,16 @@ import type { ReactNode } from 'react';
 
 export const LOGO_URL = '/favicon/apple-touch-icon.png';
 
+export const LANDING_SCROLL_KEY = 'gl_scroll_to';
+
+export const CONTACTO_DIRECCION = 'Calle 104 # 79D – 65';
+export const CONTACTO_CIUDAD = 'Medellín, Laureles';
+export const CONTACTO_MAPS_URL =
+  'https://www.google.com/maps/search/?api=1&query=Calle+104+%2379D-65,+Medell%C3%ADn,+Laureles,+Antioquia,+Colombia';
+export const CONTACTO_TELEFONO = '3246102339';
+export const CONTACTO_TELEFONO_DISPLAY = '324 610 2339';
+export const CONTACTO_EMAIL = 'info@grandmasliqueurs.com';
+
 export interface Producto {
   id: string;
   nombre: string;
@@ -104,24 +114,34 @@ export interface ContactCard {
 
 export const IMAGENES_CARRUSEL: LandingImage[] = [
   {
-    url: 'https://images.unsplash.com/photo-1569529465841-dfecdab7503b?w=1200&h=500&fit=crop',
+    url: '/uploads/carousel/carousel_01.webp',
     titulo: 'Licores Premium',
     subtitulo: 'La mejor selección de bebidas en Medellín',
   },
   {
-    url: 'https://images.unsplash.com/photo-1514362545857-3bc16c4c7d1b?w=1200&h=500&fit=crop',
+    url: '/uploads/carousel/carousel_02.webp',
     titulo: 'Rones Añejos',
     subtitulo: 'Calidad y tradición en cada botella',
   },
   {
-    url: 'https://images.unsplash.com/photo-1527281400986-0cc1d2c1e1af?w=1200&h=500&fit=crop',
+    url: '/uploads/carousel/carousel_03.webp',
     titulo: 'Whiskies Importados',
     subtitulo: 'Experiencias únicas para paladares exigentes',
   },
   {
-    url: 'https://images.unsplash.com/photo-1510812431401-41d2bd2722f3?w=1200&h=500&fit=crop',
+    url: '/uploads/carousel/carousel_04.webp',
     titulo: 'Vinos Selectos',
     subtitulo: 'De las mejores bodegas del mundo',
+  },
+  {
+    url: '/uploads/carousel/carousel_05.webp',
+    titulo: 'Tequilas y Mezcales',
+    subtitulo: 'Agave auténtico en cada sorbo',
+  },
+  {
+    url: '/uploads/carousel/carousel_06.webp',
+    titulo: 'Coctelería Premium',
+    subtitulo: 'Ingredientes para crear momentos únicos',
   },
 ];
 
@@ -142,8 +162,7 @@ export const createPasswordDefaults = (): PasswordData => ({
   confirmPassword: '',
 });
 
-export const imagenProductoFallback =
-  'https://images.unsplash.com/photo-1569529465841-dfecdab7503b?w=400&h=400&fit=crop';
+export const imagenProductoFallback = '/uploads/productos/seed_01.webp';
 
 export const mapCatalogProduct = (product: {
   id: number;
@@ -275,4 +294,17 @@ export const scrollToSection = (sectionId: 'inicio' | 'productos' | 'contacto') 
       section.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   }, 100);
+};
+
+export const requestLandingScroll = (sectionId: 'inicio' | 'productos' | 'contacto') => {
+  sessionStorage.setItem(LANDING_SCROLL_KEY, sectionId);
+};
+
+export const consumeLandingScroll = (): 'inicio' | 'productos' | 'contacto' | null => {
+  const target = sessionStorage.getItem(LANDING_SCROLL_KEY);
+  if (target === 'inicio' || target === 'productos' || target === 'contacto') {
+    sessionStorage.removeItem(LANDING_SCROLL_KEY);
+    return target;
+  }
+  return null;
 };

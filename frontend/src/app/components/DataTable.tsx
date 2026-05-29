@@ -66,6 +66,57 @@ const emphasisClassName = (emphasis: 'id' | 'name') =>
     ? 'font-semibold tabular-nums text-foreground'
     : 'font-medium text-foreground';
 
+const PENDING_ESTADO_PATTERNS = ['pend', 'registr', 'recib', 'activo', 'abiert'];
+
+const getEstadoRank = (row: Record<string, unknown>): number => {
+  const candidates = [row.estado, row.estadoVenta, row.estadoCompra, row.estadoDomicilio];
+  const raw =
+    candidates
+      .map((value) => String(value || '').trim().toLowerCase())
+      .find(Boolean) || '';
+
+  if (!raw) return 2;
+  if (PENDING_ESTADO_PATTERNS.some((pattern) => raw.includes(pattern))) return 0;
+  if (raw.includes('proceso') || raw.includes('prepar') || raw.includes('ruta')) return 1;
+  if (raw.includes('complet') || raw.includes('entreg') || raw.includes('finaliz') || raw.includes('pagad')) {
+    return 3;
+  }
+  if (raw.includes('cancel') || raw.includes('anul') || raw.includes('inactiv') || raw.includes('rechaz')) {
+    return 4;
+  }
+  return 2;
+};
+
+const getCreatedTimestamp = (row: Record<string, unknown>): number => {
+  const dateFields = [
+    'createdAt',
+    'fecha',
+    'fechaPedido',
+    'fechaVenta',
+    'fechaCompra',
+    'fechaInicio',
+    'fechaEntrega',
+    'fechaCreacion',
+  ];
+
+  for (const field of dateFields) {
+    const raw = row[field];
+    if (!raw) continue;
+    const timestamp = new Date(String(raw)).getTime();
+    if (Number.isFinite(timestamp) && timestamp > 0) return timestamp;
+  }
+
+  const id = Number(row.id ?? row.idOrden ?? 0);
+  return Number.isFinite(id) ? id : 0;
+};
+
+const sortTableRows = <T extends Record<string, unknown>>(rows: T[]): T[] =>
+  [...rows].sort((left, right) => {
+    const estadoDiff = getEstadoRank(left) - getEstadoRank(right);
+    if (estadoDiff !== 0) return estadoDiff;
+    return getCreatedTimestamp(right) - getCreatedTimestamp(left);
+  });
+
 const wrapWithEmphasis = (content: React.ReactNode, emphasis: 'id' | 'name'): React.ReactNode => {
   const className = emphasisClassName(emphasis);
 
@@ -135,7 +186,8 @@ export function DataTable({
   const [searchQuery, setSearchQuery] = React.useState('');
   const [page, setPage] = React.useState(1);
 
-  const total = data.length;
+  const sortedData = React.useMemo(() => sortTableRows(data), [data]);
+  const total = sortedData.length;
   const usePagination = typeof pageSize === 'number' && pageSize > 0;
   const totalPages = usePagination ? Math.max(1, Math.ceil(total / pageSize!)) : 1;
   const safePage = usePagination ? Math.min(page, totalPages) : 1;
@@ -151,7 +203,7 @@ export function DataTable({
   }, [page, totalPages, usePagination]);
 
   const sliceStart = usePagination ? (safePage - 1) * pageSize! : 0;
-  const pageRows = usePagination ? data.slice(sliceStart, sliceStart + pageSize!) : data;
+  const pageRows = usePagination ? sortedData.slice(sliceStart, sliceStart + pageSize!) : sortedData;
 
   const handleSearch = (value: string) => {
     setSearchQuery(value);

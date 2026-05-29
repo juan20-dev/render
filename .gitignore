@@ -34,9 +34,3 @@ dist-ssr/
 
 # OS files
 Thumbs.db
-
-backend/historias-migraciones
-!backend/historias-migraciones/
-backend/historias-migraciones/*
-!backend/historias-migraciones/016_add_pedido_id_to_produccion.sql
-!backend/historias-migraciones/017_align_produccion_extended_columns.sql
