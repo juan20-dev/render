@@ -7,7 +7,7 @@ import react from '@vitejs/plugin-react'
  * Por defecto el frontend usa la API desplegada en AWS.
  * Puede sobrescribirse con `VITE_API_PROXY_TARGET` para otros entornos.
  */
-const DEFAULT_API_PROXY_TARGET = 'http://localhost:3002/'
+const DEFAULT_API_PROXY_TARGET = 'http://apigrandmasliquors.us-east-1.elasticbeanstalk.com/'
 
 
 function figmaAssetResolver() {
