@@ -5,6 +5,7 @@ import { Button } from '../../Button';
 import { Form, FormField, FormActions } from '../../Form';
 import { Plus, Minus, Trash2, Search, Package, ShoppingCart } from 'lucide-react';
 import { api } from '../../../services/api';
+import { settledValue } from '../../../services/routePermissions';
 import { formatEntityCode } from '../../../services/mappers';
 import { toast } from '../../AlertDialog';
 import type { Pedido, Cliente, Producto, PedidoProducto, OrdenProduccion } from '../../../services/types';
@@ -79,12 +80,26 @@ export function Pedidos() {
 
   const cargarDatos = async () => {
     try {
-      const [pedidosData, clientesData, productosData, ordenesProd] = await Promise.all([
+      const [pedidosR, clientesR, productosR, produccionR] = await Promise.allSettled([
         api.pedidos.getAll(),
         api.clientes.getAll(),
         api.productos.getAll(),
-        api.produccion.getAll().catch(() => [] as OrdenProduccion[]),
+        api.produccion.getAll(),
       ]);
+
+      if (pedidosR.status === 'rejected') {
+        console.error('[Pedidos] Error al cargar pedidos:', pedidosR.reason);
+        toast.error('Error al cargar datos', {
+          description:
+            pedidosR.reason instanceof Error ? pedidosR.reason.message : 'No autorizado o error de red',
+        });
+        return;
+      }
+
+      const pedidosData = pedidosR.value;
+      const clientesData = settledValue(clientesR, [] as Cliente[], 'clientes');
+      const productosData = settledValue(productosR, [] as Producto[], 'productos');
+      const ordenesProd = settledValue(produccionR, [] as OrdenProduccion[], 'producción');
 
       setClientes(clientesData.filter(c => c.estado === 'activo'));
       setProductos(productosData.filter(p => p.estado === 'activo' && p.typo !== 'insumo'));

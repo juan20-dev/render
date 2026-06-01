@@ -5,6 +5,7 @@ import { Form, FormField, FormActions } from '../../Form';
 import { Button } from '../../Button';
 import { Plus, Eye, Trash2, Package, Search, ShoppingCart, Edit } from 'lucide-react';
 import { api } from '../../../services/api';
+import { settledValue } from '../../../services/routePermissions';
 import { formatEntityCode, formatMoneyInput, parseMoneyInput, MAX_MONEY_DIGITS } from '../../../services/mappers';
 import type { Compra, Producto, Proveedor, CompraProducto } from '../../../services/types';
 import { toast } from '../../AlertDialog';
@@ -97,14 +98,30 @@ export function Compras() {
         setCompras(comprasData);
         return;
       }
-      const [comprasData, productosData, proveedoresData] = await Promise.all([
+      const [comprasR, productosR, proveedoresR] = await Promise.allSettled([
         api.compras.getAll(),
         api.productos.getAll(),
-        api.proveedores.getAll()
+        api.proveedores.getAll(),
       ]);
+
+      if (comprasR.status === 'rejected') {
+        console.error('[Compras] Error al cargar compras:', comprasR.reason);
+        if (!options?.silencioso) {
+          toast.error('Error al cargar datos', {
+            description:
+              comprasR.reason instanceof Error ? comprasR.reason.message : 'No autorizado o error de red',
+          });
+        }
+        throw comprasR.reason;
+      }
+
+      const comprasData = comprasR.value;
+      const productosData = settledValue(productosR, [], 'productos');
+      const proveedoresData = settledValue(proveedoresR, [], 'proveedores');
+
       setCompras(comprasData);
       setProductos(productosData.filter((p) => p.estado === 'activo' && p.typo !== 'de preparacion'));
-      setProveedores(proveedoresData.filter(p => p.estado === 'activo'));
+      setProveedores(proveedoresData.filter((p) => p.estado === 'activo'));
     } catch (error: any) {
       if (!options?.silencioso) {
         toast.error('Error al cargar datos', { description: error.message });

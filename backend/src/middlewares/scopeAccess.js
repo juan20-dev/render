@@ -1,8 +1,10 @@
 /**
  * Control de alcance por rol (defensa en profundidad junto a authorizePermissions).
- * Admin: acceso total. Asesor: operación completa excepto módulos solo-admin.
- * Repartidor / Productor / Cliente: datos y acciones acotados.
+ * Repartidor/Productor: si el rol tiene el permiso en BD, no se aplica el límite legacy.
  */
+
+const pool = require('../../db');
+const { roleGrantsPermission } = require('../models/shared/auditoria');
 
 const FORBIDDEN = { success: false, message: 'No autorizado' };
 
@@ -13,6 +15,18 @@ const isAsesor = (req) => roleName(req) === 'Asesor';
 const isRepartidor = (req) => roleName(req).toLowerCase() === 'repartidor';
 const isProductor = (req) => roleName(req).toLowerCase() === 'productor';
 const isCliente = (req) => roleName(req) === 'Cliente';
+
+const getRolePermissions = async (req) => {
+  const rolId = req.user?.rol_id;
+  if (!rolId) return [];
+  const roleResult = await pool.query('SELECT permisos FROM roles WHERE id = $1', [rolId]);
+  return Array.isArray(roleResult.rows[0]?.permisos) ? roleResult.rows[0].permisos : [];
+};
+
+const roleHasAnyPermission = async (req, permissions) => {
+  const list = await getRolePermissions(req);
+  return permissions.some((perm) => roleGrantsPermission(list, perm));
+};
 
 /** Solo Administrador (configuración, usuarios, roles). */
 const authorizeAdministrador = (req, res, next) => {
@@ -25,48 +39,88 @@ const authorizeAdministrador = (req, res, next) => {
   return next();
 };
 
-/** Repartidor: solo GET y cambio de estado en domicilios. */
-const repartidorDomiciliosGuard = (req, res, next) => {
+/** Repartidor sin permiso de edición: solo GET y cambio de estado en domicilios. */
+const repartidorDomiciliosGuard = async (req, res, next) => {
   if (!isRepartidor(req)) return next();
   if (req.method === 'GET') return next();
-  const path = req.path || '';
-  if ((req.method === 'PUT' || req.method === 'PATCH') && /\/estado\/?$/.test(path)) {
-    return next();
+
+  try {
+    if (
+      await roleHasAnyPermission(req, [
+        'Editar Domicilios',
+        'Gestionar Domicilios',
+        'Crear Domicilios',
+        'Eliminar Domicilios',
+      ])
+    ) {
+      return next();
+    }
+
+    const path = req.path || '';
+    if ((req.method === 'PUT' || req.method === 'PATCH') && /\/estado\/?$/.test(path)) {
+      return next();
+    }
+
+    return res.status(403).json({
+      success: false,
+      message: 'El repartidor solo puede consultar domicilios asignados y actualizar su estado',
+    });
+  } catch (error) {
+    console.error('Error en repartidorDomiciliosGuard:', error);
+    return res.status(500).json({ success: false, message: 'Error al validar permisos' });
   }
-  return res.status(403).json({
-    success: false,
-    message: 'El repartidor solo puede consultar domicilios asignados y actualizar su estado',
-  });
 };
 
-/** Productor: GET, crear órdenes propias y cambio de estado en producción. */
-const productorProduccionGuard = (req, res, next) => {
+/** Productor sin permiso de registro/edición: solo lectura y estado en producción. */
+const productorProduccionGuard = async (req, res, next) => {
   if (!isProductor(req)) return next();
   if (req.method === 'GET') return next();
-  const path = req.path || '';
-  if (req.method === 'POST' && (path === '/' || path === '')) {
-    return next();
+
+  try {
+    if (await roleHasAnyPermission(req, ['Registrar Producción', 'Editar Producción'])) {
+      return next();
+    }
+
+    const path = req.path || '';
+    if (req.method === 'POST' && (path === '/' || path === '')) {
+      return next();
+    }
+    if ((req.method === 'PUT' || req.method === 'PATCH') && /\/estado\/?$/.test(path)) {
+      return next();
+    }
+
+    return res.status(403).json({
+      success: false,
+      message:
+        'El productor solo puede consultar sus órdenes, registrar nuevas órdenes propias y actualizar su estado',
+    });
+  } catch (error) {
+    console.error('Error en productorProduccionGuard:', error);
+    return res.status(500).json({ success: false, message: 'Error al validar permisos' });
   }
-  if ((req.method === 'PUT' || req.method === 'PATCH') && /\/estado\/?$/.test(path)) {
-    return next();
-  }
-  return res.status(403).json({
-    success: false,
-    message: 'El productor solo puede consultar sus órdenes, registrar nuevas órdenes propias y actualizar su estado',
-  });
 };
 
-/** Productor: solo lectura de entregas de insumos asignadas a él. */
-const productorEntregasGuard = (req, res, next) => {
+/** Productor sin permiso de entrega: solo lectura de entregas de insumos. */
+const productorEntregasGuard = async (req, res, next) => {
   if (!isProductor(req)) return next();
   if (req.method === 'GET') return next();
-  return res.status(403).json({
-    success: false,
-    message: 'El productor solo puede consultar sus entregas de insumos',
-  });
+
+  try {
+    if (await roleHasAnyPermission(req, ['Entregar Insumos', 'Crear Insumos', 'Editar Insumos'])) {
+      return next();
+    }
+
+    return res.status(403).json({
+      success: false,
+      message: 'El productor solo puede consultar sus entregas de insumos',
+    });
+  } catch (error) {
+    console.error('Error en productorEntregasGuard:', error);
+    return res.status(500).json({ success: false, message: 'Error al validar permisos' });
+  }
 };
 
-/** Bloquea roles operativos en rutas de escritura genérica (crear/eliminar). */
+/** Bloquea roles en rutas donde no aplica (p. ej. Cliente en backoffice). */
 const denyRoles =
   (...roles) =>
   (req, res, next) => {

@@ -5,6 +5,7 @@ import { Form, FormField, FormActions } from '../../Form';
 import { Button } from '../../Button';
 import { Plus } from 'lucide-react';
 import { api } from '../../../services/api';
+import { settledValue } from '../../../services/routePermissions';
 import { formatEntityCode } from '../../../services/mappers';
 import { toast } from '../../AlertDialog';
 import type { Abono, Pedido, Cliente } from '../../../services/types';
@@ -59,11 +60,24 @@ export function Abonos() {
 
   const cargarDatos = async () => {
     try {
-      const [abonosData, pedidosData, clientesData] = await Promise.all([
+      const [abonosR, pedidosR, clientesR] = await Promise.allSettled([
         api.abonos.getAll(),
         api.pedidos.getAll(),
-        api.clientes.getAll()
+        api.clientes.getAll(),
       ]);
+
+      if (abonosR.status === 'rejected') {
+        console.error('[Abonos] Error al cargar abonos:', abonosR.reason);
+        toast.error('Error al cargar datos', {
+          description:
+            abonosR.reason instanceof Error ? abonosR.reason.message : 'No autorizado o error de red',
+        });
+        return;
+      }
+
+      const abonosData = abonosR.value;
+      const pedidosData = settledValue(pedidosR, [] as Pedido[], 'pedidos');
+      const clientesData = settledValue(clientesR, [] as Cliente[], 'clientes');
 
       setPedidos(pedidosData);
       setClientes(clientesData);

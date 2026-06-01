@@ -2,7 +2,7 @@
 const { wrapController } = require('../utils/wrapController');
 const controller = wrapController(require('../controllers/produccion.controllers'));
 const { authorizePermissions } = require('../middlewares/auth.middleware');
-const { productorProduccionGuard, denyRoles } = require('../middlewares/scopeAccess');
+const { productorProduccionGuard } = require('../middlewares/scopeAccess');
 const { validate } = require('../middlewares/validate.middleware');
 const { idParam, productorIdParam } = require('../validators/params.schema');
 const {
@@ -48,7 +48,6 @@ router.get(
 router.post(
   '/sugerir-consumo',
   authorizePermissions('Registrar Producción'),
-  denyRoles('Productor'),
   validate(sugerirConsumoBody),
   controller.sugerirConsumo
 );
@@ -62,7 +61,6 @@ router.post(
 router.put(
   '/:id',
   authorizePermissions('Registrar Producción'),
-  denyRoles('Productor'),
   validate(idParam, 'params'),
   validate(updateProduccionBody),
   controller.update
@@ -84,7 +82,6 @@ router.patch(
 router.delete(
   '/:id',
   authorizePermissions('Ver Producción'),
-  denyRoles('Productor'),
   validate(idParam, 'params'),
   controller.delete
 );

@@ -1,6 +1,6 @@
 /**
  * Mapas rutas de la app a permisos del backend (strings en BD).
- * Administrador: acceso total. Asesor: operación completa excepto usuarios/roles/config.
+ * Administrador: acceso total. Demás roles staff: según permisos/gestiones asignadas en BD.
  *
  * Permisos por gestión (sub-módulo) y por módulo completo (marcador Gestion:Modulo).
  */
@@ -147,7 +147,29 @@ const GESTION_BUNDLES: Record<string, string[]> = {
   Ventas: [],
 };
 
+/** Lecturas auxiliares para cargar datos relacionados en cada gestión. */
+const SUB_GESTION_READ_DEPS: Record<string, string[]> = {
+  'Ventas.Ventas': ['Ver Clientes', 'Ver Productos', 'Ver Pedidos'],
+  'Ventas.Pedidos': ['Ver Clientes', 'Ver Productos', 'Ver Producción'],
+  'Ventas.Abonos': ['Ver Pedidos', 'Ver Clientes'],
+  'Ventas.Domicilios': ['Ver Pedidos', 'Ver Clientes', 'Ver Productos', 'Ver Usuarios'],
+  'Compras.Compras': ['Ver Productos', 'Ver Proveedores'],
+  'Producción.Ordenes': ['Ver Insumos', 'Ver Productos', 'Ver Pedidos'],
+  'Producción.EntregaInsumos': ['Ver Insumos', 'Ver Usuarios'],
+};
+
+const mergeSubBundlePerms = (subId: string, base: string[]) => {
+  const merged = new Set(base);
+  for (const dep of SUB_GESTION_READ_DEPS[subId] || []) {
+    merged.add(dep);
+  }
+  return [...merged];
+};
+
 for (const mod of STAFF_MODULES) {
+  for (const sub of mod.subGestiones) {
+    GESTION_BUNDLES[sub.id] = mergeSubBundlePerms(sub.id, GESTION_BUNDLES[sub.id] || []);
+  }
   const union = new Set<string>();
   for (const sub of mod.subGestiones) {
     for (const p of GESTION_BUNDLES[sub.id] || []) union.add(p);
@@ -467,22 +489,25 @@ export function firstPermittedStaffPath(permisos: string[], roleName: string): s
   return '/dashboard';
 }
 
+/** Resultado de Promise.allSettled con registro en consola (modo desarrollo). */
+export function settledValue<T>(result: PromiseSettledResult<T>, fallback: T, resourceLabel?: string): T {
+  if (result.status === 'fulfilled') return result.value;
+  console.error(
+    resourceLabel
+      ? `[permisos] No se pudo cargar ${resourceLabel}:`
+      : '[permisos] Error al cargar recurso:',
+    result.reason
+  );
+  return fallback;
+}
+
+/** Sub-gestión concreta (Ventas.Pedidos); el id de módulo solo (Ventas) no lleva punto. */
+const isSpecificSubGestionId = (gestionId: string) => gestionId.includes('.');
+
 export function routeAllowsAccess(route: string, permisos: string[], roleName: string): boolean {
   const normalized = route.replace(/^\//, '');
 
   if (roleName === 'Administrador') return true;
-
-  if (roleName === 'Repartidor') {
-    return normalized === 'dashboard' || normalized === 'ventas/domicilios';
-  }
-
-  if (roleName === 'Productor') {
-    return (
-      normalized === 'dashboard' ||
-      normalized === 'produccion/produccion' ||
-      normalized === 'produccion/entrega-insumos'
-    );
-  }
 
   if (roleName === 'Cliente') {
     return (
@@ -493,8 +518,14 @@ export function routeAllowsAccess(route: string, permisos: string[], roleName: s
   }
 
   const subGestionId = ROUTE_TO_SUB_GESTION[normalized];
-  if (subGestionId && userHasGestionAccess(permisos, subGestionId)) {
-    return true;
+  if (subGestionId) {
+    if (userHasGestionAccess(permisos, subGestionId)) {
+      return true;
+    }
+    // Pantalla con sub-gestión fija: no heredar acceso del módulo padre ni permisos auxiliares de lectura.
+    if (isSpecificSubGestionId(subGestionId)) {
+      return false;
+    }
   }
 
   const moduleId = ROUTE_TO_MODULE[normalized];

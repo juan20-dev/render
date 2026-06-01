@@ -151,12 +151,6 @@ const Dashboard = {
 
       if (roleName === 'Administrador' && modulo !== 'cliente') {
         modulosDisponibles[modulo] = true;
-      } else if (roleName === 'Asesor' && !['usuarios', 'configuracion'].includes(modulo)) {
-        modulosDisponibles[modulo] = true;
-      } else if (roleName === 'Repartidor') {
-        modulosDisponibles[modulo] = modulo === 'dashboard' || modulo === 'domicilios';
-      } else if (roleName === 'Productor') {
-        modulosDisponibles[modulo] = modulo === 'dashboard' || modulo === 'produccion';
       } else if (config.subGestion && userHasGestionAccess(permisos, config.subGestion)) {
         modulosDisponibles[modulo] = true;
       } else if (config.moduleId && userHasGestionAccess(permisos, config.moduleId)) {

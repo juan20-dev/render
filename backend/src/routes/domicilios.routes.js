@@ -45,14 +45,14 @@ router.get('/:id', authorizePermissions('Ver Domicilios'), validate(idParam, 'pa
 router.post(
   '/',
   authorizePermissions('Crear Domicilios'),
-  denyRoles('Repartidor', 'Productor', 'Cliente'),
+  denyRoles('Cliente'),
   validate(createDomicilioBody),
   controller.create
 );
 router.put(
   '/:id',
   authorizePermissions('Editar Domicilios'),
-  denyRoles('Repartidor', 'Productor', 'Cliente'),
+  denyRoles('Cliente'),
   validate(idParam, 'params'),
   validate(updateDomicilioBody),
   controller.update
@@ -60,7 +60,7 @@ router.put(
 router.delete(
   '/:id',
   authorizePermissions('Eliminar Domicilios'),
-  denyRoles('Repartidor', 'Productor', 'Cliente'),
+  denyRoles('Cliente'),
   validate(idParam, 'params'),
   controller.delete
 );

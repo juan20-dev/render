@@ -5,9 +5,10 @@ import { Form, FormField, FormActions } from '../../Form';
 import { Button } from '../../Button';
 import { Plus } from 'lucide-react';
 import { api } from '../../../services/api';
+import { settledValue } from '../../../services/routePermissions';
 import { formatEntityCode } from '../../../services/mappers';
 import { toast } from '../../AlertDialog';
-import type { Domicilio, Pedido, Cliente, Usuario } from '../../../services/types';
+import type { Domicilio, Pedido, Cliente, Usuario, Producto } from '../../../services/types';
 import { MotivoModal } from '../../MotivoModal';
 import { AlertDialog } from '../../AlertDialog';
 import { useAuth } from '../../AuthContext';
@@ -54,38 +55,31 @@ export function Domicilios() {
 
   const cargarDatos = async () => {
     try {
-      const domiciliosData = await api.domicilios.getAll();
-
-      if (esRepartidor) {
-        const domiciliosConInfo = domiciliosData.map((domicilio) => ({
-          ...domicilio,
-          clienteNombre: domicilio.clienteNombre || 'Desconocido',
-          repartidorNombre: user ? `${user.nombre} ${user.apellido}`.trim() : 'Asignado a mí',
-          pedidoNumero:
-            domicilio.pedidoNumero ||
-            (domicilio.pedidoId ? formatEntityCode('P', domicilio.pedidoId) : 'Desconocido'),
-        }));
-        setDomicilios(domiciliosConInfo);
-        setPedidos([]);
-        setClientes([]);
-        setRepartidores([]);
-        setProductosCatalogo(
-          domiciliosConInfo.flatMap((d) =>
-            (d.productos || []).map((p) => ({
-              id: p.productoId,
-              nombre: p.nombre || `Producto #${p.productoId}`,
-            }))
-          )
-        );
+      const domiciliosSettled = await Promise.allSettled([api.domicilios.getAll()]);
+      const domiciliosResult = domiciliosSettled[0];
+      if (domiciliosResult.status === 'rejected') {
+        console.error('[Domicilios] Error al cargar domicilios:', domiciliosResult.reason);
+        toast.error('Error al cargar datos', {
+          description:
+            domiciliosResult.reason instanceof Error
+              ? domiciliosResult.reason.message
+              : 'No autorizado o error de red',
+        });
         return;
       }
+      const domiciliosData = domiciliosResult.value;
 
-      const [pedidosData, clientesData, usuariosData, productosData] = await Promise.all([
+      const [pedidosR, clientesR, usuariosR, productosR] = await Promise.allSettled([
         api.pedidos.getAll(),
         api.clientes.getAll(),
         api.usuarios.getAll(),
         api.productos.getAll(),
       ]);
+
+      const pedidosData = settledValue(pedidosR, [] as Pedido[], 'pedidos');
+      const clientesData = settledValue(clientesR, [] as Cliente[], 'clientes');
+      const usuariosData = settledValue(usuariosR, [] as Usuario[], 'usuarios');
+      const productosData = settledValue(productosR, [] as Producto[], 'productos');
 
       const repartidoresData = usuariosData.filter(
         (u) =>
@@ -100,7 +94,9 @@ export function Domicilios() {
         )
       );
       setClientes(clientesData);
-      setProductosCatalogo(productosData.map((p) => ({ id: p.id, nombre: p.nombre })));
+      setProductosCatalogo(
+        productosData.map((p: { id: number; nombre: string }) => ({ id: p.id, nombre: p.nombre }))
+      );
 
       const domiciliosConInfo = domiciliosData.map((domicilio) => {
         const cliente = clientesData.find((c) => c.id === domicilio.clienteId);

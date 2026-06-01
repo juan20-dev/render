@@ -43,7 +43,7 @@ router.patch(
   controller.updateStatus
 );
 
-router.get('/', authorizePermissions('Ver Pedidos', 'Ver Mis Pedidos'), denyRoles('Repartidor', 'Productor'), controller.getAll);
+router.get('/', authorizePermissions('Ver Pedidos', 'Ver Mis Pedidos'), controller.getAll);
 router.get('/:id', authorizePermissions('Ver Pedidos', 'Ver Mis Pedidos'), validate(idParam, 'params'), controller.getById);
 router.post(
   '/',

@@ -220,24 +220,6 @@ const authorizePermissions = (...requiredPermissions) => async (req, res, next) 
       return next();
     }
 
-    // Productor: módulos de producción y consulta de entregas propias (sin depender solo del array en BD).
-    if (String(req.user.rol || '').trim().toLowerCase() === 'productor') {
-      const productorAllowed = new Set([
-        'Ver Producción',
-        'Registrar Producción',
-        'Ver Insumos',
-        'Entregar Insumos',
-      ]);
-      const allowed = requiredPermissions.some((p) => productorAllowed.has(p));
-      if (!allowed) {
-        return res.status(403).json({
-          success: false,
-          message: 'No tienes permisos suficientes para acceder a este recurso',
-        });
-      }
-      return next();
-    }
-
     // Para otros roles, obtener los permisos del rol desde la BD
     const roleResult = await pool.query(
       'SELECT permisos FROM roles WHERE id = $1',

@@ -1191,12 +1191,31 @@ for (const mod of STAFF_MODULE_CATALOG) {
   }
 }
 
+/** Lecturas auxiliares para que cada gestión cargue datos relacionados en pantalla. */
+const SUB_GESTION_READ_DEPS = {
+  'Ventas.Ventas': ['Ver Clientes', 'Ver Productos', 'Ver Pedidos'],
+  'Ventas.Pedidos': ['Ver Clientes', 'Ver Productos', 'Ver Producción'],
+  'Ventas.Abonos': ['Ver Pedidos', 'Ver Clientes'],
+  'Ventas.Domicilios': ['Ver Pedidos', 'Ver Clientes', 'Ver Productos', 'Ver Usuarios'],
+  'Compras.Compras': ['Ver Productos', 'Ver Proveedores'],
+  'Producción.Ordenes': ['Ver Insumos', 'Ver Productos', 'Ver Pedidos'],
+  'Producción.EntregaInsumos': ['Ver Insumos', 'Ver Usuarios'],
+};
+
+const mergeSubBundle = (subId, basePerms) => {
+  const merged = new Set(basePerms || []);
+  for (const dep of SUB_GESTION_READ_DEPS[subId] || []) {
+    merged.add(dep);
+  }
+  return [...merged];
+};
+
 const buildModuleBundle = (moduleId) => {
   const mod = STAFF_MODULE_CATALOG.find((m) => m.id === moduleId);
   if (!mod) return [];
   const perms = new Set();
   for (const sub of mod.subGestiones) {
-    for (const p of sub.permisos || []) perms.add(p);
+    for (const p of mergeSubBundle(sub.id, sub.permisos || [])) perms.add(p);
   }
   return [...perms];
 };
@@ -1205,7 +1224,7 @@ const GESTION_BUNDLES_BY_ID = {};
 for (const mod of STAFF_MODULE_CATALOG) {
   GESTION_BUNDLES_BY_ID[mod.id] = buildModuleBundle(mod.id);
   for (const sub of mod.subGestiones) {
-    GESTION_BUNDLES_BY_ID[sub.id] = [...new Set(sub.permisos || [])];
+    GESTION_BUNDLES_BY_ID[sub.id] = mergeSubBundle(sub.id, sub.permisos || []);
   }
 }
 

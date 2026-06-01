@@ -11,7 +11,7 @@ const { motivoCancelacionBody } = require('../validators/common.schema');
 
 const router = express.Router();
 router.use(productorEntregasGuard);
-router.use(denyRoles('Cliente', 'Repartidor'));
+router.use(denyRoles('Cliente'));
 
 const permisoEntregar = authorizePermissions('Entregar Insumos', 'Ver Insumos');
 const validarId = validate(idParam, 'params');
