@@ -167,6 +167,8 @@ app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ limit: '2mb', extended: true }));
 const uploadsRoot = config.uploads.root;
 fs.mkdirSync(config.uploads.comprobantesDir, { recursive: true });
+fs.mkdirSync(config.uploads.perfilesDir, { recursive: true });
+fs.mkdirSync(config.uploads.productosDir, { recursive: true });
 app.use('/uploads', express.static(uploadsRoot));
 
 // Contrato formal de salida: todas las respuestas JSON deben cumplir un esquema base.

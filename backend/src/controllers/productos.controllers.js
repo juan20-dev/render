@@ -3,6 +3,7 @@
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
+const appConfig = require('../../config');
 const models = {
   Productos: require('../models/compras/productos'),
 };
@@ -156,7 +157,7 @@ module.exports = {
         return res.status(404).json({ success: false, message: 'Producto no encontrado' });
       }
 
-      const uploadsDir = path.join(__dirname, '../../uploads/productos');
+      const uploadsDir = appConfig.uploads.productosDir;
       fs.mkdirSync(uploadsDir, { recursive: true });
 
       const extension = path.extname(req.file.originalname || '').toLowerCase() || '.jpg';

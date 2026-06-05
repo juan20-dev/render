@@ -5,6 +5,7 @@ const models = {
   Auditoria: require('../models/shared').Auditoria,
   Usuarios: require('../models/usuarios/usuarios'),
 };
+const appConfig = require('../../config');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -406,7 +407,7 @@ module.exports = {
         return res.status(404).json({ success: false, message: 'No se encontró el perfil de cliente.' });
       }
 
-      const uploadsDir = path.join(__dirname, '../../uploads/perfiles');
+      const uploadsDir = appConfig.uploads.perfilesDir;
       fs.mkdirSync(uploadsDir, { recursive: true });
 
       const extension = path.extname(req.file.originalname || '').toLowerCase() || '.jpg';
@@ -427,7 +428,12 @@ module.exports = {
         },
       });
     } catch (error) {
-      return res.status(500).json({ success: false, message: 'No se pudo actualizar la foto de perfil.' });
+      console.error('Error al subir foto de perfil', error?.message || error);
+      const message =
+        error?.code === 'EACCES' || error?.code === 'EROFS'
+          ? 'No se pudo escribir la foto en el servidor. Revise permisos o UPLOADS_ROOT en Elastic Beanstalk.'
+          : error.message || 'No se pudo guardar la foto de perfil.';
+      return res.status(error.statusCode || 500).json({ success: false, message });
     }
   },
   delete: async (req, res) => {

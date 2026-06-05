@@ -36,7 +36,7 @@ router.get('/', authorizePermissions('Ver Clientes'), denyRoles(...OPERATIONAL_D
 router.get('/documento/:documento', authorizePermissions('Ver Clientes'), denyRoles(...OPERATIONAL_DENY_ROLES), controller.getByDocumento);
 router.get('/email/:email', authorizePermissions('Ver Clientes'), denyRoles(...OPERATIONAL_DENY_ROLES), controller.getByEmail);
 router.get('/usuario/:usuarioId', authorizePermissions('Ver Clientes', 'Cliente'), controller.getByUsuarioId);
-router.post('/perfil/foto', uploadProfilePhotoHandler, authorizePermissions('Editar Clientes', 'Cliente'), controller.uploadProfilePhoto);
+router.post('/perfil/foto', authorizePermissions('Editar Clientes', 'Cliente'), uploadProfilePhotoHandler, controller.uploadProfilePhoto);
 router.get('/:id', authorizePermissions('Ver Clientes', 'Cliente'), validate(idParam, 'params'), controller.getById);
 router.post(
   '/',

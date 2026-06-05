@@ -5,9 +5,9 @@ import react from '@vitejs/plugin-react'
 
 /**
  * API en desarrollo: proxy hacia Elastic Beanstalk (mismo entorno que producción).
- * Para apuntar al backend local: VITE_API_PROXY_TARGET=http://localhost:3002
+ * Para apuntar al backend local: VITE_API_PROXY_TARGET=http://localhost:3002  'http://apigrandmasliquors.us-east-1.elasticbeanstalk.com/'
  */
-const DEFAULT_API_PROXY_TARGET = 'http://apigrandmasliquors.us-east-1.elasticbeanstalk.com/'
+const DEFAULT_API_PROXY_TARGET = 'http://localhost:3002'
 
 function figmaAssetResolver() {
   return {

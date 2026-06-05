@@ -61,6 +61,8 @@ const config = {
   uploads: {
     root: uploadsRoot,
     comprobantesDir: path.join(uploadsRoot, 'comprobantes'),
+    perfilesDir: path.join(uploadsRoot, 'perfiles'),
+    productosDir: path.join(uploadsRoot, 'productos'),
   },
   auth: {
     jwtSecret: process.env.JWT_SECRET || (isProduction ? '' : 'dev_only_change_me'),
