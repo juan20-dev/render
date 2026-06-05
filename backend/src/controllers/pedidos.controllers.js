@@ -4,6 +4,7 @@ const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 const pool = require('../../db');
+const appConfig = require('../../config');
 const models = {
   Abonos: require('../models/ventas/abonos'),
   Pedidos: require('../models/ventas/pedidos'),
@@ -526,7 +527,7 @@ module.exports = {
         });
       }
 
-      const uploadsDir = path.join(__dirname, '../../uploads/comprobantes');
+      const uploadsDir = appConfig.uploads.comprobantesDir;
       fs.mkdirSync(uploadsDir, { recursive: true });
 
       const extension = path.extname(req.file.originalname || '').toLowerCase() || '.jpg';
@@ -543,12 +544,14 @@ module.exports = {
         data: { comprobante_url: relativeUrl },
       });
     } catch (error) {
-      if (process.env.NODE_ENV !== 'production') {
-        console.error('Error al subir comprobante de pedido', error);
-      }
+      console.error('Error al subir comprobante de pedido', error?.message || error);
+      const message =
+        error?.code === 'EACCES' || error?.code === 'EROFS'
+          ? 'No se pudo escribir el comprobante en el servidor. Revise permisos o UPLOADS_ROOT en Elastic Beanstalk.'
+          : error.message || 'No fue posible guardar el comprobante.';
       return res.status(error.statusCode || 500).json({
         success: false,
-        message: error.message || 'No fue posible guardar el comprobante.',
+        message,
       });
     }
   },

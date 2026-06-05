@@ -4,6 +4,7 @@ const cors = require('cors');
 const cookieParser = require('cookie-parser');
 const rateLimit = require('express-rate-limit');
 const jwt = require('jsonwebtoken');
+const fs = require('fs');
 const path = require('path');
 const { z } = require('zod');
 const config = require('./config');
@@ -164,7 +165,9 @@ if (rateLimitEnabled) {
 
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ limit: '2mb', extended: true }));
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+const uploadsRoot = config.uploads.root;
+fs.mkdirSync(config.uploads.comprobantesDir, { recursive: true });
+app.use('/uploads', express.static(uploadsRoot));
 
 // Contrato formal de salida: todas las respuestas JSON deben cumplir un esquema base.
 app.use((req, res, next) => {
@@ -280,6 +283,7 @@ app.listen(PORT, async () => {
     console.log(`   - GET    /api/clientes               (Listar clientes)`);
     console.log(`   - GET    /api/proveedores            (Listar proveedores)`);
     console.log(`   - GET    /api/pedidos                (Listar pedidos)`);
+    console.log(`   - POST   /api/pedidos/comprobante    (Subir comprobante transferencia)`);
     console.log(`   - GET    /api/ventas                 (Listar ventas)`);
     console.log(`   - GET    /api/abonos                 (Listar abonos)`);
     console.log(`   - GET    /api/domicilios             (Listar domicilios)`);

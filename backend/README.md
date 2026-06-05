@@ -478,6 +478,14 @@ DB_DATABASE      # Nombre de la base de datos (ej: grandmasliquorsdb)
 # Servidor
 PORT             # Puerto del servidor (default: 3002)
 NODE_ENV         # Ambiente: development, production (default: development)
+PUBLIC_BASE_URL  # URL pública del API en EB (opcional, para logs/enlaces)
+
+# Elastic Beanstalk / CORS (frontend en localhost:3000 o dominio de producción)
+CORS_ORIGINS     # Ej: http://localhost:3000,https://tu-dominio.com
+UPLOADS_ROOT     # Opcional: ruta escribible para /uploads (comprobantes, productos, perfiles)
+```
+
+Tras desplegar en EB, el endpoint `POST /api/pedidos/comprobante` (multipart, campo `comprobante`) guarda archivos en `{UPLOADS_ROOT o backend/uploads}/comprobantes/` y los sirve en `/uploads/comprobantes/...`.
 ```
 
 ---

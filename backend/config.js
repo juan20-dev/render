@@ -39,6 +39,11 @@ const resolveDbSsl = (host) => {
 
 const dbHost = process.env.DB_HOST || 'localhost';
 
+/** Raíz de archivos subidos (comprobantes, productos, perfiles). En EB puede fijarse con UPLOADS_ROOT. */
+const uploadsRoot = process.env.UPLOADS_ROOT
+  ? path.resolve(process.env.UPLOADS_ROOT)
+  : path.join(__dirname, 'uploads');
+
 const config = {
   db: {
     host: dbHost,
@@ -51,6 +56,11 @@ const config = {
   server: {
     port: process.env.PORT || 3002,
     env: process.env.NODE_ENV || 'development',
+    publicBaseUrl: String(process.env.PUBLIC_BASE_URL || '').trim(),
+  },
+  uploads: {
+    root: uploadsRoot,
+    comprobantesDir: path.join(uploadsRoot, 'comprobantes'),
   },
   auth: {
     jwtSecret: process.env.JWT_SECRET || (isProduction ? '' : 'dev_only_change_me'),

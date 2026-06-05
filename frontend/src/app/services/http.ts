@@ -29,12 +29,29 @@ export async function apiFetch<T = unknown>(
     body = JSON.stringify(formatOutgoingTextPayload(init.json));
   }
 
-  const res = await fetch(path, {
-    ...init,
-    credentials: 'include',
-    headers,
-    body,
-  });
+  let res: Response;
+  try {
+    res = await fetch(path, {
+      ...init,
+      credentials: 'include',
+      headers,
+      body,
+    });
+  } catch (networkError: unknown) {
+    const isDev = typeof import.meta !== 'undefined' && import.meta.env?.DEV;
+    const hint =
+      path.startsWith('/api/') && isDev
+        ? ' Verifique que Elastic Beanstalk tenga desplegada la última versión del backend, que CORS_ORIGINS incluya http://localhost:3000 y reinicie el frontend (proxy VITE_API_PROXY_TARGET).'
+        : '';
+    const base =
+      networkError instanceof Error && networkError.message
+        ? networkError.message
+        : 'No se pudo conectar con el servidor.';
+    if (isDev) {
+      console.error('[apiFetch] Error de red', path, networkError);
+    }
+    throw Object.assign(new Error(`${base}${hint}`), { status: 0, code: 'NETWORK_ERROR' });
+  }
 
   const raw = await res.text();
   let json: ApiEnvelope<T> = {};

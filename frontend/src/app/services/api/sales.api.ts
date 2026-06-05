@@ -109,7 +109,7 @@ export const salesApi = {
         fecha_entrega: data.fechaEntrega,
         total: data.total,
         estado: 'Pendiente',
-        metodo_pago: metodoPagoDb(String(data.metodoPago || 'efectivo')),
+        metodo_pago: metodoPagoDb(String(data.metodoPago || 'transferencia')),
         esquema_abono: data.porcentajeAbono === 50 ? '50%' : '100%',
         productos,
       };
