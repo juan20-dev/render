@@ -16,6 +16,7 @@ const ensureAbonosSchema = async () => {
   if (!abonosSchemaPromise) {
     abonosSchemaPromise = (async () => {
       await pool.query(`ALTER TABLE abonos ADD COLUMN IF NOT EXISTS detalle TEXT`);
+      await pool.query(`ALTER TABLE abonos ADD COLUMN IF NOT EXISTS comprobante_url TEXT`);
       await pool.query(`ALTER TABLE abonos ADD COLUMN IF NOT EXISTS porcentaje_abonado INTEGER`);
     })();
   }
@@ -69,7 +70,7 @@ const Abonos = {
     await ensureAbonosSchema();
     const reserved = await reserveEntityIdAndCode(pool, 'public.abonos', 'A');
     const result = await pool.query(
-      'INSERT INTO abonos (id, numero_abono, pedido_id, cliente_id, monto, fecha, metodo_pago, estado, detalle, porcentaje_abonado) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id',
+      'INSERT INTO abonos (id, numero_abono, pedido_id, cliente_id, monto, fecha, metodo_pago, estado, detalle, comprobante_url, porcentaje_abonado) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id',
       [
         reserved.id,
         reserved.code,
@@ -80,6 +81,7 @@ const Abonos = {
         data.metodo_pago,
         data.estado || 'Registrado',
         data.detalle ?? null,
+        data.comprobante_url ?? null,
         data.porcentaje_abonado != null ? Number(data.porcentaje_abonado) : null,
       ]
     );

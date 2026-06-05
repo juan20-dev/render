@@ -1,5 +1,8 @@
 // Rewire: el modelo Abonos, Pedidos viene de archivos modulares.
 // entities.models.js queda como archivo intacto pero desconectado (sin importadores).
+const path = require('path');
+const fs = require('fs');
+const crypto = require('crypto');
 const pool = require('../../db');
 const models = {
   Abonos: require('../models/ventas/abonos'),
@@ -13,6 +16,9 @@ const {
   assertOwnPedidoId,
 } = require('../utils/selfServiceAccess');
 const { sendPedidoCreatedEmail } = require('../services/email.service');
+const { normalizeMetodoPago } = require('./normalizador-http');
+
+const COMPROBANTE_URL_RE = /^\/uploads\/comprobantes\/[a-zA-Z0-9._-]+$/;
 
 const normalizeEstado = (value) => String(value || '').trim().toLowerCase();
 const PEDIDO_TRANSICIONES = {
@@ -174,6 +180,29 @@ module.exports = {
         body.total = totalCalc;
       }
 
+      const comprobanteUrl = String(body.comprobante_url || '').trim();
+      if (isClienteUser(req)) {
+        const metodoCliente = normalizeMetodoPago(body.metodo_pago) || 'Transferencia';
+        if (metodoCliente !== 'Transferencia') {
+          return res.status(400).json({
+            success: false,
+            message: 'Los pedidos desde la tienda solo admiten pago por transferencia bancaria.',
+          });
+        }
+        body.metodo_pago = 'Transferencia';
+        if (!comprobanteUrl || !COMPROBANTE_URL_RE.test(comprobanteUrl)) {
+          return res.status(400).json({
+            success: false,
+            message: 'Debe adjuntar la captura del comprobante de consignación para confirmar el pedido.',
+          });
+        }
+      } else if (comprobanteUrl && !COMPROBANTE_URL_RE.test(comprobanteUrl)) {
+        return res.status(400).json({
+          success: false,
+          message: 'URL de comprobante inválida.',
+        });
+      }
+
       if (body.cliente_id) {
         cleanupRecentPedidoCreateCache();
         const fingerprint = buildPedidoFingerprint(body.cliente_id, body);
@@ -212,26 +241,29 @@ module.exports = {
         }
       }
 
-      // Si esquema es 50% crear registro inicial en abonos y actualizar monto_abonado en pedido
+      // Abono inicial: 50 % siempre; 100 % cuando el cliente adjunta comprobante de transferencia
       try {
         const esquema = String(body.esquema_abono || '').trim() || '100%';
-        if (esquema === '50%') {
-          const pedidoRow = await models.Pedidos.getById(id);
-          if (pedidoRow) {
-            const clienteId = Number(pedidoRow.cliente_id);
-            const total = Number(pedidoRow.total || 0);
-            const monto = Math.round(total * 0.5);
+        const pedidoRow = await models.Pedidos.getById(id);
+        if (pedidoRow) {
+          const clienteId = Number(pedidoRow.cliente_id);
+          const total = Number(pedidoRow.total || 0);
+          const pct = esquema === '50%' ? 50 : 100;
+          const crearAbonoInicial =
+            esquema === '50%' || (esquema === '100%' && isClienteUser(req) && Boolean(comprobanteUrl));
+          if (crearAbonoInicial && total > 0) {
+            const monto = Math.round((total * pct) / 100);
             await models.Abonos.create({
               pedido_id: id,
               cliente_id: clienteId,
               monto,
               fecha: new Date().toISOString().split('T')[0],
-              metodo_pago: pedidoRow.metodo_pago || 'Efectivo',
+              metodo_pago: pedidoRow.metodo_pago || 'Transferencia',
               estado: 'Registrado',
-              porcentaje_abonado: 50,
+              porcentaje_abonado: pct,
+              comprobante_url: comprobanteUrl || null,
             });
-            // actualizar monto_abonado en pedido
-            await models.Pedidos.update(id, { monto_abonado: monto, esquema_abono: '50%' });
+            await models.Pedidos.update(id, { monto_abonado: monto, esquema_abono: esquema });
           }
         }
       } catch (e) {
@@ -477,6 +509,47 @@ module.exports = {
       return res.json({ success: true, message: 'Estado actualizado exitosamente' });
     } catch (error) {
       return res.status(500).json({ success: false, message: error.message });
+    }
+  },
+  uploadComprobante: async (req, res) => {
+    try {
+      if (!isClienteUser(req)) {
+        return res.status(403).json({
+          success: false,
+          message: 'Solo el cliente autenticado puede subir comprobantes de transferencia.',
+        });
+      }
+      if (!req.file) {
+        return res.status(400).json({
+          success: false,
+          message: 'Seleccione la captura del comprobante de consignación (JPG, PNG o WEBP).',
+        });
+      }
+
+      const uploadsDir = path.join(__dirname, '../../uploads/comprobantes');
+      fs.mkdirSync(uploadsDir, { recursive: true });
+
+      const extension = path.extname(req.file.originalname || '').toLowerCase() || '.jpg';
+      const own = getOwnClienteId(req);
+      const filename = `comprobante_${own || 'cliente'}_${Date.now()}_${crypto.randomBytes(6).toString('hex')}${extension}`;
+      const absolutePath = path.join(uploadsDir, filename);
+      const relativeUrl = `/uploads/comprobantes/${filename}`;
+
+      fs.writeFileSync(absolutePath, req.file.buffer);
+
+      return res.json({
+        success: true,
+        message: 'Comprobante cargado correctamente.',
+        data: { comprobante_url: relativeUrl },
+      });
+    } catch (error) {
+      if (process.env.NODE_ENV !== 'production') {
+        console.error('Error al subir comprobante de pedido', error);
+      }
+      return res.status(error.statusCode || 500).json({
+        success: false,
+        message: error.message || 'No fue posible guardar el comprobante.',
+      });
     }
   },
 };

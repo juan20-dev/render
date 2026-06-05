@@ -417,7 +417,7 @@ export function Ventas() {
       setFormData((prev) => ({
         ...prev,
         clienteId: pedido.clienteId,
-        metodoPago: pedido.metodoPago,
+        metodoPago: 'transferencia',
       }));
     } catch {
       toast.error('No se pudieron cargar los productos del pedido');
@@ -572,7 +572,7 @@ export function Ventas() {
         pedidoId: formData.pedidoId,
         productos: productosVenta,
         total,
-        metodoPago: formData.metodoPago,
+        metodoPago: formData.tipo === 'por pedido' ? 'transferencia' : formData.metodoPago,
         fecha: formData.fecha,
         estado: formData.tipo === 'directa' ? 'completada' : 'pendiente'
       });
@@ -758,6 +758,7 @@ export function Ventas() {
                   ...formData,
                   tipo: nuevoTipo,
                   pedidoId: undefined,
+                  metodoPago: nuevoTipo === 'por pedido' ? 'transferencia' : formData.metodoPago,
                   // Al cambiar de tipo el cliente se recalcula: en directa se vuelve a elegir,
                   // en por pedido se infiere automaticamente al elegir el pedido.
                   clienteId: 0,
@@ -864,18 +865,24 @@ export function Ventas() {
               </div>
             )}
 
-            <FormField
-              label="Método de Pago"
-              name="metodoPago"
-              type="select"
-              value={formData.metodoPago}
-              onChange={(value) => setFormData({ ...formData, metodoPago: value as 'efectivo' | 'transferencia' })}
-              options={[
-                { value: 'efectivo', label: 'Efectivo' },
-                { value: 'transferencia', label: 'Transferencia' }
-              ]}
-              required
-            />
+            {formData.tipo === 'directa' ? (
+              <FormField
+                label="Método de Pago"
+                name="metodoPago"
+                type="select"
+                value={formData.metodoPago}
+                onChange={(value) =>
+                  setFormData({ ...formData, metodoPago: value as 'efectivo' | 'transferencia' })
+                }
+                options={[
+                  { value: 'efectivo', label: 'Efectivo' },
+                  { value: 'transferencia', label: 'Transferencia' },
+                ]}
+                required
+              />
+            ) : (
+              <input type="hidden" name="metodoPago" value="transferencia" />
+            )}
 
             <FormField
               label="Fecha"

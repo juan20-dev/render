@@ -16,6 +16,12 @@ const createPedidoBody = z
     estado: pedidoEstados.optional(),
     metodo_pago: z.string().trim().optional(),
     esquema_abono: z.enum(['50%', '100%']).optional(),
+    comprobante_url: z
+      .string()
+      .trim()
+      .max(500)
+      .regex(/^\/uploads\/comprobantes\/[a-zA-Z0-9._-]+$/, 'URL de comprobante inválida')
+      .optional(),
     productos: z
       .array(
         z.object({

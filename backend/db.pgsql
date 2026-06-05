@@ -292,6 +292,7 @@ CREATE TABLE abonos (
     -- de las dos partes del pago en la columna `detalle`.
     estado VARCHAR(20) DEFAULT 'Registrado',
     detalle TEXT,
+    comprobante_url TEXT,
     porcentaje_abonado INTEGER,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP

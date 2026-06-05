@@ -77,8 +77,24 @@ export const salesApi = {
       return rows.map(mapPedidoListRow);
     },
     getById: async (id: number) => mapPedidoDetail(await apiFetchData(`/api/pedidos/${id}`)),
+    uploadComprobante: async (file: File) => {
+      const fd = new FormData();
+      fd.append('comprobante', file);
+      const env = await apiFetch<{ comprobante_url?: string }>('/api/pedidos/comprobante', {
+        method: 'POST',
+        body: fd,
+      });
+      const url = env.data?.comprobante_url;
+      if (!url) {
+        throw new Error('No se recibió la URL del comprobante.');
+      }
+      return String(url);
+    },
     create: async (data: Partial<Pedido>) => {
       const observaciones = String((data as Partial<Pedido> & { observaciones?: string }).observaciones || '').trim();
+      const comprobanteUrl = String(
+        (data as Partial<Pedido> & { comprobanteUrl?: string }).comprobanteUrl || ''
+      ).trim();
       const productos = (data.productos || []).map((p) => ({
         productoId: p.productoId,
         cantidad: p.cantidad,
@@ -100,6 +116,7 @@ export const salesApi = {
       if (observaciones.length >= 5) payload.detalles = observaciones;
       if (direccion.length >= 5) payload.direccion = direccion;
       if (telefono.length > 0) payload.telefono = telefono;
+      if (comprobanteUrl) payload.comprobante_url = comprobanteUrl;
       await apiFetch('/api/pedidos', {
         method: 'POST',
         json: payload,

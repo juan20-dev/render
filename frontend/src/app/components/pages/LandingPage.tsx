@@ -66,8 +66,6 @@ export function LandingPage({
     showCheckout,
     setShowCheckout,
     isSubmittingPedido,
-    metodoPago,
-    setMetodoPago,
     porcentajePago,
     setPorcentajePago,
     checkoutData,
@@ -79,6 +77,11 @@ export function LandingPage({
     checkoutTelefonoError,
     checkoutTelefonoDigits,
     checkoutStockError,
+    shouldShowComprobanteError,
+    checkoutComprobanteError,
+    comprobantePreview,
+    comprobanteUploading,
+    handleComprobanteFile,
     checkoutValid,
     realizarPedido,
     confirmarPedido,
@@ -251,7 +254,6 @@ export function LandingPage({
         isOpen={showCheckout}
         carrito={carrito}
         totalCarrito={totalCarrito}
-        metodoPago={metodoPago}
         porcentajePago={porcentajePago}
         checkoutData={checkoutData}
         shouldShowDireccionError={shouldShowDireccionError}
@@ -260,11 +262,15 @@ export function LandingPage({
         checkoutTelefonoError={checkoutTelefonoError}
         checkoutTelefonoDigits={checkoutTelefonoDigits}
         checkoutStockError={checkoutStockError}
+        shouldShowComprobanteError={shouldShowComprobanteError}
+        checkoutComprobanteError={checkoutComprobanteError}
+        comprobantePreview={comprobantePreview}
+        comprobanteUploading={comprobanteUploading}
         checkoutValid={checkoutValid}
         isSubmittingPedido={isSubmittingPedido}
         onClose={() => setShowCheckout(false)}
-        onMetodoPagoChange={setMetodoPago}
         onPorcentajePagoChange={setPorcentajePago}
+        onComprobanteFile={handleComprobanteFile}
         onDireccionChange={(value) => {
                         setCheckoutTouched((prev) => ({ ...prev, direccion: true }));
           setCheckoutData((prev) => ({ ...prev, direccion: value }));

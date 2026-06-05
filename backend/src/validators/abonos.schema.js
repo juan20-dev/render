@@ -14,6 +14,12 @@ const createAbonoBody = z
     estado: abonoEstados.optional(),
     porcentaje_abonado: z.coerce.number().min(0).max(100).optional(),
     detalle: longTextString.optional(),
+    comprobante_url: z
+      .string()
+      .trim()
+      .max(500)
+      .regex(/^\/uploads\/comprobantes\/[a-zA-Z0-9._-]+$/, 'URL de comprobante inválida')
+      .optional(),
   })
   .passthrough();
 

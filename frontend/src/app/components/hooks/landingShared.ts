@@ -12,6 +12,11 @@ export const CONTACTO_TELEFONO = '3246102339';
 export const CONTACTO_TELEFONO_DISPLAY = '324 610 2339';
 export const CONTACTO_EMAIL = 'info@grandmasliqueurs.com';
 
+/** Llave para transferencia bancaria en checkout (tienda). */
+export const CHECKOUT_CUENTA_TRANSFERENCIA = '0027437961';
+/** QR de pago (archivo en public/qrs). */
+export const CHECKOUT_QR_URL = '/qrs/qrs.jpeg';
+
 export interface Producto {
   id: string;
   nombre: string;
@@ -241,11 +246,15 @@ export const getCheckoutValidation = ({
   checkoutData,
   checkoutTouched,
   checkoutAttempted,
+  comprobanteUrl,
+  comprobanteUploading,
 }: {
   carrito: CartItem[];
   checkoutData: CheckoutData;
   checkoutTouched: CheckoutTouched;
   checkoutAttempted: boolean;
+  comprobanteUrl?: string;
+  comprobanteUploading?: boolean;
 }) => {
   const checkoutDireccion = checkoutData.direccion.trim();
   const checkoutTelefonoDigits = checkoutData.telefono.replace(/\D/g, '');
@@ -262,11 +271,21 @@ export const getCheckoutValidation = ({
       ? 'El teléfono de contacto debe tener exactamente 10 dígitos.'
       : '';
   const checkoutStockError = carrito.find((item) => Boolean(getCartItemStockError(item))) || null;
+  const comprobanteOk = Boolean(String(comprobanteUrl || '').trim());
+  const shouldShowComprobanteError = checkoutAttempted;
+  const checkoutComprobanteError =
+    comprobanteUploading
+      ? 'Espere a que termine de cargar el comprobante.'
+      : !comprobanteOk
+        ? 'Adjunte la captura de pantalla del comprobante de consignación para confirmar el pedido.'
+        : '';
   const checkoutValid =
     carrito.length > 0 &&
     !checkoutDireccionError &&
     !checkoutTelefonoError &&
-    !checkoutStockError;
+    !checkoutStockError &&
+    comprobanteOk &&
+    !comprobanteUploading;
 
   return {
     checkoutDireccion,
@@ -276,6 +295,8 @@ export const getCheckoutValidation = ({
     checkoutDireccionError,
     checkoutTelefonoError,
     checkoutStockError,
+    shouldShowComprobanteError,
+    checkoutComprobanteError,
     checkoutValid,
   };
 };

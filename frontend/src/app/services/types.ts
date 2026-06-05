@@ -259,6 +259,8 @@ export interface Abono {
   estado: 'registrado' | 'verificado' | 'cancelado' | 'aplicado' | 'finalizado';
   /** Texto consolidado con la informacion de las partes del abono cuando se liquida al 100%. */
   detalle?: string;
+  /** Captura de transferencia subida al confirmar pedido desde la tienda. */
+  comprobanteUrl?: string;
   createdAt: string;
   updatedAt: string;
 }

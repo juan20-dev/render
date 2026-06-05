@@ -2,13 +2,12 @@ import React from 'react';
 import { X } from 'lucide-react';
 import { Button } from '../Button';
 import { FieldError, FormField } from '../Form';
-import { CartItem, CheckoutData } from '../hooks/landingShared';
+import { CartItem, CheckoutData, CHECKOUT_CUENTA_TRANSFERENCIA, CHECKOUT_QR_URL } from '../hooks/landingShared';
 
 interface CheckoutModalProps {
   isOpen: boolean;
   carrito: CartItem[];
   totalCarrito: number;
-  metodoPago: 'efectivo' | 'transferencia';
   porcentajePago: '100' | '50';
   checkoutData: CheckoutData;
   shouldShowDireccionError: boolean;
@@ -17,14 +16,18 @@ interface CheckoutModalProps {
   checkoutTelefonoError: string;
   checkoutTelefonoDigits: string;
   checkoutStockError: CartItem | null;
+  shouldShowComprobanteError: boolean;
+  checkoutComprobanteError: string;
+  comprobantePreview: string;
+  comprobanteUploading: boolean;
   checkoutValid: boolean;
   isSubmittingPedido: boolean;
   onClose: () => void;
-  onMetodoPagoChange: (value: 'efectivo' | 'transferencia') => void;
   onPorcentajePagoChange: (value: '100' | '50') => void;
   onDireccionChange: (value: string) => void;
   onTelefonoChange: (value: string) => void;
   onObservacionesChange: (value: string) => void;
+  onComprobanteFile: (file: File | null) => void | Promise<void>;
   onConfirm: () => Promise<void> | void;
   getCartItemStockError: (item: CartItem) => string;
 }
@@ -33,7 +36,6 @@ export function CheckoutModal({
   isOpen,
   carrito,
   totalCarrito,
-  metodoPago,
   porcentajePago,
   checkoutData,
   shouldShowDireccionError,
@@ -42,14 +44,18 @@ export function CheckoutModal({
   checkoutTelefonoError,
   checkoutTelefonoDigits,
   checkoutStockError,
+  shouldShowComprobanteError,
+  checkoutComprobanteError,
+  comprobantePreview,
+  comprobanteUploading,
   checkoutValid,
   isSubmittingPedido,
   onClose,
-  onMetodoPagoChange,
   onPorcentajePagoChange,
   onDireccionChange,
   onTelefonoChange,
   onObservacionesChange,
+  onComprobanteFile,
   onConfirm,
   getCartItemStockError,
 }: CheckoutModalProps) {
@@ -101,37 +107,54 @@ export function CheckoutModal({
             </div>
 
             <div className="mb-6">
-              <h4 className="mb-4">Método de Pago</h4>
-              <div className="space-y-3">
-                <label className="flex items-center gap-3 p-4 border border-border rounded-lg hover:border-primary cursor-pointer transition-colors">
-                  <input
-                    type="radio"
-                    name="payment"
-                    className="w-4 h-4 text-primary"
-                    checked={metodoPago === 'efectivo'}
-                    onChange={() => onMetodoPagoChange('efectivo')}
+              <h4 className="mb-4">Transferencia Bancaria</h4>
+              <div className="space-y-4 p-4 border border-border rounded-lg bg-background">
+                <div>
+                  <p className="text-sm text-muted-foreground">Número de cuenta</p>
+                  <p className="font-medium tracking-wide">{CHECKOUT_CUENTA_TRANSFERENCIA}</p>
+                </div>
+                <div className="flex flex-col sm:flex-row gap-4 items-start">
+                  <img
+                    src={CHECKOUT_QR_URL}
+                    alt="Código QR para transferencia"
+                    className="w-36 h-36 object-contain rounded-lg border border-border bg-white"
                   />
-                  <div>
-                    <p>Efectivo</p>
-                    <p className="text-xs text-muted-foreground">Pago al recibir tu pedido</p>
-                  </div>
-                </label>
-
-                <label className="flex items-center gap-3 p-4 border border-border rounded-lg hover:border-primary cursor-pointer transition-colors">
+                  <p className="text-xs text-muted-foreground flex-1">
+                    Realice la consignación por el monto indicado (total o abono mínimo) y adjunte la captura de
+                    pantalla del comprobante para habilitar «Confirmar Pedido».
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <label htmlFor="checkout-comprobante" className="block text-sm font-medium">
+                    Comprobante de consignación *
+                  </label>
                   <input
-                    type="radio"
-                    name="payment"
-                    className="w-4 h-4 text-primary"
-                    checked={metodoPago === 'transferencia'}
-                    onChange={() => onMetodoPagoChange('transferencia')}
+                    id="checkout-comprobante"
+                    name="checkout-comprobante"
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    disabled={isSubmittingPedido || comprobanteUploading}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0] ?? null;
+                      void onComprobanteFile(file);
+                    }}
+                    className="w-full text-sm file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-primary file:text-primary-foreground"
                   />
-                  <div>
-                    <p>Transferencia Bancaria</p>
-                    <p className="text-xs text-muted-foreground">
-                      Te enviaremos los datos por WhatsApp
-                    </p>
-                  </div>
-                </label>
+                  <p className="text-xs text-muted-foreground">JPG, PNG o WEBP. Máximo 2 MB.</p>
+                  {comprobanteUploading && (
+                    <p className="text-xs text-muted-foreground">Cargando comprobante...</p>
+                  )}
+                  {comprobantePreview && !comprobanteUploading && (
+                    <img
+                      src={comprobantePreview}
+                      alt="Vista previa del comprobante"
+                      className="mt-2 h-32 w-auto max-w-full object-contain rounded-lg border border-border"
+                    />
+                  )}
+                  {shouldShowComprobanteError && checkoutComprobanteError && (
+                    <FieldError>{checkoutComprobanteError}</FieldError>
+                  )}
+                </div>
               </div>
             </div>
 

@@ -29,7 +29,6 @@ export function useCheckout({
 }: UseCheckoutOptions) {
   const [showCheckout, setShowCheckout] = useState(false);
   const [isSubmittingPedido, setIsSubmittingPedido] = useState(false);
-  const [metodoPago, setMetodoPago] = useState<'efectivo' | 'transferencia'>('efectivo');
   const [porcentajePago, setPorcentajePago] = useState<'100' | '50'>('100');
   const [checkoutData, setCheckoutData] = useState<CheckoutData>(() => buildCheckoutDefaults(user));
   const [checkoutTouched, setCheckoutTouched] = useState<CheckoutTouched>({
@@ -37,6 +36,9 @@ export function useCheckout({
     telefono: false,
   });
   const [checkoutAttempted, setCheckoutAttempted] = useState(false);
+  const [comprobanteUrl, setComprobanteUrl] = useState('');
+  const [comprobantePreview, setComprobantePreview] = useState('');
+  const [comprobanteUploading, setComprobanteUploading] = useState(false);
   const submittingRef = useRef(false);
 
   const totalCarrito = useMemo(() => calcularTotalCarrito(carrito), [carrito]);
@@ -49,6 +51,8 @@ export function useCheckout({
     checkoutDireccionError,
     checkoutTelefonoError,
     checkoutStockError,
+    shouldShowComprobanteError,
+    checkoutComprobanteError,
     checkoutValid,
   } = useMemo(
     () =>
@@ -57,17 +61,61 @@ export function useCheckout({
         checkoutData,
         checkoutTouched,
         checkoutAttempted,
+        comprobanteUrl,
+        comprobanteUploading,
       }),
-    [carrito, checkoutData, checkoutTouched, checkoutAttempted]
+    [carrito, checkoutData, checkoutTouched, checkoutAttempted, comprobanteUrl, comprobanteUploading]
   );
 
   const resetCheckoutForm = useCallback(() => {
-    setMetodoPago('efectivo');
     setPorcentajePago('100');
     setCheckoutData(buildCheckoutDefaults(user));
     setCheckoutTouched({ direccion: false, telefono: false });
     setCheckoutAttempted(false);
+    setComprobanteUrl('');
+    setComprobantePreview('');
+    setComprobanteUploading(false);
   }, [user]);
+
+  const handleComprobanteFile = useCallback(async (file: File | null) => {
+    if (!file) {
+      setComprobanteUrl('');
+      setComprobantePreview('');
+      return;
+    }
+
+    const allowed = ['image/jpeg', 'image/png', 'image/webp'];
+    if (!allowed.includes(file.type)) {
+      toast.error('Formato no permitido', {
+        description: 'Use una captura en JPG, PNG o WEBP (máximo 2 MB).',
+      });
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error('Archivo demasiado grande', {
+        description: 'La imagen del comprobante no puede superar 2 MB.',
+      });
+      return;
+    }
+
+    setComprobanteUploading(true);
+    const preview = URL.createObjectURL(file);
+    setComprobantePreview(preview);
+    try {
+      const url = await api.pedidos.uploadComprobante(file);
+      setComprobanteUrl(url);
+    } catch (error: unknown) {
+      setComprobanteUrl('');
+      setComprobantePreview('');
+      const msg = error instanceof Error ? error.message : 'No se pudo cargar el comprobante.';
+      toast.error('Comprobante no guardado', { description: msg });
+      if (import.meta.env.DEV) {
+        console.error('Error al subir comprobante de pedido', error);
+      }
+    } finally {
+      setComprobanteUploading(false);
+    }
+  }, []);
 
   const realizarPedido = useCallback(() => {
     if (carrito.length === 0) {
@@ -106,6 +154,7 @@ export function useCheckout({
     if (!checkoutValid) {
       toast.error('Datos incompletos', {
         description:
+          checkoutComprobanteError ||
           checkoutDireccionError ||
           checkoutTelefonoError ||
           (checkoutStockError ? getCartItemStockError(checkoutStockError) : '') ||
@@ -124,12 +173,13 @@ export function useCheckout({
         clienteId: undefined,
         fechaPedido: new Date().toISOString().split('T')[0],
         fechaEntrega: new Date(Date.now() + 86400000).toISOString().split('T')[0],
-        metodoPago,
+        metodoPago: 'transferencia',
         porcentajeAbono: porcentajePago === '50' ? 50 : 100,
         total: totalCarrito,
         direccion: checkoutDireccion,
         telefono: checkoutTelefonoDigits,
         observaciones: checkoutData.observaciones.trim(),
+        comprobanteUrl,
         productos: carrito.map((item) => ({
           productoId: Number(item.producto.id),
           cantidad: item.cantidad,
@@ -168,6 +218,7 @@ export function useCheckout({
     }
   }, [
     carrito,
+    checkoutComprobanteError,
     checkoutData.observaciones,
     checkoutDireccion,
     checkoutDireccionError,
@@ -176,8 +227,8 @@ export function useCheckout({
     checkoutTelefonoError,
     checkoutValid,
     clearCart,
+    comprobanteUrl,
     isSubmittingPedido,
-    metodoPago,
     onPedidoCreated,
     porcentajePago,
     resetCheckoutForm,
@@ -189,8 +240,6 @@ export function useCheckout({
     showCheckout,
     setShowCheckout,
     isSubmittingPedido,
-    metodoPago,
-    setMetodoPago,
     porcentajePago,
     setPorcentajePago,
     checkoutData,
@@ -206,7 +255,13 @@ export function useCheckout({
     checkoutDireccionError,
     checkoutTelefonoError,
     checkoutStockError,
+    shouldShowComprobanteError,
+    checkoutComprobanteError,
     checkoutValid,
+    comprobanteUrl,
+    comprobantePreview,
+    comprobanteUploading,
+    handleComprobanteFile,
     totalCarrito,
     resetCheckoutForm,
     realizarPedido,

@@ -487,6 +487,10 @@ export function mapAbono(r: any): Abono {
     metodoPago: metodoPagoUi(r.metodo_pago) as Abono['metodoPago'],
     estado: estadoUi,
     detalle: r.detalle ? String(r.detalle) : undefined,
+    comprobanteUrl:
+      r.comprobante_url != null && String(r.comprobante_url).trim() !== ''
+        ? String(r.comprobante_url)
+        : undefined,
     createdAt: r.created_at || '',
     updatedAt: r.updated_at || '',
   } as Abono;

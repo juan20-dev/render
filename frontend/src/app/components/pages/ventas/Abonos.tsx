@@ -700,6 +700,28 @@ export function Abonos() {
               </div>
             </div>
 
+            {selectedAbono.comprobanteUrl && (
+              <div className="p-4 bg-background rounded-lg border border-border">
+                <label className="text-sm text-muted-foreground block mb-2 font-medium">
+                  Comprobante de consignación
+                </label>
+                <a
+                  href={selectedAbono.comprobanteUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sm text-primary underline"
+                >
+                  Abrir comprobante en nueva pestaña
+                </a>
+                <img
+                  src={selectedAbono.comprobanteUrl}
+                  alt="Comprobante de transferencia"
+                  className="mt-3 max-w-full h-auto max-h-80 object-contain rounded-lg border border-border cursor-pointer"
+                  onClick={() => window.open(selectedAbono.comprobanteUrl, '_blank', 'noopener,noreferrer')}
+                />
+              </div>
+            )}
+
             {selectedAbono.detalle && (
               <div className="p-4 bg-emerald-50 rounded-lg border border-emerald-200">
                 <label className="text-sm text-emerald-800 block mb-2 font-medium">
