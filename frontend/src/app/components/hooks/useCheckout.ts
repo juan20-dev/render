@@ -10,6 +10,7 @@ import {
   calcularTotalCarrito,
   getCartItemStockError,
   getCheckoutValidation,
+  validateImageFile,
 } from './landingShared';
 
 interface UseCheckoutOptions {
@@ -84,16 +85,11 @@ export function useCheckout({
       return;
     }
 
-    const allowed = ['image/jpeg', 'image/png', 'image/webp'];
-    if (!allowed.includes(file.type)) {
-      toast.error('Formato no permitido', {
-        description: 'Use una captura en JPG, PNG o WEBP (máximo 2 MB).',
-      });
-      return;
-    }
-    if (file.size > 2 * 1024 * 1024) {
-      toast.error('Archivo demasiado grande', {
-        description: 'La imagen del comprobante no puede superar 2 MB.',
+    // Validar imagen con lógica flexible (MIME type O extensión)
+    const validation = validateImageFile(file);
+    if (!validation.valid) {
+      toast.error('Archivo rechazado', {
+        description: validation.error || 'No se puede procesar esta imagen.',
       });
       return;
     }

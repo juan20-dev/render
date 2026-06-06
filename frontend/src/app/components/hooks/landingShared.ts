@@ -329,3 +329,38 @@ export const consumeLandingScroll = (): 'inicio' | 'productos' | 'contacto' | nu
   }
   return null;
 };
+
+/**
+ * Valida que un archivo sea una imagen permitida.
+ * Acepta por MIME type O por extensión de archivo para mayor compatibilidad.
+ * Similar a la validación del backend en multer.
+ */
+export const validateImageFile = (file: File): { valid: boolean; error?: string } => {
+  const allowedMimes = ['image/jpeg', 'image/png', 'image/webp'];
+  const allowedExts = ['.jpg', '.jpeg', '.png', '.webp'];
+  
+  // Obtener extensión del archivo
+  const fileExt = file.name.toLowerCase().slice(file.name.lastIndexOf('.'));
+  
+  // Validar MIME type O extensión (flexible como backend)
+  const isMimeValid = allowedMimes.includes(file.type);
+  const isExtValid = allowedExts.includes(fileExt);
+  
+  if (!isMimeValid && !isExtValid) {
+    return {
+      valid: false,
+      error: 'Formato no permitido. Use JPG, PNG o WEBP.',
+    };
+  }
+  
+  // Validar tamaño (2 MB)
+  const maxSize = 2 * 1024 * 1024;
+  if (file.size > maxSize) {
+    return {
+      valid: false,
+      error: 'El archivo no puede superar 2 MB.',
+    };
+  }
+  
+  return { valid: true };
+};

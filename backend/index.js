@@ -95,6 +95,12 @@ if (config.server.env === 'production') {
 const corsOptions = {
   credentials: true,
   origin: (origin, callback) => {
+    // En producción sin restricciones de CORS: permitir todos los orígenes
+    // Los clientes pueden venir de cualquier dirección (web, mobile, etc.)
+    if (config.auth.corsOrigins.includes('*') || !config.auth.corsOrigins.length) {
+      return callback(null, true);
+    }
+
     if (!origin) {
       return callback(null, true);
     }

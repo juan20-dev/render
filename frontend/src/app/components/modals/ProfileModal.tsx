@@ -4,7 +4,7 @@ import { Button } from '../Button';
 import { Modal } from '../Modal';
 import { toast } from '../AlertDialog';
 import { api } from '../../services/api';
-import { UserData } from '../hooks/landingShared';
+import { UserData, validateImageFile } from '../hooks/landingShared';
 
 interface ProfileModalProps {
   isOpen: boolean;
@@ -60,12 +60,10 @@ export function ProfileModal({
     e.target.value = '';
     if (!file) return;
 
-    if (!ALLOWED_FOTO_TYPES.includes(file.type)) {
-      toast.error('Formato no permitido', { description: 'Use JPG, PNG o WEBP.' });
-      return;
-    }
-    if (file.size > MAX_FOTO_BYTES) {
-      toast.error('Imagen muy grande', { description: 'El tamaño máximo es 2 MB.' });
+    // Validar imagen con lógica flexible (MIME type O extensión)
+    const validation = validateImageFile(file);
+    if (!validation.valid) {
+      toast.error('Archivo rechazado', { description: validation.error || 'No se puede procesar esta imagen.' });
       return;
     }
 

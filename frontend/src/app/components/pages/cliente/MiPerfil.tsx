@@ -7,6 +7,7 @@ import { toast } from '../../AlertDialog';
 import { Modal } from '../../Modal';
 import { api, newPasswordPolicyMessage } from '../../../services/api';
 import { useAuth } from '../../AuthContext';
+import { validateImageFile } from '../../hooks/landingShared';
 
 interface PerfilCliente {
   nombre: string;
@@ -132,13 +133,10 @@ export function MiPerfil() {
       setFotoArchivo(null);
       return;
     }
-    if (!ALLOWED_FOTO_TYPES.includes(file.type)) {
-      toast.error('Formato no permitido', { description: 'Use JPG, PNG o WEBP.' });
-      e.target.value = '';
-      return;
-    }
-    if (file.size > MAX_FOTO_BYTES) {
-      toast.error('Imagen muy grande', { description: 'El tamaño máximo es 2 MB.' });
+    // Validar imagen con lógica flexible (MIME type O extensión)
+    const validation = validateImageFile(file);
+    if (!validation.valid) {
+      toast.error('Archivo rechazado', { description: validation.error || 'No se puede procesar esta imagen.' });
       e.target.value = '';
       return;
     }
