@@ -73,6 +73,8 @@ export interface PedidoRecord {
   id: number;
   fecha?: string;
   fechaPedido?: string;
+  createdAt?: string;
+  created_at?: string;
   fechaEntrega?: string;
   direccion?: string;
   telefono?: string;

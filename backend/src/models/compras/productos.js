@@ -88,14 +88,30 @@ const parseInsumoMedidasForProduct = (tipoProducto, data) => {
   return { u, q: qRaw };
 };
 
+/** Última compra recibida por producto: precio de compra y % de ganancia para el detalle en catálogo. */
+const ULTIMA_COMPRA_PRODUCTO_JOIN = `
+  LEFT JOIN LATERAL (
+    SELECT dc.precio_unitario, dc.porcentaje_ganancia
+    FROM detalle_compras dc
+    INNER JOIN compras co ON co.id = dc.compra_id
+    WHERE dc.producto_id = p.id
+      AND LOWER(TRIM(COALESCE(co.estado, ''))) IN ('recibida', 'completada')
+    ORDER BY COALESCE(co.fecha, co.created_at::date) DESC, co.id DESC
+    LIMIT 1
+  ) ultima_compra ON TRUE
+`;
+
 const Productos = {
   getAll: async () => {
     await ensureProductoTipoColumn();
     await ensureProductoInsumoMedidaColumns();
     const result = await pool.query(`
-      SELECT p.*, c.nombre as categoria 
+      SELECT p.*, c.nombre as categoria,
+             ultima_compra.precio_unitario AS precio_compra,
+             ultima_compra.porcentaje_ganancia AS ganancia
       FROM productos p 
       JOIN categorias c ON p.categoria_id = c.id 
+      ${ULTIMA_COMPRA_PRODUCTO_JOIN}
       ORDER BY
         CASE WHEN LOWER(TRIM(COALESCE(p.estado, ''))) = 'activo' THEN 0 ELSE 1 END,
         p.id DESC
@@ -105,9 +121,12 @@ const Productos = {
   getById: async (id) => {
     await ensureProductoInsumoMedidaColumns();
     const result = await pool.query(`
-      SELECT p.*, c.nombre as categoria 
+      SELECT p.*, c.nombre as categoria,
+             ultima_compra.precio_unitario AS precio_compra,
+             ultima_compra.porcentaje_ganancia AS ganancia
       FROM productos p 
       JOIN categorias c ON p.categoria_id = c.id 
+      ${ULTIMA_COMPRA_PRODUCTO_JOIN}
       WHERE p.id = $1
     `, [id]);
     return result.rows[0];

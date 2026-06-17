@@ -39,6 +39,6 @@ router.use('/api/entregas-insumos', authenticateJWT, entregasInsumosRoutes);
 router.use('/api/produccion', authenticateJWT, produccionRoutes);
 router.use('/api/producto-insumos', authenticateJWT, productoInsumosRoutes);
 router.use('/api/roles', authenticateJWT, authorizeAdministrador, rolesRoutes);
-router.use('/api/usuarios', authenticateJWT, authorizeAdministrador, usuariosRoutes);
+router.use('/api/usuarios', authenticateJWT, usuariosRoutes);
 
 module.exports = router;

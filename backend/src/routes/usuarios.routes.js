@@ -7,7 +7,11 @@ const { idParam } = require('../validators/params.schema');
 const { createUsuarioBody, updateUsuarioBody, updateUsuarioEstadoBody } = require('../validators/usuarios.schema');
 
 const router = express.Router();
-router.get('/', authorizePermissions('Ver Usuarios'), controller.getAll);
+router.get(
+  '/',
+  authorizePermissions('Ver Usuarios', 'Ver Producción', 'Entregar Insumos'),
+  controller.getAll
+);
 router.get('/email/:email', authorizePermissions('Ver Usuarios'), controller.getByEmail);
 router.get('/documento/:documento', authorizePermissions('Ver Usuarios'), controller.getByDocumento);
 router.get('/telefono/:telefono', authorizePermissions('Ver Usuarios'), controller.getByTelefono);

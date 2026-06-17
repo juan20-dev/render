@@ -287,8 +287,14 @@ export function mapProducto(r: any): Producto {
         ? 'de preparacion'
         : 'terminado';
   const precioVenta = Number(r.precio ?? r.precio_venta ?? 0);
-  const precioCompra = Number(r.precio_compra ?? r.precioCompra ?? precioVenta);
-  const ganancia = Number(r.ganancia ?? (precioCompra > 0 ? ((precioVenta - precioCompra) / precioCompra) * 100 : 0));
+  const precioCompra = Number(r.precio_compra ?? r.precioCompra ?? 0);
+  const gananciaDb = r.ganancia ?? r.porcentaje_ganancia ?? r.porcentajeGanancia;
+  const ganancia =
+    gananciaDb != null && gananciaDb !== ''
+      ? Number(gananciaDb)
+      : precioCompra > 0
+        ? ((precioVenta - precioCompra) / precioCompra) * 100
+        : 0;
   return {
     id: Number(r.id),
     nombre: r.nombre || '',

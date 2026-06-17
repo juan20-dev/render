@@ -83,6 +83,9 @@ const cleanupRecentPedidoCreateCache = () => {
   }
 };
 
+const fechaHoyColombia = () =>
+  new Date().toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
+
 module.exports = {
   getAll: async (req, res) => {
     try {
@@ -203,6 +206,9 @@ module.exports = {
           message: 'URL de comprobante inválida.',
         });
       }
+
+      // La fecha del pedido se registra en servidor (no se confía en el reloj del cliente).
+      body.fecha = fechaHoyColombia();
 
       if (body.cliente_id) {
         cleanupRecentPedidoCreateCache();

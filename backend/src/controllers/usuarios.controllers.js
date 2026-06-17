@@ -15,7 +15,15 @@ const {
   sendAccountDeletedNotification,
   sendWelcomeEmail,
 } = require('../services/email.service');
+const pool = require('../../db');
 const { isClienteUser } = require('../utils/selfServiceAccess');
+const { roleGrantsPermission } = require('../models/shared/auditoria');
+
+const getRolePermissions = async (req) => {
+  if (!req.user?.rol_id) return [];
+  const roleResult = await pool.query('SELECT permisos FROM roles WHERE id = $1', [req.user.rol_id]);
+  return Array.isArray(roleResult.rows[0]?.permisos) ? roleResult.rows[0].permisos : [];
+};
 
 module.exports = {
   getAll: async (req, res) => {
@@ -41,6 +49,20 @@ module.exports = {
         fechaHasta: typeof req.query?.fecha_hasta === 'string' ? req.query.fecha_hasta : null,
         limit: req.query?.limit ? Number(req.query.limit) : undefined,
       };
+
+      // Producción / entregas: listar solo productores sin conceder gestión completa de usuarios.
+      if (req.user?.rol !== 'Administrador') {
+        const permisos = await getRolePermissions(req);
+        if (!roleGrantsPermission(permisos, 'Ver Usuarios')) {
+          const prodRole = await pool.query(
+            `SELECT id FROM roles WHERE LOWER(TRIM(nombre)) = 'productor' LIMIT 1`
+          );
+          const prodRolId = Number(prodRole.rows[0]?.id);
+          if (Number.isFinite(prodRolId) && prodRolId > 0) {
+            filters.rolId = prodRolId;
+          }
+        }
+      }
 
       const usuarios = await models.Usuarios.getAll(filters);
       res.json({ success: true, data: usuarios });

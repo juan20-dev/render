@@ -4,6 +4,34 @@ import { Button } from '../Button';
 import { formatEntityCode } from '../../services/mappers';
 import { PedidoRecord, getPedidoStatusClasses } from '../hooks/landingShared';
 
+function formatFechaCreacionPedido(pedido: PedidoRecord): string {
+  const ts = String(pedido.createdAt || pedido.created_at || '').trim();
+  if (ts) {
+    const parsed = new Date(ts);
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed.toLocaleDateString('es-CO', {
+        day: '2-digit',
+        month: 'long',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    }
+  }
+  const fechaSolo = String(pedido.fechaPedido || pedido.fecha || '').split('T')[0];
+  if (fechaSolo) {
+    const [y, m, d] = fechaSolo.split('-').map(Number);
+    if (y && m && d) {
+      return new Date(y, m - 1, d).toLocaleDateString('es-CO', {
+        day: '2-digit',
+        month: 'long',
+        year: 'numeric',
+      });
+    }
+  }
+  return '—';
+}
+
 interface MyOrdersModalProps {
   isOpen: boolean;
   pedidos: PedidoRecord[];
@@ -70,15 +98,7 @@ export function MyOrdersModal({
                     <div>
                       <h4 className="text-sm mb-1">Pedido {formatEntityCode('P', pedido.id)}</h4>
                       <p className="text-xs text-muted-foreground">
-                        {new Date(
-                          String(pedido.fechaPedido || pedido.fecha || '')
-                        ).toLocaleDateString('es-CO', {
-                          day: '2-digit',
-                          month: 'long',
-                          year: 'numeric',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })}
+                        {formatFechaCreacionPedido(pedido)}
                       </p>
                     </div>
                     <span
