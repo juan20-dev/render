@@ -86,6 +86,22 @@ const cleanupRecentPedidoCreateCache = () => {
 const fechaHoyColombia = () =>
   new Date().toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
 
+const validarFechaEntrega = (fechaEntrega, fechaPedido) => {
+  const hoy = fechaHoyColombia();
+  const fe = String(fechaEntrega || '').trim().split('T')[0];
+  if (!fe || !/^\d{4}-\d{2}-\d{2}$/.test(fe)) {
+    return 'La fecha de entrega es obligatoria y debe tener formato AAAA-MM-DD';
+  }
+  if (fe < hoy) {
+    return 'La fecha de entrega no puede ser una fecha pasada';
+  }
+  const fp = String(fechaPedido || hoy).trim().split('T')[0];
+  if (fe < fp) {
+    return 'La fecha de entrega debe ser mayor o igual a la fecha del pedido';
+  }
+  return null;
+};
+
 module.exports = {
   getAll: async (req, res) => {
     try {
@@ -210,6 +226,11 @@ module.exports = {
       // La fecha del pedido se registra en servidor (no se confía en el reloj del cliente).
       body.fecha = fechaHoyColombia();
 
+      const fechaEntregaError = validarFechaEntrega(body.fecha_entrega, body.fecha);
+      if (fechaEntregaError) {
+        return res.status(400).json({ success: false, message: fechaEntregaError });
+      }
+
       if (body.cliente_id) {
         cleanupRecentPedidoCreateCache();
         const fingerprint = buildPedidoFingerprint(body.cliente_id, body);
@@ -283,17 +304,40 @@ module.exports = {
           try {
             const pedidoCreado = await models.Pedidos.getById(pedidoIdCreado);
             const detallesPedido = await models.Pedidos.getDetalles(pedidoIdCreado);
+            const abonosPedido = await models.Abonos.getByPedido(pedidoIdCreado);
+            const abonoInicial = Array.isArray(abonosPedido) && abonosPedido.length > 0 ? abonosPedido[0] : null;
+            const totalDetalle = detallesPedido.reduce(
+              (sum, item) => sum + Number(item.subtotal ?? Number(item.precio_unitario || 0) * Number(item.cantidad || 0)),
+              0
+            );
+            const totalPedido = Number(pedidoCreado?.total || 0) > 0 ? Number(pedidoCreado.total) : totalDetalle;
+            const montoAbonado = Number(pedidoCreado?.monto_abonado ?? abonoInicial?.monto ?? 0);
+            let clienteDocumento = null;
+            try {
+              const clienteRes = await pool.query(
+                'SELECT numero_documento FROM clientes WHERE id = $1 LIMIT 1',
+                [pedidoCreado.cliente_id]
+              );
+              const doc = clienteRes.rows[0]?.numero_documento;
+              if (doc) clienteDocumento = String(doc).trim();
+            } catch {
+              /* documento opcional en PDF */
+            }
             if (pedidoCreado?.email) {
               await sendPedidoCreatedEmail({
                 to: pedidoCreado.email,
                 clienteNombre: pedidoCreado.cliente,
                 numeroPedido: pedidoCreado.numero_pedido,
+                pedidoId: pedidoIdCreado,
+                clienteDocumento,
                 fechaPedido: pedidoCreado.fecha,
                 fechaEntrega: pedidoCreado.fecha_entrega,
                 estado: pedidoCreado.estado,
                 metodoPago: pedidoCreado.metodo_pago,
                 esquemaAbono: pedidoCreado.esquema_abono,
-                total: pedidoCreado.total,
+                total: totalPedido,
+                montoAbonado,
+                saldoPendiente: Math.max(0, totalPedido - montoAbonado),
                 direccion: pedidoCreado.direccion,
                 telefono: pedidoCreado.telefono,
                 detalles: pedidoCreado.detalles,
@@ -301,8 +345,9 @@ module.exports = {
                   nombre: item.producto_nombre,
                   cantidad: item.cantidad,
                   precioUnitario: item.precio_unitario,
-                  subtotal: item.subtotal,
+                  subtotal: item.subtotal ?? Number(item.precio_unitario || 0) * Number(item.cantidad || 0),
                 })),
+                abono: abonoInicial,
               });
             }
           } catch (mailError) {
@@ -363,6 +408,15 @@ module.exports = {
           fecha_entrega: req.body.fecha_entrega,
           detalles: req.body.detalles,
         };
+        if (allowed.fecha_entrega !== undefined) {
+          const fechaEntregaError = validarFechaEntrega(
+            allowed.fecha_entrega,
+            pedido.fecha || fechaHoyColombia()
+          );
+          if (fechaEntregaError) {
+            return res.status(400).json({ success: false, message: fechaEntregaError });
+          }
+        }
         const merged = buildPedidoUpdatePayload(pedido, {
           fecha: pedido.fecha,
           fecha_entrega: allowed.fecha_entrega,
@@ -430,6 +484,15 @@ module.exports = {
       }
       const updateBody = { ...req.body };
       delete updateBody.productos;
+      if (updateBody.fecha_entrega !== undefined) {
+        const fechaEntregaError = validarFechaEntrega(
+          updateBody.fecha_entrega,
+          pedido.fecha || fechaHoyColombia()
+        );
+        if (fechaEntregaError) {
+          return res.status(400).json({ success: false, message: fechaEntregaError });
+        }
+      }
       await models.Pedidos.update(req.params.id, buildPedidoUpdatePayload(pedido, updateBody));
       return res.json({ success: true, message: 'Pedido actualizado exitosamente' });
     } catch (error) {

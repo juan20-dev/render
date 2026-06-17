@@ -8,7 +8,7 @@ import { api } from '../../../services/api';
 import { toast } from '../../AlertDialog';
 import { useAuth } from '../../AuthContext';
 import type { EntregaInsumo, Usuario } from '../../../services/types';
-import { formatEntityCode } from '../../../services/mappers';
+import { formatEntityCode, formatQuantityDisplay } from '../../../services/mappers';
 
 function esRolProductor(u: Usuario) {
   return /^productor$/i.test(String(u.rol || '').trim());
@@ -174,7 +174,8 @@ export function EntregaInsumos() {
       label: 'Cantidad',
       render: (cantidad: number, row: EntregaInsumoView) => {
         const { cantidad: c, unidad } = cantidadEntregaParaTabla(cantidad, row, catalogoInsumos);
-        const n = Number.isInteger(c) ? String(c) : c.toFixed(2);
+        const decimals = Number.isInteger(c) ? 0 : 2;
+        const n = formatQuantityDisplay(c, decimals);
         return `${n} ${unidad}`;
       },
     },

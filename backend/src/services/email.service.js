@@ -1,6 +1,7 @@
 const nodemailer = require('nodemailer');
 const path = require('path');
 const fs = require('fs');
+const puppeteer = require('puppeteer');
 const config = require('../../config');
 
 let cachedTransporter = null;
@@ -522,33 +523,384 @@ const sendAccountDeletedNotification = async ({ to, name, motivo, changedBy, acc
 
 const formatMoneyCop = (value) => {
   const amount = Number(value || 0);
-  if (!Number.isFinite(amount)) return '$0';
+  if (!Number.isFinite(amount)) return '$ 0 COP';
+  const formatted = new Intl.NumberFormat('es-CO', { maximumFractionDigits: 0 }).format(amount);
+  return `$ ${formatted} COP`;
+};
+
+/** Mismo formato que Pedidos.tsx / Abonos.tsx (Intl currency COP). */
+const formatCurrency = (value) => {
+  const amount = Number(value || 0);
+  const safe = Number.isFinite(amount) ? amount : 0;
   return new Intl.NumberFormat('es-CO', {
     style: 'currency',
     currency: 'COP',
-    maximumFractionDigits: 0,
-  }).format(amount);
+    minimumFractionDigits: 0,
+  }).format(safe);
+};
+
+const formatEntityCode = (prefix, value) => {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue) || numericValue <= 0) {
+    return `${prefix}000`;
+  }
+  return `${prefix}${String(Math.trunc(numericValue)).padStart(3, '0')}`;
+};
+
+const formatDateOnly = (value) => {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  return raw.split('T')[0] || raw;
+};
+
+const metodoPagoUi = (value) => {
+  const t = String(value || '').trim().toLowerCase();
+  if (t === 'transferencia') return 'transferencia';
+  return 'efectivo';
+};
+
+const pedidoEstadoUi = (value) => {
+  const t = String(value || '').trim().toLowerCase();
+  if (!t) return 'pendiente';
+  if (t.includes('cancel')) return 'cancelado';
+  if (t.includes('complet')) return 'completado';
+  if (t.includes('proceso')) return 'en proceso';
+  if (t.includes('pendiente')) return 'pendiente';
+  return 'pendiente';
+};
+
+const pedidoEstadoPdfLabel = (estadoUi) => {
+  if (estadoUi === 'completado') return 'Completado';
+  if (estadoUi === 'en proceso') return 'En Proceso';
+  if (estadoUi === 'pendiente') return 'Pendiente';
+  return 'Cancelado';
+};
+
+const abonoEstadoUi = (value) => {
+  const t = String(value || '').trim().toLowerCase();
+  if (t.includes('cancel')) return 'cancelado';
+  if (t.includes('finaliz')) return 'finalizado';
+  if (t.includes('aplic')) return 'aplicado';
+  if (t.includes('verific')) return 'verificado';
+  return 'registrado';
+};
+
+const labelEstadoAbonoPdf = (estadoUi) => {
+  if (estadoUi === 'verificado') return 'Verificado';
+  if (estadoUi === 'cancelado') return 'Cancelado';
+  if (estadoUi === 'aplicado') return 'Aplicado';
+  if (estadoUi === 'finalizado') return 'Finalizado';
+  return 'Registrado';
+};
+
+/**
+ * Plantilla HTML idéntica a buildPrintablePdfHtml en frontend/src/app/components/DataTable.tsx
+ * (misma estructura que la acción «Ver PDF» del pedido y del abono).
+ */
+const buildPrintablePdfHtml = (opts, options = {}) => {
+  const logoUrl = options.logoUrl || getLogoDataUri();
+  const includeToolbar = options.includeToolbar !== false;
+
+  const logoHeader = `<div style="display:flex;align-items:center;gap:14px;margin-bottom:20px;padding-bottom:16px;border-bottom:2px solid #e2e8f0">
+    <img src="${logoUrl}" alt="Grandma's Liquors" width="56" height="56" style="border-radius:10px;object-fit:contain" onerror="this.style.display='none'" />
+    <div>
+      <p style="margin:0;font-size:11px;color:#64748b;letter-spacing:.04em;text-transform:uppercase">Grandma's Liquors</p>
+      <p style="margin:2px 0 0 0;font-size:13px;color:#475569">Comprobante oficial</p>
+    </div>
+  </div>`;
+
+  const sectionsHtml = (opts.sections || [])
+    .map((sec) => {
+      const head = sec.title
+        ? `<h3 style="margin:0 0 8px 0;color:#0f172a;border-bottom:1px solid #e2e8f0;padding-bottom:6px">${escapeHtml(
+            sec.title
+          )}</h3>`
+        : '';
+      const rowsHtml = (sec.rows || [])
+        .map(
+          (r) =>
+            `<div style="display:flex;justify-content:space-between;gap:12px;padding:4px 0;border-bottom:1px dashed #f1f5f9"><span style="color:#475569">${escapeHtml(
+              r.label
+            )}</span><strong style="color:#0f172a;text-align:right">${escapeHtml(
+              r.value
+            )}</strong></div>`
+        )
+        .join('');
+      const textHtml = sec.text
+        ? `<p style="margin:8px 0;color:#334155;white-space:pre-line">${escapeHtml(sec.text)}</p>`
+        : '';
+      const tableHtml = sec.table
+        ? `<table style="width:100%;border-collapse:collapse;margin-top:8px"><thead><tr>${sec.table.headers
+            .map(
+              (h) =>
+                `<th style="text-align:left;padding:6px;border-bottom:2px solid #cbd5e1;background:#f8fafc;color:#334155">${escapeHtml(
+                  h
+                )}</th>`
+            )
+            .join('')}</tr></thead><tbody>${sec.table.rows
+            .map(
+              (row) =>
+                `<tr>${row
+                  .map(
+                    (cell) =>
+                      `<td style="padding:6px;border-bottom:1px solid #e2e8f0;color:#0f172a">${escapeHtml(
+                        cell
+                      )}</td>`
+                  )
+                  .join('')}</tr>`
+            )
+            .join('')}</tbody></table>`
+        : '';
+      return `<section style="margin:18px 0">${head}${rowsHtml}${textHtml}${tableHtml}</section>`;
+    })
+    .join('');
+
+  const toolbarHtml = includeToolbar
+    ? `<div class="toolbar">
+  <button onclick="window.close()">Cerrar</button>
+  <button class="primary" onclick="window.print()">Descargar PDF</button>
+</div>`
+    : '';
+
+  return `<!doctype html>
+<html lang="es"><head><meta charset="utf-8"/>
+<title>${escapeHtml(opts.title)}</title>
+<style>
+  *{box-sizing:border-box}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;margin:0;background:#f1f5f9;color:#0f172a}
+  .toolbar{position:sticky;top:0;display:flex;gap:8px;justify-content:flex-end;padding:12px 16px;background:#ffffffee;border-bottom:1px solid #e2e8f0;backdrop-filter:blur(6px);z-index:10}
+  .toolbar button{cursor:pointer;border:1px solid #cbd5e1;background:#ffffff;border-radius:8px;padding:8px 16px;font-size:14px;color:#0f172a}
+  .toolbar button.primary{background:#0f172a;color:#ffffff;border-color:#0f172a}
+  .page{max-width:780px;margin:24px auto;padding:32px;background:#ffffff;border-radius:12px;box-shadow:0 1px 2px rgba(15,23,42,.06),0 8px 24px rgba(15,23,42,.06)}
+  h1{margin:0 0 4px 0;font-size:20px}
+  .sub{color:#64748b;margin:0 0 16px 0;font-size:13px}
+  .footer{margin-top:24px;color:#94a3b8;font-size:12px;border-top:1px dashed #e2e8f0;padding-top:12px}
+  @media print{
+    .toolbar{display:none}
+    body{background:#ffffff}
+    .page{box-shadow:none;border-radius:0;margin:0;max-width:100%}
+  }
+</style>
+</head><body>
+${toolbarHtml}
+<div class="page">
+  ${logoHeader}
+  <h1>${escapeHtml(opts.title)}</h1>
+  ${opts.subtitle ? `<p class="sub">${escapeHtml(opts.subtitle)}</p>` : ''}
+  ${sectionsHtml}
+  ${opts.footer ? `<p class="footer">${escapeHtml(opts.footer)}</p>` : ''}
+</div>
+<script>window.addEventListener('load',function(){setTimeout(function(){try{window.focus()}catch(e){}},200)});</script>
+</body></html>`;
+};
+
+/** Convierte el HTML imprimible (igual que «Ver PDF») a PDF binario mediante Chromium. */
+const htmlToPdfBuffer = async (html) => {
+  const browser = await puppeteer.launch({
+    headless: true,
+    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
+  });
+  try {
+    const page = await browser.newPage();
+    await page.setContent(html, { waitUntil: 'load', timeout: 30000 });
+    await page.evaluate(() => document.fonts && document.fonts.ready);
+    return await page.pdf({
+      format: 'A4',
+      printBackground: true,
+      preferCSSPageSize: true,
+    });
+  } finally {
+    await browser.close();
+  }
+};
+
+const buildPedidoReportOpts = ({
+  pedidoId,
+  clienteNombre,
+  clienteDocumento,
+  fechaPedido,
+  fechaEntrega,
+  direccion,
+  telefono,
+  metodoPago,
+  estado,
+  esquemaAbono,
+  productos,
+  total,
+  montoAbonado,
+}) => {
+  const lineas = Array.isArray(productos) ? productos : [];
+  const totalNum = Number(total || 0);
+  const montoAbonadoNum = Number(montoAbonado || 0);
+  const porcentajeAbono = String(esquemaAbono || '').includes('50') ? 50 : 100;
+  const estadoUi = pedidoEstadoUi(estado);
+
+  return {
+    title: `Pedido ${formatEntityCode('P', pedidoId)}`,
+    subtitle: `Generado el ${new Date().toLocaleString('es-CO')}`,
+    sections: [
+      {
+        title: 'Datos generales',
+        rows: [
+          { label: 'Cliente', value: clienteNombre || 'N/D' },
+          ...(clienteDocumento ? [{ label: 'Documento cliente', value: clienteDocumento }] : []),
+          { label: 'Fecha del pedido', value: formatDateOnly(fechaPedido) },
+          { label: 'Fecha de entrega', value: formatDateOnly(fechaEntrega) },
+          { label: 'Dirección de entrega', value: direccion || 'No especificada' },
+          { label: 'Teléfono de contacto', value: telefono || 'No especificado' },
+          { label: 'Método de pago', value: metodoPagoUi(metodoPago) },
+          { label: 'Estado', value: pedidoEstadoPdfLabel(estadoUi) },
+        ],
+      },
+      {
+        title: 'Productos',
+        table: {
+          headers: ['Producto', 'Cantidad', 'Precio unit.', 'Subtotal'],
+          rows: lineas.map((item, index) => {
+            const nombre = String(item?.nombre || '').trim() || `Producto ${item?.productoId ?? index + 1}`;
+            const cantidad = Number(item?.cantidad || 0);
+            const precioUnitario = Number(item?.precioUnitario ?? item?.precio ?? 0);
+            const subtotal = Number(
+              item?.subtotal ?? (Number.isFinite(precioUnitario) ? precioUnitario * cantidad : 0)
+            );
+            return [nombre, cantidad, formatCurrency(precioUnitario), formatCurrency(subtotal)];
+          }),
+        },
+      },
+      {
+        title: 'Totales y abono',
+        rows: [
+          { label: 'Total', value: formatCurrency(totalNum) },
+          {
+            label: 'Abono',
+            value: `${porcentajeAbono}% (${formatCurrency(montoAbonadoNum)})`,
+          },
+          {
+            label: 'Saldo pendiente',
+            value: formatCurrency(Math.max(0, totalNum - montoAbonadoNum)),
+          },
+        ],
+      },
+    ],
+    footer:
+      'Comprobante generado por Grandma\u2019s Liquors. Use "Descargar PDF" para guardar o imprimir.',
+  };
+};
+
+const buildAbonoReportOpts = ({
+  abonoId,
+  pedidoId,
+  clienteNombre,
+  fecha,
+  metodoPago,
+  estado,
+  valorTotal,
+  montoAbonado,
+  porcentajeAbonado,
+  detalle,
+}) => {
+  const totalPedido = Number(valorTotal || 0);
+  const monto = Number(montoAbonado || 0);
+  const pctRaw = Number(porcentajeAbonado ?? NaN);
+  const pct =
+    Number.isFinite(pctRaw) && pctRaw > 0
+      ? Math.round(pctRaw)
+      : totalPedido > 0 && monto >= 0
+        ? Math.round((monto / totalPedido) * 100)
+        : 0;
+  const estadoUi = abonoEstadoUi(estado);
+  const pedidoLabel = pedidoId ? formatEntityCode('P', pedidoId) : 'N/D';
+
+  return {
+    title: `Abono ${formatEntityCode('A', abonoId)}`,
+    subtitle: `Generado el ${new Date().toLocaleString('es-CO')}`,
+    sections: [
+      {
+        title: 'Datos generales',
+        rows: [
+          { label: 'Pedido', value: pedidoLabel },
+          { label: 'Cliente', value: clienteNombre || 'Desconocido' },
+          { label: 'Fecha', value: formatDateOnly(fecha) },
+          { label: 'Método de pago', value: metodoPagoUi(metodoPago) },
+          { label: 'Estado', value: labelEstadoAbonoPdf(estadoUi) },
+        ],
+      },
+      {
+        title: 'Importes',
+        rows: [
+          { label: 'Valor total del pedido', value: formatCurrency(totalPedido) },
+          { label: 'Monto abonado', value: formatCurrency(monto) },
+          { label: 'Porcentaje abonado', value: `${pct}%` },
+          {
+            label: 'Saldo pendiente',
+            value: formatCurrency(Math.max(0, totalPedido - monto)),
+          },
+        ],
+      },
+      ...(detalle
+        ? [
+            {
+              title: 'Detalles del abono (consolidado)',
+              text: String(detalle),
+            },
+          ]
+        : []),
+    ],
+    footer:
+      'Comprobante generado por Grandma\u2019s Liquors. Use "Descargar PDF" para guardar o imprimir.',
+  };
+};
+
+const buildPedidoPdfBuffer = async (data) => {
+  const html = buildPrintablePdfHtml(buildPedidoReportOpts(data), { logoUrl: getLogoDataUri() });
+  return htmlToPdfBuffer(html);
+};
+
+const buildAbonoPdfBuffer = async (data) => {
+  const html = buildPrintablePdfHtml(buildAbonoReportOpts(data), { logoUrl: getLogoDataUri() });
+  return htmlToPdfBuffer(html);
+};
+
+const formatFechaCorreo = (value) => {
+  const raw = String(value || '').trim();
+  if (!raw) return 'N/D';
+  const parsed = new Date(raw);
+  if (!Number.isNaN(parsed.getTime())) {
+    return parsed.toLocaleString('es-CO', {
+      day: '2-digit',
+      month: 'long',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  }
+  return raw.split('T')[0] || raw;
 };
 
 const sendPedidoCreatedEmail = async ({
   to,
   clienteNombre,
   numeroPedido,
+  pedidoId,
+  clienteDocumento,
   fechaPedido,
   fechaEntrega,
   estado,
   metodoPago,
   esquemaAbono,
   total,
+  montoAbonado,
+  saldoPendiente,
   direccion,
   telefono,
   detalles,
   productos = [],
+  abono = null,
 }) => {
   const safeName = String(clienteNombre || '').trim() || 'cliente';
   const safePedido = String(numeroPedido || '').trim() || 'N/D';
-  const safeFechaPedido = String(fechaPedido || '').trim() || 'N/D';
-  const safeFechaEntrega = String(fechaEntrega || '').trim() || 'N/D';
+  const safeFechaPedido = formatFechaCorreo(fechaPedido);
+  const safeFechaEntrega = formatFechaCorreo(fechaEntrega);
   const safeEstado = String(estado || '').trim() || 'Pendiente';
   const safeMetodoPago = String(metodoPago || '').trim() || 'Efectivo';
   const safeEsquemaAbono = String(esquemaAbono || '').trim() || '100%';
@@ -556,15 +908,22 @@ const sendPedidoCreatedEmail = async ({
   const safeTelefono = String(telefono || '').trim() || 'Sin teléfono registrado';
   const safeDetalles = String(detalles || '').trim();
   const lineas = Array.isArray(productos) ? productos : [];
+  const totalNum = Number(total || 0);
+  const montoAbonadoNum = Number(montoAbonado ?? 0);
+  const saldoNum = Number.isFinite(Number(saldoPendiente))
+    ? Number(saldoPendiente)
+    : Math.max(0, totalNum - montoAbonadoNum);
 
   const productosText = lineas.length
     ? lineas
         .map((item, index) => {
           const nombre = String(item?.nombre || '').trim() || `Producto #${index + 1}`;
           const cantidad = Number(item?.cantidad || 0);
-          const precioUnitario = Number(item?.precioUnitario || 0);
-          const subtotal = Number(item?.subtotal || precioUnitario * cantidad);
-          return `${index + 1}. ${nombre} | Cantidad: ${cantidad} | Precio: ${formatMoneyCop(
+          const precioUnitario = Number(item?.precioUnitario ?? item?.precio ?? 0);
+          const subtotal = Number(
+            item?.subtotal ?? (Number.isFinite(precioUnitario) ? precioUnitario * cantidad : 0)
+          );
+          return `${index + 1}. ${nombre} | Cant: ${cantidad} | Unit: ${formatMoneyCop(
             precioUnitario
           )} | Subtotal: ${formatMoneyCop(subtotal)}`;
         })
@@ -576,8 +935,10 @@ const sendPedidoCreatedEmail = async ({
         .map((item, index) => {
           const nombre = String(item?.nombre || '').trim() || `Producto #${index + 1}`;
           const cantidad = Number(item?.cantidad || 0);
-          const precioUnitario = Number(item?.precioUnitario || 0);
-          const subtotal = Number(item?.subtotal || precioUnitario * cantidad);
+          const precioUnitario = Number(item?.precioUnitario ?? item?.precio ?? 0);
+          const subtotal = Number(
+            item?.subtotal ?? (Number.isFinite(precioUnitario) ? precioUnitario * cantidad : 0)
+          );
           return `
             <tr>
               <td style="padding:8px;border-bottom:1px solid #e2e8f0">${index + 1}</td>
@@ -607,7 +968,9 @@ const sendPedidoCreatedEmail = async ({
       <li style="margin:6px 0"><strong>Estado:</strong> ${escapeHtml(safeEstado)}</li>
       <li style="margin:6px 0"><strong>Método de pago:</strong> ${escapeHtml(safeMetodoPago)}</li>
       <li style="margin:6px 0"><strong>Esquema de abono:</strong> ${escapeHtml(safeEsquemaAbono)}</li>
-      <li style="margin:6px 0"><strong>Total:</strong> ${escapeHtml(formatMoneyCop(total))}</li>
+      <li style="margin:6px 0"><strong>Total del pedido:</strong> ${escapeHtml(formatMoneyCop(totalNum))}</li>
+      <li style="margin:6px 0"><strong>Monto abonado:</strong> ${escapeHtml(formatMoneyCop(montoAbonadoNum))}</li>
+      <li style="margin:6px 0"><strong>Saldo pendiente:</strong> ${escapeHtml(formatMoneyCop(saldoNum))}</li>
       <li style="margin:6px 0"><strong>Dirección de entrega:</strong> ${escapeHtml(safeDireccion)}</li>
       <li style="margin:6px 0"><strong>Teléfono de contacto:</strong> ${escapeHtml(safeTelefono)}</li>
       ${
@@ -645,16 +1008,80 @@ const sendPedidoCreatedEmail = async ({
     `Estado: ${safeEstado}`,
     `Método de pago: ${safeMetodoPago}`,
     `Esquema de abono: ${safeEsquemaAbono}`,
-    `Total: ${formatMoneyCop(total)}`,
+    `Total del pedido: ${formatMoneyCop(totalNum)}`,
+    `Monto abonado: ${formatMoneyCop(montoAbonadoNum)}`,
+    `Saldo pendiente: ${formatMoneyCop(saldoNum)}`,
     `Dirección de entrega: ${safeDireccion}`,
     `Teléfono de contacto: ${safeTelefono}`,
     safeDetalles ? `Observaciones: ${safeDetalles}` : null,
+    '',
+    'Adjuntos: comprobante PDF del pedido (y del abono si aplica), idéntico al de la acción «Ver PDF» en el sistema.',
     '',
     'Productos:',
     productosText,
   ]
     .filter(Boolean)
     .join('\n');
+
+  const porcentajeAbonoNum =
+    String(safeEsquemaAbono).trim() === '50%' ? 50 : String(safeEsquemaAbono).trim() === '100%' ? 100 : 0;
+
+  const pedidoCode = formatEntityCode('P', pedidoId);
+  let pedidoPdfBuffer;
+  let abonoPdfBuffer;
+  try {
+    pedidoPdfBuffer = await buildPedidoPdfBuffer({
+      pedidoId,
+      clienteNombre: safeName,
+      clienteDocumento,
+      fechaPedido,
+      fechaEntrega,
+      direccion: safeDireccion,
+      telefono: safeTelefono,
+      metodoPago: safeMetodoPago,
+      estado: safeEstado,
+      esquemaAbono: safeEsquemaAbono,
+      productos: lineas,
+      total: totalNum,
+      montoAbonado: montoAbonadoNum,
+    });
+  } catch (pdfError) {
+    console.error('[mail] No se pudo generar PDF de pedido para correo:', pdfError?.message || pdfError);
+    throw new Error('No se pudo generar el comprobante PDF del pedido para el correo de confirmación.');
+  }
+
+  const attachments = [
+    {
+      filename: `Pedido-${pedidoCode}.pdf`,
+      content: pedidoPdfBuffer,
+      contentType: 'application/pdf',
+    },
+  ];
+
+  if (abono && Number(abono.monto) > 0 && abono.id) {
+    try {
+      abonoPdfBuffer = await buildAbonoPdfBuffer({
+        abonoId: abono.id,
+        pedidoId,
+        clienteNombre: safeName,
+        fecha: abono.fecha,
+        metodoPago: abono.metodo_pago || safeMetodoPago,
+        estado: abono.estado,
+        valorTotal: totalNum,
+        montoAbonado: abono.monto,
+        porcentajeAbonado: abono.porcentaje_abonado ?? porcentajeAbonoNum,
+        detalle: abono.detalle,
+      });
+      attachments.push({
+        filename: `Abono-${formatEntityCode('A', abono.id)}.pdf`,
+        content: abonoPdfBuffer,
+        contentType: 'application/pdf',
+      });
+    } catch (pdfError) {
+      console.error('[mail] No se pudo generar PDF de abono para correo:', pdfError?.message || pdfError);
+      throw new Error('No se pudo generar el comprobante PDF del abono para el correo de confirmación.');
+    }
+  }
 
   return sendWithLogging(
     {
@@ -663,6 +1090,7 @@ const sendPedidoCreatedEmail = async ({
       subject: `Grandma's Liquors — Confirmación de pedido ${safePedido}`,
       text,
       html: wrapBrandedHtml('Confirmación de pedido', inner),
+      attachments,
     },
     'pedidoCreated'
   );

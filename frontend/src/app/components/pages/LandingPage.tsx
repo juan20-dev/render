@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { AlertDialog } from '../AlertDialog';
+import { AlertDialog, toast } from '../AlertDialog';
 import { CartDrawer } from '../cart/CartDrawer';
 import { AgeVerificationModal } from '../modals/AgeVerificationModal';
 import { ChangePasswordModal } from '../modals/ChangePasswordModal';
@@ -10,7 +10,7 @@ import { useAgeVerification } from '../hooks/useAgeVerification';
 import { useLandingAuth } from '../hooks/useAuth';
 import { useCart } from '../hooks/useCart';
 import { useCheckout } from '../hooks/useCheckout';
-import { LandingPageProps, consumeLandingScroll, productoDisponibleParaPedido, scrollToSection } from '../hooks/landingShared';
+import { LandingPageProps, consumeLandingScroll, fechaMinimaEntregaColombia, productoDisponibleParaPedido, scrollToSection } from '../hooks/landingShared';
 import { useOrders } from '../hooks/useOrders';
 import { useProducts } from '../hooks/useProducts';
 import { CarouselSection } from '../sections/Carousel/CarouselSection';
@@ -76,6 +76,8 @@ export function LandingPage({
     checkoutDireccionError,
     checkoutTelefonoError,
     checkoutTelefonoDigits,
+    shouldShowFechaEntregaError,
+    checkoutFechaEntregaError,
     checkoutStockError,
     shouldShowComprobanteError,
     checkoutComprobanteError,
@@ -261,6 +263,8 @@ export function LandingPage({
         checkoutDireccionError={checkoutDireccionError}
         checkoutTelefonoError={checkoutTelefonoError}
         checkoutTelefonoDigits={checkoutTelefonoDigits}
+        shouldShowFechaEntregaError={shouldShowFechaEntregaError}
+        checkoutFechaEntregaError={checkoutFechaEntregaError}
         checkoutStockError={checkoutStockError}
         shouldShowComprobanteError={shouldShowComprobanteError}
         checkoutComprobanteError={checkoutComprobanteError}
@@ -278,6 +282,16 @@ export function LandingPage({
         onTelefonoChange={(value) => {
                         setCheckoutTouched((prev) => ({ ...prev, telefono: true }));
           setCheckoutData((prev) => ({ ...prev, telefono: value }));
+        }}
+        onFechaEntregaChange={(value) => {
+          const fechaEnt = value;
+          const hoy = fechaMinimaEntregaColombia();
+          if (fechaEnt < hoy) {
+            toast.warning('La fecha de entrega no puede ser una fecha pasada');
+            return;
+          }
+          setCheckoutTouched((prev) => ({ ...prev, fechaEntrega: true }));
+          setCheckoutData((prev) => ({ ...prev, fechaEntrega: fechaEnt }));
         }}
         onObservacionesChange={(value) => {
           setCheckoutData((prev) => ({ ...prev, observaciones: value }));

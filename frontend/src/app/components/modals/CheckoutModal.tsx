@@ -2,7 +2,8 @@ import React from 'react';
 import { X } from 'lucide-react';
 import { Button } from '../Button';
 import { FieldError, FormField } from '../Form';
-import { CartItem, CheckoutData, CHECKOUT_CUENTA_TRANSFERENCIA, CHECKOUT_QR_URL } from '../hooks/landingShared';
+import { CartItem, CheckoutData, CHECKOUT_CUENTA_TRANSFERENCIA, CHECKOUT_QR_URL, fechaMinimaEntregaColombia } from '../hooks/landingShared';
+import { formatCurrencyCop } from '../../services/mappers';
 
 interface CheckoutModalProps {
   isOpen: boolean;
@@ -15,6 +16,8 @@ interface CheckoutModalProps {
   checkoutDireccionError: string;
   checkoutTelefonoError: string;
   checkoutTelefonoDigits: string;
+  shouldShowFechaEntregaError: boolean;
+  checkoutFechaEntregaError: string;
   checkoutStockError: CartItem | null;
   shouldShowComprobanteError: boolean;
   checkoutComprobanteError: string;
@@ -26,6 +29,7 @@ interface CheckoutModalProps {
   onPorcentajePagoChange: (value: '100' | '50') => void;
   onDireccionChange: (value: string) => void;
   onTelefonoChange: (value: string) => void;
+  onFechaEntregaChange: (value: string) => void;
   onObservacionesChange: (value: string) => void;
   onComprobanteFile: (file: File | null) => void | Promise<void>;
   onConfirm: () => Promise<void> | void;
@@ -43,6 +47,8 @@ export function CheckoutModal({
   checkoutDireccionError,
   checkoutTelefonoError,
   checkoutTelefonoDigits,
+  shouldShowFechaEntregaError,
+  checkoutFechaEntregaError,
   checkoutStockError,
   shouldShowComprobanteError,
   checkoutComprobanteError,
@@ -54,6 +60,7 @@ export function CheckoutModal({
   onPorcentajePagoChange,
   onDireccionChange,
   onTelefonoChange,
+  onFechaEntregaChange,
   onObservacionesChange,
   onComprobanteFile,
   onConfirm,
@@ -87,20 +94,28 @@ export function CheckoutModal({
             <div className="mb-6">
               <h4 className="mb-4">Resumen del Pedido</h4>
               <div className="space-y-2 bg-background p-4 rounded-lg">
-                {carrito.map((item) => (
-                  <div key={item.producto.id} className="flex justify-between text-sm">
-                    <span>
-                      {item.producto.nombre} x{item.cantidad}
-                    </span>
-                    <span className="text-primary">
-                      ${(item.producto.precio * item.cantidad).toLocaleString('es-CO')}
-                    </span>
-                  </div>
-                ))}
+                {carrito.map((item) => {
+                  const unitario = Number(item.producto.precio) || 0;
+                  const cantidad = Number(item.cantidad) || 0;
+                  const subtotal = unitario * cantidad;
+                  return (
+                    <div key={item.producto.id} className="border-b border-border pb-2 last:border-b-0 last:pb-0">
+                      <p className="text-sm font-medium">{item.producto.nombre}</p>
+                      <div className="flex justify-between text-xs text-muted-foreground mt-1">
+                        <span>Cantidad: {cantidad}</span>
+                        <span>Unitario: {formatCurrencyCop(unitario)}</span>
+                      </div>
+                      <div className="flex justify-between text-sm mt-1">
+                        <span className="text-muted-foreground">Subtotal</span>
+                        <span className="text-primary">{formatCurrencyCop(subtotal)}</span>
+                      </div>
+                    </div>
+                  );
+                })}
                 <div className="border-t border-border pt-2 mt-2">
                   <div className="flex justify-between">
-                    <span>Total</span>
-                    <span className="text-primary">${totalCarrito.toLocaleString('es-CO')}</span>
+                    <span>Total del pedido</span>
+                    <span className="text-primary">{formatCurrencyCop(totalCarrito)}</span>
                   </div>
                 </div>
               </div>
@@ -172,7 +187,7 @@ export function CheckoutModal({
                   <div className="flex-1">
                     <p>Pago Total (100%)</p>
                     <p className="text-xs text-muted-foreground">
-                      ${totalCarrito.toLocaleString('es-CO')}
+                      {formatCurrencyCop(totalCarrito)}
                     </p>
                   </div>
                 </label>
@@ -188,8 +203,8 @@ export function CheckoutModal({
                   <div className="flex-1">
                     <p>Abono Mínimo (50%)</p>
                     <p className="text-xs text-muted-foreground">
-                      ${(totalCarrito * 0.5).toLocaleString('es-CO')} (Saldo: $
-                      {(totalCarrito * 0.5).toLocaleString('es-CO')})
+                      {formatCurrencyCop(totalCarrito * 0.5)} (Saldo:{' '}
+                      {formatCurrencyCop(totalCarrito * 0.5)})
                     </p>
                   </div>
                 </label>
@@ -228,6 +243,17 @@ export function CheckoutModal({
                       ? 'Puedes editar este teléfono si quieres usar otro número de contacto.'
                       : undefined
                   }
+                />
+
+                <FormField
+                  label="Fecha de entrega * (solo fechas futuras)"
+                  name="checkout-fecha-entrega"
+                  type="date"
+                  value={checkoutData.fechaEntrega}
+                  onChange={(value) => onFechaEntregaChange(value as string)}
+                  min={fechaMinimaEntregaColombia()}
+                  required
+                  error={shouldShowFechaEntregaError ? checkoutFechaEntregaError : undefined}
                 />
 
                 <FormField

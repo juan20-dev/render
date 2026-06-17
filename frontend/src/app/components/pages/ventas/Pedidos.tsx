@@ -328,16 +328,23 @@ export function Pedidos() {
     }
 
     const completo = await cargarPedidoCompleto(pedido);
+    const cliente = clientes.find((c) => c.id === completo.clienteId);
+    const nombreCliente = cliente
+      ? `${cliente.nombre} ${cliente.apellido}`.trim()
+      : String(completo.clienteNombre || '').trim();
+
     setSelectedPedido(completo);
     setFormData({
       clienteId: completo.clienteId,
       metodoPago: completo.metodoPago,
       porcentajeAbono: completo.porcentajeAbono,
-      fechaPedido: completo.fechaPedido,
-      fechaEntrega: completo.fechaEntrega,
+      fechaPedido: String(completo.fechaPedido || '').split('T')[0],
+      fechaEntrega: String(completo.fechaEntrega || '').split('T')[0],
       direccion: completo.direccion || '',
       telefono: completo.telefono || ''
     });
+    setBusquedaCliente(nombreCliente);
+    setMostrarListaClientes(false);
 
     const productosForm: ProductoEnForm[] = completo.productos.map(p => {
       const producto = productos.find(prod => prod.id === p.productoId);
@@ -578,12 +585,9 @@ export function Pedidos() {
       setIsSubmittingPedido(true);
       if (selectedPedido) {
         await api.pedidos.update(selectedPedido.id, {
-          clienteId: formData.clienteId,
           productos: productosPedido,
           total,
           metodoPago: formData.metodoPago,
-          porcentajeAbono: formData.porcentajeAbono,
-          montoAbonado,
           fechaPedido: formData.fechaPedido,
           fechaEntrega: formData.fechaEntrega,
           direccion: formData.direccion,
@@ -803,16 +807,26 @@ export function Pedidos() {
                 type="text"
                 value={busquedaCliente}
                 onChange={(e) => {
+                  if (selectedPedido) return;
                   setBusquedaCliente(e.target.value);
                   setMostrarListaClientes(true);
                 }}
-                onFocus={() => setMostrarListaClientes(true)}
+                onFocus={() => {
+                  if (!selectedPedido) setMostrarListaClientes(true);
+                }}
                 placeholder="Escribe ID, nombre o documento del cliente..."
-                className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary disabled:bg-muted disabled:cursor-not-allowed disabled:opacity-70"
                 maxLength={60}
                 required
+                disabled={Boolean(selectedPedido)}
+                readOnly={Boolean(selectedPedido)}
               />
-              {mostrarListaClientes && busquedaCliente && (
+              {selectedPedido && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  El cliente no se puede modificar en pedidos existentes.
+                </p>
+              )}
+              {mostrarListaClientes && busquedaCliente && !selectedPedido && (
                 <div className="absolute z-10 w-full mt-1 bg-white border border-border rounded-lg shadow-lg max-h-60 overflow-y-auto">
                   {clientesFiltrados.length > 0 ? (
                     clientesFiltrados.map(c => (
@@ -909,10 +923,12 @@ export function Pedidos() {
                   { value: 100, label: '100%' }
                 ]}
                 required
+                disabled={Boolean(selectedPedido)}
               />
               {formData.porcentajeAbono > 0 && (
                 <p className="text-xs text-muted-foreground mt-1">
                   Monto a abonar: {formatCurrency(calcularMontoAbonado(calcularTotal(), formData.porcentajeAbono))}
+                  {selectedPedido ? ' (no editable en pedidos existentes)' : ''}
                 </p>
               )}
             </div>

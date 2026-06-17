@@ -94,6 +94,8 @@ export function CartDrawer({
 
               <CartSummary
                 totalCarrito={totalCarrito}
+                cantidadLineas={carrito.length}
+                cantidadUnidades={cantidadItemsCarrito}
                 hayErroresDeStock={hayErroresDeStock}
                 user={user}
                 onCheckout={onCheckout}

@@ -2,6 +2,7 @@ import React from 'react';
 import { Minus, Plus, Trash2 } from 'lucide-react';
 import { FieldError, FieldHelper } from '../Form';
 import { CartItem as CartItemType } from '../hooks/landingShared';
+import { formatCurrencyCop } from '../../services/mappers';
 
 interface CartItemProps {
   item: CartItemType;
@@ -22,6 +23,10 @@ export function CartItem({
   onUpdateQuantity,
   onRemove,
 }: CartItemProps) {
+  const unitario = Number(item.producto.precio) || 0;
+  const cantidad = Number(item.cantidad) || 0;
+  const subtotal = unitario * cantidad;
+
   return (
     <div className="p-4 bg-background rounded-lg border border-border">
       <div className="flex gap-3">
@@ -45,12 +50,13 @@ export function CartItem({
               <Trash2 className="w-4 h-4" />
             </button>
           </div>
-          <p className="text-primary mt-2">${item.producto.precio.toLocaleString('es-CO')}</p>
+          <p className="text-primary mt-2">Unitario: {formatCurrencyCop(unitario)}</p>
         </div>
       </div>
 
       <div className="mt-3 flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
+          <span className="text-xs text-muted-foreground">Cantidad</span>
           <button
             type="button"
             onClick={() => onDecrement(item.producto.id)}
@@ -75,6 +81,10 @@ export function CartItem({
           >
             <Plus className="w-4 h-4" />
           </button>
+        </div>
+        <div className="text-right">
+          <p className="text-xs text-muted-foreground">Subtotal</p>
+          <p className="text-sm text-primary">{formatCurrencyCop(subtotal)}</p>
         </div>
       </div>
 

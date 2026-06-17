@@ -56,11 +56,13 @@ export interface CheckoutData {
   direccion: string;
   telefono: string;
   observaciones: string;
+  fechaEntrega: string;
 }
 
 export interface CheckoutTouched {
   direccion: boolean;
   telefono: boolean;
+  fechaEntrega: boolean;
 }
 
 export interface PasswordData {
@@ -157,10 +159,21 @@ export const GUEST_CART_STORAGE_KEY = 'grandmas_liquors_cart_guest';
 export const getCartStorageKey = (user?: UserData) =>
   user?.email ? `grandmas_liquors_cart_${String(user.email).trim().toLowerCase()}` : GUEST_CART_STORAGE_KEY;
 
+export const fechaMinimaEntregaColombia = () =>
+  new Date().toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
+
+export const fechaEntregaDefaultColombia = () => {
+  const hoy = fechaMinimaEntregaColombia();
+  const [y, m, d] = hoy.split('-').map(Number);
+  const manana = new Date(Date.UTC(y, m - 1, d + 1));
+  return manana.toISOString().split('T')[0];
+};
+
 export const buildCheckoutDefaults = (user?: UserData): CheckoutData => ({
   direccion: String(user?.direccion || '').trim(),
   telefono: String(user?.telefono || '').replace(/\D/g, '').slice(0, 10),
   observaciones: '',
+  fechaEntrega: fechaEntregaDefaultColombia(),
 });
 
 export const createPasswordDefaults = (): PasswordData => ({
@@ -260,8 +273,11 @@ export const getCheckoutValidation = ({
 }) => {
   const checkoutDireccion = checkoutData.direccion.trim();
   const checkoutTelefonoDigits = checkoutData.telefono.replace(/\D/g, '');
+  const checkoutFechaEntrega = String(checkoutData.fechaEntrega || '').trim().split('T')[0];
+  const hoyColombia = fechaMinimaEntregaColombia();
   const shouldShowDireccionError = checkoutTouched.direccion || checkoutAttempted;
   const shouldShowTelefonoError = checkoutTouched.telefono || checkoutAttempted;
+  const shouldShowFechaEntregaError = checkoutTouched.fechaEntrega || checkoutAttempted;
   const checkoutDireccionError = !checkoutDireccion
     ? 'La dirección de entrega es obligatoria.'
     : checkoutDireccion.length < 8
@@ -272,6 +288,13 @@ export const getCheckoutValidation = ({
     : checkoutTelefonoDigits.length !== 10
       ? 'El teléfono de contacto debe tener exactamente 10 dígitos.'
       : '';
+  const checkoutFechaEntregaError = !checkoutFechaEntrega
+    ? 'La fecha de entrega es obligatoria.'
+    : !/^\d{4}-\d{2}-\d{2}$/.test(checkoutFechaEntrega)
+      ? 'La fecha de entrega no es válida.'
+      : checkoutFechaEntrega < hoyColombia
+        ? 'La fecha de entrega no puede ser una fecha pasada.'
+        : '';
   const checkoutStockError = carrito.find((item) => Boolean(getCartItemStockError(item))) || null;
   const comprobanteOk = Boolean(String(comprobanteUrl || '').trim());
   const shouldShowComprobanteError = checkoutAttempted;
@@ -285,6 +308,7 @@ export const getCheckoutValidation = ({
     carrito.length > 0 &&
     !checkoutDireccionError &&
     !checkoutTelefonoError &&
+    !checkoutFechaEntregaError &&
     !checkoutStockError &&
     comprobanteOk &&
     !comprobanteUploading;
@@ -292,10 +316,13 @@ export const getCheckoutValidation = ({
   return {
     checkoutDireccion,
     checkoutTelefonoDigits,
+    checkoutFechaEntrega,
     shouldShowDireccionError,
     shouldShowTelefonoError,
+    shouldShowFechaEntregaError,
     checkoutDireccionError,
     checkoutTelefonoError,
+    checkoutFechaEntregaError,
     checkoutStockError,
     shouldShowComprobanteError,
     checkoutComprobanteError,

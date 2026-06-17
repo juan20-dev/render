@@ -35,6 +35,7 @@ export function useCheckout({
   const [checkoutTouched, setCheckoutTouched] = useState<CheckoutTouched>({
     direccion: false,
     telefono: false,
+    fechaEntrega: false,
   });
   const [checkoutAttempted, setCheckoutAttempted] = useState(false);
   const [comprobanteUrl, setComprobanteUrl] = useState('');
@@ -47,10 +48,13 @@ export function useCheckout({
   const {
     checkoutDireccion,
     checkoutTelefonoDigits,
+    checkoutFechaEntrega,
     shouldShowDireccionError,
     shouldShowTelefonoError,
+    shouldShowFechaEntregaError,
     checkoutDireccionError,
     checkoutTelefonoError,
+    checkoutFechaEntregaError,
     checkoutStockError,
     shouldShowComprobanteError,
     checkoutComprobanteError,
@@ -71,7 +75,7 @@ export function useCheckout({
   const resetCheckoutForm = useCallback(() => {
     setPorcentajePago('100');
     setCheckoutData(buildCheckoutDefaults(user));
-    setCheckoutTouched({ direccion: false, telefono: false });
+    setCheckoutTouched({ direccion: false, telefono: false, fechaEntrega: false });
     setCheckoutAttempted(false);
     setComprobanteUrl('');
     setComprobantePreview('');
@@ -145,12 +149,13 @@ export function useCheckout({
     if (submittingRef.current || isSubmittingPedido) return;
 
     setCheckoutAttempted(true);
-    setCheckoutTouched({ direccion: true, telefono: true });
+    setCheckoutTouched({ direccion: true, telefono: true, fechaEntrega: true });
 
     if (!checkoutValid) {
       toast.error('Datos incompletos', {
         description:
           checkoutComprobanteError ||
+          checkoutFechaEntregaError ||
           checkoutDireccionError ||
           checkoutTelefonoError ||
           (checkoutStockError ? getCartItemStockError(checkoutStockError) : '') ||
@@ -168,7 +173,7 @@ export function useCheckout({
       await api.pedidos.create({
         clienteId: undefined,
         fechaPedido: new Date().toISOString().split('T')[0],
-        fechaEntrega: new Date(Date.now() + 86400000).toISOString().split('T')[0],
+        fechaEntrega: checkoutFechaEntrega,
         metodoPago: 'transferencia',
         porcentajeAbono: porcentajePago === '50' ? 50 : 100,
         total: totalCarrito,
@@ -218,6 +223,8 @@ export function useCheckout({
     checkoutData.observaciones,
     checkoutDireccion,
     checkoutDireccionError,
+    checkoutFechaEntrega,
+    checkoutFechaEntregaError,
     checkoutStockError,
     checkoutTelefonoDigits,
     checkoutTelefonoError,
@@ -246,10 +253,13 @@ export function useCheckout({
     setCheckoutAttempted,
     checkoutDireccion,
     checkoutTelefonoDigits,
+    checkoutFechaEntrega,
     shouldShowDireccionError,
     shouldShowTelefonoError,
+    shouldShowFechaEntregaError,
     checkoutDireccionError,
     checkoutTelefonoError,
+    checkoutFechaEntregaError,
     checkoutStockError,
     shouldShowComprobanteError,
     checkoutComprobanteError,
