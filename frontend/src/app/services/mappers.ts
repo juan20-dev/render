@@ -23,6 +23,26 @@ export const formatEntityCode = (prefix: string, value: number | string | null |
   return `${prefix}${String(Math.trunc(numericValue)).padStart(3, '0')}`;
 };
 
+/** Formato COP explícito para UI (pesos colombianos, sin ambigüedad con otros símbolos $). */
+export const formatCurrencyCop = (value: number) => {
+  const amount = Number.isFinite(Number(value)) ? Number(value) : 0;
+  const formatted = new Intl.NumberFormat('es-CO', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(amount);
+  return `$ ${formatted} COP`;
+};
+
+/** Cantidades con separador de miles (es-CO): 40000 → 40.000 */
+export const formatQuantityDisplay = (value: number, decimals = 0) => {
+  const amount = Number.isFinite(Number(value)) ? Number(value) : 0;
+  return new Intl.NumberFormat('es-CO', {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  }).format(amount);
+};
+
+
 /** Máximo de dígitos para montos COP en campos de entrada (sin centavos). */
 export const MAX_MONEY_DIGITS = 12;
 

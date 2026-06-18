@@ -3,9 +3,12 @@ import { ShoppingBag } from 'lucide-react';
 import { Button } from '../Button';
 import { FieldError } from '../Form';
 import { UserData } from '../hooks/landingShared';
+import { formatCurrencyCop } from '../../services/mappers';
 
 interface CartSummaryProps {
   totalCarrito: number;
+  cantidadLineas: number;
+  cantidadUnidades: number;
   hayErroresDeStock: boolean;
   user?: UserData;
   onCheckout: () => void;
@@ -13,6 +16,8 @@ interface CartSummaryProps {
 
 export function CartSummary({
   totalCarrito,
+  cantidadLineas,
+  cantidadUnidades,
   hayErroresDeStock,
   user,
   onCheckout,
@@ -22,8 +27,16 @@ export function CartSummary({
       <div className="border-t border-border pt-4 mb-6">
         <div className="space-y-2 mb-4">
           <div className="flex justify-between text-sm">
+            <span className="text-muted-foreground">Referencias distintas</span>
+            <span>{cantidadLineas}</span>
+          </div>
+          <div className="flex justify-between text-sm">
+            <span className="text-muted-foreground">Unidades totales</span>
+            <span>{cantidadUnidades}</span>
+          </div>
+          <div className="flex justify-between text-sm">
             <span className="text-muted-foreground">Subtotal</span>
-            <span>${totalCarrito.toLocaleString('es-CO')}</span>
+            <span>{formatCurrencyCop(totalCarrito)}</span>
           </div>
           <div className="flex justify-between text-sm">
             <span className="text-muted-foreground">Domicilio</span>
@@ -32,7 +45,7 @@ export function CartSummary({
         </div>
         <div className="flex justify-between border-t border-border pt-4">
           <span>Total</span>
-          <span className="text-primary">${totalCarrito.toLocaleString('es-CO')}</span>
+          <span className="text-primary">{formatCurrencyCop(totalCarrito)}</span>
         </div>
       </div>
 

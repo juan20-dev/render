@@ -482,12 +482,15 @@ const escapeHtml = (s: string | number) =>
 
 const PDF_LOGO_URL = `${typeof window !== 'undefined' ? window.location.origin : ''}/favicon/android-chrome-192x192.png`;
 
-export function openPrintablePdf(opts: PdfReportOptions): boolean {
-  const w = window.open('', '_blank', 'width=900,height=1000');
-  if (!w) return false;
+export function buildPrintablePdfHtml(
+  opts: PdfReportOptions,
+  options: { logoUrl?: string; includeToolbar?: boolean } = {}
+): string {
+  const logoUrl = options.logoUrl ?? PDF_LOGO_URL;
+  const includeToolbar = options.includeToolbar !== false;
 
   const logoHeader = `<div style="display:flex;align-items:center;gap:14px;margin-bottom:20px;padding-bottom:16px;border-bottom:2px solid #e2e8f0">
-    <img src="${PDF_LOGO_URL}" alt="Grandma's Liquors" width="56" height="56" style="border-radius:10px;object-fit:contain" onerror="this.style.display='none'" />
+    <img src="${logoUrl}" alt="Grandma's Liquors" width="56" height="56" style="border-radius:10px;object-fit:contain" onerror="this.style.display='none'" />
     <div>
       <p style="margin:0;font-size:11px;color:#64748b;letter-spacing:.04em;text-transform:uppercase">Grandma's Liquors</p>
       <p style="margin:2px 0 0 0;font-size:13px;color:#475569">Comprobante oficial</p>
@@ -540,7 +543,14 @@ export function openPrintablePdf(opts: PdfReportOptions): boolean {
     })
     .join('');
 
-  const html = `<!doctype html>
+  const toolbarHtml = includeToolbar
+    ? `<div class="toolbar">
+  <button onclick="window.close()">Cerrar</button>
+  <button class="primary" onclick="window.print()">Descargar PDF</button>
+</div>`
+    : '';
+
+  return `<!doctype html>
 <html lang="es"><head><meta charset="utf-8"/>
 <title>${escapeHtml(opts.title)}</title>
 <style>
@@ -560,10 +570,7 @@ export function openPrintablePdf(opts: PdfReportOptions): boolean {
   }
 </style>
 </head><body>
-<div class="toolbar">
-  <button onclick="window.close()">Cerrar</button>
-  <button class="primary" onclick="window.print()">Descargar PDF</button>
-</div>
+${toolbarHtml}
 <div class="page">
   ${logoHeader}
   <h1>${escapeHtml(opts.title)}</h1>
@@ -573,6 +580,13 @@ export function openPrintablePdf(opts: PdfReportOptions): boolean {
 </div>
 <script>window.addEventListener('load',function(){setTimeout(function(){try{window.focus()}catch(e){}},200)});</script>
 </body></html>`;
+}
+
+export function openPrintablePdf(opts: PdfReportOptions): boolean {
+  const w = window.open('', '_blank', 'width=900,height=1000');
+  if (!w) return false;
+
+  const html = buildPrintablePdfHtml(opts);
 
   w.document.open();
   w.document.write(html);

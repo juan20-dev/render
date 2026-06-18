@@ -1,7 +1,7 @@
 import React from 'react';
 import { ShoppingBag, X } from 'lucide-react';
 import { Button } from '../Button';
-import { formatEntityCode } from '../../services/mappers';
+import { formatEntityCode, formatCurrencyCop } from '../../services/mappers';
 import { PedidoRecord, getPedidoStatusClasses } from '../hooks/landingShared';
 
 function formatFechaCreacionPedido(pedido: PedidoRecord): string {
@@ -111,17 +111,26 @@ export function MyOrdersModal({
                   </div>
 
                   <div className="space-y-2 mb-3">
-                    {(pedido.productos || []).map((item, idx) => (
-                      <div key={`${pedido.id}-${idx}`} className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">
-                          {item.nombre || item.producto?.nombre || `Producto #${item.productoId || 'N/A'}`} x
-                          {item.cantidad || 0}
-                        </span>
-                        <span>
-                          ${((item.producto?.precio || item.precio || 0) * (item.cantidad || 0)).toLocaleString('es-CO')}
-                        </span>
-                      </div>
-                    ))}
+                    {(pedido.productos || []).map((item, idx) => {
+                      const nombre =
+                        item.nombre || item.producto?.nombre || `Producto #${item.productoId || 'N/A'}`;
+                      const cantidad = Number(item.cantidad) || 0;
+                      const unitario = Number(item.precio ?? item.producto?.precio ?? 0);
+                      const subtotal = unitario * cantidad;
+                      return (
+                        <div key={`${pedido.id}-${idx}`} className="border-b border-border pb-2 last:border-b-0 last:pb-0">
+                          <p className="text-sm font-medium">{nombre}</p>
+                          <div className="flex justify-between text-xs text-muted-foreground mt-1">
+                            <span>Cantidad: {cantidad}</span>
+                            <span>Unitario: {formatCurrencyCop(unitario)}</span>
+                          </div>
+                          <div className="flex justify-between text-sm mt-1">
+                            <span className="text-muted-foreground">Subtotal</span>
+                            <span>{formatCurrencyCop(subtotal)}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
 
                   <div className="border-t border-border pt-3 space-y-2">
@@ -158,21 +167,23 @@ export function MyOrdersModal({
                     <div className="flex justify-between text-sm">
                       <span className="text-muted-foreground">Monto pagado</span>
                       <span className="text-primary">
-                        ${Number(pedido.montoAbonado ?? pedido.montoPagado ?? pedido.total ?? 0).toLocaleString('es-CO')}
+                        {formatCurrencyCop(
+                          Number(pedido.montoAbonado ?? pedido.montoPagado ?? pedido.total ?? 0)
+                        )}
                       </span>
                     </div>
                     {Number(pedido.saldo || 0) > 0 && (
                       <div className="flex justify-between text-sm">
                         <span className="text-muted-foreground">Saldo pendiente</span>
                         <span className="text-destructive">
-                          ${Number(pedido.saldo || 0).toLocaleString('es-CO')}
+                          {formatCurrencyCop(Number(pedido.saldo || 0))}
                         </span>
                       </div>
                     )}
                     <div className="flex justify-between border-t border-border pt-2">
                       <span>Total</span>
                       <span className="text-primary">
-                        ${Number(pedido.total || 0).toLocaleString('es-CO')}
+                        {formatCurrencyCop(Number(pedido.total || 0))}
                       </span>
                     </div>
                   </div>

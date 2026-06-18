@@ -101,6 +101,7 @@ const corsOptions = {
       return callback(null, true);
     }
 
+    // Apps móviles nativas (Flutter) suelen omitir Origin; permitir sin bloquear la API.
     if (!origin) {
       return callback(null, true);
     }

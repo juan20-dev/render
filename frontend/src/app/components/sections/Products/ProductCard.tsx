@@ -2,6 +2,7 @@ import React from 'react';
 import { ShoppingCart } from 'lucide-react';
 import { Button } from '../../Button';
 import { Producto } from '../../hooks/landingShared';
+import { formatCurrencyCop } from '../../../services/mappers';
 
 interface ProductCardProps {
   producto: Producto;
@@ -30,7 +31,7 @@ export function ProductCard({ producto, isAvailable, onAddToCart }: ProductCardP
         </p>
         <div className="flex flex-col gap-1.5 sm:gap-2">
           <span className="text-primary text-xs sm:text-sm font-medium">
-            ${producto.precio.toLocaleString('es-CO')}
+            {formatCurrencyCop(producto.precio)}
           </span>
           <Button
             onClick={() => onAddToCart(producto)}

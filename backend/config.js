@@ -20,7 +20,7 @@ if (isProduction && !process.env.JWT_SECRET) {
 
 const defaultCorsOrigins = isProduction
   ? []
-  : ['http://localhost:3000'];
+  : ['http://localhost:3000', 'http://localhost:8080'];
 
 const configuredCorsOrigins = parseCsv(process.env.CORS_ORIGINS);
 
