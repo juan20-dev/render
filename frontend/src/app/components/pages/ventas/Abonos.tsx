@@ -379,11 +379,13 @@ export function Abonos() {
   };
 
   const abonosFiltrados = abonos.filter(abono => {
+    const formattedAbonoId = formatEntityCode('A', abono.id);
     const matchBusqueda = busqueda.length === 0 ||
-      busqueda.length >= 2 &&
-      (abono.clienteNombre?.toLowerCase().includes(busqueda.toLowerCase()) ||
-       abono.pedidoNumero?.toLowerCase().includes(busqueda.toLowerCase()) ||
-       String(abono.id).includes(busqueda));
+      (busqueda.length >= 1 &&
+       (abono.clienteNombre?.toLowerCase().includes(busqueda.toLowerCase()) ||
+        abono.pedidoNumero?.toLowerCase().includes(busqueda.toLowerCase()) ||
+        String(abono.id).includes(busqueda) ||
+        formattedAbonoId.toLowerCase().includes(busqueda.toLowerCase())));
 
     const matchMetodoPago = !filtroMetodoPago || abono.metodoPago === filtroMetodoPago;
     const matchEstado = !filtroEstado || abono.estado === filtroEstado;

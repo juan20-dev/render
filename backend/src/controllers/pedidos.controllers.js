@@ -83,8 +83,32 @@ const cleanupRecentPedidoCreateCache = () => {
   }
 };
 
-const fechaHoyColombia = () =>
-  new Date().toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
+const fechaHoyColombia = () => {
+  try {
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/Bogota',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    });
+    const parts = formatter.formatToParts(new Date());
+    const year = parts.find(p => p.type === 'year')?.value || '';
+    const month = parts.find(p => p.type === 'month')?.value || '';
+    const day = parts.find(p => p.type === 'day')?.value || '';
+    if (year && month && day) {
+      return `${year}-${month}-${day}`;
+    }
+  } catch (e) {
+    // fallback
+  }
+  const now = new Date();
+  const offset = -5 * 60; // Bogota es UTC-5
+  const bogotaTime = new Date(now.getTime() + (now.getTimezoneOffset() + offset) * 60000);
+  const y = bogotaTime.getFullYear();
+  const m = String(bogotaTime.getMonth() + 1).padStart(2, '0');
+  const d = String(bogotaTime.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+};
 
 const validarFechaEntrega = (fechaEntrega, fechaPedido) => {
   const hoy = fechaHoyColombia();
@@ -100,6 +124,39 @@ const validarFechaEntrega = (fechaEntrega, fechaPedido) => {
     return 'La fecha de entrega debe ser mayor o igual a la fecha del pedido';
   }
   return null;
+};
+
+const handleUpdateProductosYTotal = async (pedidoId, productos, esquemaAbonoInput) => {
+  await models.Pedidos.replaceDetalles(pedidoId, productos);
+  
+  const pedidoActualizado = await models.Pedidos.getById(pedidoId);
+  if (pedidoActualizado) {
+    const totalNuevo = Number(pedidoActualizado.total || 0);
+    const esquema = String(esquemaAbonoInput || pedidoActualizado.esquema_abono || '').trim() || '100%';
+    const pct = esquema === '50%' ? 50 : 100;
+    const nuevoMontoAbonado = Math.round((totalNuevo * pct) / 100);
+    
+    // Actualizar monto_abonado en la tabla pedidos
+    await models.Pedidos.update(pedidoId, { monto_abonado: nuevoMontoAbonado });
+    
+    // Buscar el abono inicial y actualizarlo en la tabla abonos si es Registrado, Verificado o Aplicado
+    const abonos = await models.Abonos.getByPedido(pedidoId);
+    if (Array.isArray(abonos) && abonos.length > 0) {
+      const abonoInicial = abonos[0];
+      if (abonoInicial.estado !== 'Cancelado' && abonoInicial.estado !== 'Finalizado') {
+        await models.Abonos.update(abonoInicial.id, { monto: nuevoMontoAbonado });
+      }
+    }
+    return { total: totalNuevo, monto_abonado: nuevoMontoAbonado };
+  }
+  return null;
+};
+
+const formatDateToYMD = (date) => {
+  if (!date) return '';
+  const d = new Date(date);
+  if (isNaN(d.getTime())) return '';
+  return d.toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
 };
 
 module.exports = {
@@ -464,7 +521,11 @@ module.exports = {
               message: 'Solo puede actualizar productos del pedido cuando está en estado Pendiente',
             });
           }
-          await models.Pedidos.replaceDetalles(req.params.id, bodyPatch.productos);
+          const resCalc = await handleUpdateProductosYTotal(req.params.id, bodyPatch.productos, bodyPatch.esquema_abono);
+          if (resCalc) {
+            bodyPatch.total = resCalc.total;
+            bodyPatch.monto_abonado = resCalc.monto_abonado;
+          }
           delete bodyPatch.productos;
         }
         await models.Pedidos.update(req.params.id, buildPedidoUpdatePayload(pedido, bodyPatch));
@@ -480,17 +541,27 @@ module.exports = {
       }
 
       if (Array.isArray(req.body.productos)) {
-        await models.Pedidos.replaceDetalles(req.params.id, req.body.productos);
+        const resCalc = await handleUpdateProductosYTotal(req.params.id, req.body.productos, req.body.esquema_abono);
+        if (resCalc) {
+          req.body.total = resCalc.total;
+          req.body.monto_abonado = resCalc.monto_abonado;
+        }
       }
       const updateBody = { ...req.body };
       delete updateBody.productos;
       if (updateBody.fecha_entrega !== undefined) {
-        const fechaEntregaError = validarFechaEntrega(
-          updateBody.fecha_entrega,
-          pedido.fecha || fechaHoyColombia()
-        );
-        if (fechaEntregaError) {
-          return res.status(400).json({ success: false, message: fechaEntregaError });
+        const currentFeStr = formatDateToYMD(pedido.fecha_entrega);
+        const newFeStr = String(updateBody.fecha_entrega).trim().split('T')[0];
+        
+        // Solo validar si la fecha de entrega cambió
+        if (newFeStr !== currentFeStr) {
+          const fechaEntregaError = validarFechaEntrega(
+            updateBody.fecha_entrega,
+            updateBody.fecha || pedido.fecha || fechaHoyColombia()
+          );
+          if (fechaEntregaError) {
+            return res.status(400).json({ success: false, message: fechaEntregaError });
+          }
         }
       }
       await models.Pedidos.update(req.params.id, buildPedidoUpdatePayload(pedido, updateBody));

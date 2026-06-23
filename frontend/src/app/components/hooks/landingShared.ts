@@ -159,8 +159,32 @@ export const GUEST_CART_STORAGE_KEY = 'grandmas_liquors_cart_guest';
 export const getCartStorageKey = (user?: UserData) =>
   user?.email ? `grandmas_liquors_cart_${String(user.email).trim().toLowerCase()}` : GUEST_CART_STORAGE_KEY;
 
-export const fechaMinimaEntregaColombia = () =>
-  new Date().toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
+export const fechaMinimaEntregaColombia = () => {
+  try {
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/Bogota',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    });
+    const parts = formatter.formatToParts(new Date());
+    const year = parts.find(p => p.type === 'year')?.value || '';
+    const month = parts.find(p => p.type === 'month')?.value || '';
+    const day = parts.find(p => p.type === 'day')?.value || '';
+    if (year && month && day) {
+      return `${year}-${month}-${day}`;
+    }
+  } catch (e) {
+    // fallback
+  }
+  const now = new Date();
+  const offset = -5 * 60; // Bogota es UTC-5
+  const bogotaTime = new Date(now.getTime() + (now.getTimezoneOffset() + offset) * 60000);
+  const y = bogotaTime.getFullYear();
+  const m = String(bogotaTime.getMonth() + 1).padStart(2, '0');
+  const d = String(bogotaTime.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+};
 
 export const fechaEntregaDefaultColombia = () => {
   const hoy = fechaMinimaEntregaColombia();
@@ -168,6 +192,7 @@ export const fechaEntregaDefaultColombia = () => {
   const manana = new Date(Date.UTC(y, m - 1, d + 1));
   return manana.toISOString().split('T')[0];
 };
+
 
 export const buildCheckoutDefaults = (user?: UserData): CheckoutData => ({
   direccion: String(user?.direccion || '').trim(),

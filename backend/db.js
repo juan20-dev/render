@@ -17,6 +17,11 @@ const pool = new Pool({
   connectionTimeoutMillis: 2000,
 });
 
+// Manejo de errores inesperados en clientes inactivos del pool para evitar caídas del servidor
+pool.on('error', (err) => {
+  console.error('⚠️ Error inesperado en un cliente inactivo de la base de datos:', err.message);
+});
+
 // Verificar conexión a la base de datos
 pool.connect()
   .then((client) => {

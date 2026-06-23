@@ -69,6 +69,7 @@ export function Login({ onLogin, initialTab = 'login', onBackToLanding }: LoginP
   const [activeTab, setActiveTab] = useState<'login' | 'register'>(initialTab);
   const [isResetPasswordOpen, setIsResetPasswordOpen] = useState(false);
   const [resetEmail, setResetEmail] = useState('');
+  const [isRegistering, setIsRegistering] = useState(false);
   
   // Estados para alertas
   const [alertState, setAlertState] = useState({
@@ -282,6 +283,7 @@ export function Login({ onLogin, initialTab = 'login', onBackToLanding }: LoginP
     if (regErrors.length > 0) return;
 
     try {
+      setIsRegistering(true);
       await register(registerData);
 
       setAlertState({
@@ -303,6 +305,8 @@ export function Login({ onLogin, initialTab = 'login', onBackToLanding }: LoginP
         type: 'danger',
         onConfirm: () => {}
       });
+    } finally {
+      setIsRegistering(false);
     }
   };
 
@@ -620,7 +624,7 @@ export function Login({ onLogin, initialTab = 'login', onBackToLanding }: LoginP
                       type="submit"
                       className="w-full"
                       icon={<UserPlus className="w-5 h-5" />}
-                      disabled={Boolean(
+                      disabled={isRegistering || Boolean(
                         registerDocumentoDuplicate ||
                         registerEmailDuplicate ||
                         validateDocumento(registerData.numeroDocumento) ||
@@ -633,7 +637,7 @@ export function Login({ onLogin, initialTab = 'login', onBackToLanding }: LoginP
                         registerConfirmErr
                       )}
                     >
-                      Crear Cuenta
+                      {isRegistering ? 'Registrando...' : 'Crear Cuenta'}
                     </Button>
                   </FormActions>
                 </div>

@@ -7,7 +7,7 @@ import react from '@vitejs/plugin-react'
  * API en desarrollo: proxy hacia Elastic Beanstalk (mismo entorno que producción).
  * Para apuntar al backend local: VITE_API_PROXY_TARGET=http://localhost:3002
  */
-const DEFAULT_API_PROXY_TARGET = 'http://grandmas-api.us-east-2.elasticbeanstalk.com/'
+const DEFAULT_API_PROXY_TARGET = 'http://localhost:3002/'
 
 function figmaAssetResolver() {
   return {
@@ -26,91 +26,91 @@ export default defineConfig(({ mode }) => {
   const apiProxyTarget = env.VITE_API_PROXY_TARGET || DEFAULT_API_PROXY_TARGET
 
   return {
-  plugins: [
-    figmaAssetResolver(),
-    // The React and Tailwind plugins are both required for Make, even if
-    // Tailwind is not being actively used â€“ do not remove them
-    react(),
-    tailwindcss(),
-  ],
-  server: {
-    port: 3000,
-    // Necesario para compartir vía Cursor PORTS, ngrok o cloudflared
-    host: true,
-    allowedHosts: true,
-    proxy: {
-      '/api': {
-        target: apiProxyTarget,
-        changeOrigin: true,
-        secure: apiProxyTarget.startsWith('https'),
-        timeout: 120000,
-      },
-      '/uploads': {
-        target: apiProxyTarget,
-        changeOrigin: true,
-        secure: apiProxyTarget.startsWith('https'),
-        timeout: 120000,
-      },
-    },
-  },
-  resolve: {
-    alias: {
-      '@': path.resolve(__dirname, './src/app'),
-    },
-  },
-  build: {
-    chunkSizeWarningLimit: 450,
-    rollupOptions: {
-      output: {
-        manualChunks(id) {
-          if (!id.includes('node_modules')) return
-
-          // Core framework/runtime
-          if (id.includes('/react/') || id.includes('/react-dom/') || id.includes('/scheduler/')) {
-            return 'vendor-react'
-          }
-
-          // Routing
-          if (id.includes('/react-router/')) {
-            return 'vendor-router'
-          }
-
-          // UI system
-          if (id.includes('/@radix-ui/') || id.includes('/lucide-react/') || id.includes('/class-variance-authority/') || id.includes('/clsx/') || id.includes('/tailwind-merge/')) {
-            return 'vendor-ui'
-          }
-
-          // Charts and heavy visualization dependencies
-          if (id.includes('/recharts/') || id.includes('/d3-')) {
-            return 'vendor-charts'
-          }
-
-          // Drag and drop
-          if (id.includes('/react-dnd/') || id.includes('/dnd-core/') || id.includes('/react-dnd-html5-backend/')) {
-            return 'vendor-dnd'
-          }
-
-          // Forms and validation
-          if (id.includes('/react-hook-form/')) {
-            return 'vendor-forms'
-          }
-
-          // Date handling
-          if (id.includes('/date-fns/') || id.includes('/react-day-picker/')) {
-            return 'vendor-dates'
-          }
-
-          // MUI ecosystem
-          if (id.includes('/@mui/') || id.includes('/@emotion/')) {
-            return 'vendor-mui'
-          }
-
-          // Fallback chunk for remaining dependencies
-          return 'vendor-misc'
+    plugins: [
+      figmaAssetResolver(),
+      // The React and Tailwind plugins are both required for Make, even if
+      // Tailwind is not being actively used â€“ do not remove them
+      react(),
+      tailwindcss(),
+    ],
+    server: {
+      port: 3000,
+      // Necesario para compartir vía Cursor PORTS, ngrok o cloudflared
+      host: true,
+      allowedHosts: true,
+      proxy: {
+        '/api': {
+          target: apiProxyTarget,
+          changeOrigin: true,
+          secure: apiProxyTarget.startsWith('https'),
+          timeout: 120000,
+        },
+        '/uploads': {
+          target: apiProxyTarget,
+          changeOrigin: true,
+          secure: apiProxyTarget.startsWith('https'),
+          timeout: 120000,
         },
       },
     },
-  },
+    resolve: {
+      alias: {
+        '@': path.resolve(__dirname, './src/app'),
+      },
+    },
+    build: {
+      chunkSizeWarningLimit: 450,
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (!id.includes('node_modules')) return
+
+            // Core framework/runtime
+            if (id.includes('/react/') || id.includes('/react-dom/') || id.includes('/scheduler/')) {
+              return 'vendor-react'
+            }
+
+            // Routing
+            if (id.includes('/react-router/')) {
+              return 'vendor-router'
+            }
+
+            // UI system
+            if (id.includes('/@radix-ui/') || id.includes('/lucide-react/') || id.includes('/class-variance-authority/') || id.includes('/clsx/') || id.includes('/tailwind-merge/')) {
+              return 'vendor-ui'
+            }
+
+            // Charts and heavy visualization dependencies
+            if (id.includes('/recharts/') || id.includes('/d3-')) {
+              return 'vendor-charts'
+            }
+
+            // Drag and drop
+            if (id.includes('/react-dnd/') || id.includes('/dnd-core/') || id.includes('/react-dnd-html5-backend/')) {
+              return 'vendor-dnd'
+            }
+
+            // Forms and validation
+            if (id.includes('/react-hook-form/')) {
+              return 'vendor-forms'
+            }
+
+            // Date handling
+            if (id.includes('/date-fns/') || id.includes('/react-day-picker/')) {
+              return 'vendor-dates'
+            }
+
+            // MUI ecosystem
+            if (id.includes('/@mui/') || id.includes('/@emotion/')) {
+              return 'vendor-mui'
+            }
+
+            // Fallback chunk for remaining dependencies
+            return 'vendor-misc'
+          },
+        },
+      },
+    },
   }
 })
 

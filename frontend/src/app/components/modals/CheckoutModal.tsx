@@ -288,7 +288,7 @@ export function CheckoutModal({
                 Cancelar
               </Button>
               <Button
-                disabled={!checkoutValid || isSubmittingPedido}
+                disabled={isSubmittingPedido}
                 onClick={() => {
                   void onConfirm();
                 }}

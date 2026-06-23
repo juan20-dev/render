@@ -166,8 +166,6 @@ export function useCheckout({
 
     submittingRef.current = true;
     setIsSubmittingPedido(true);
-    setShowCheckout(false);
-    clearCart();
 
     try {
       await api.pedidos.create({
@@ -189,6 +187,8 @@ export function useCheckout({
         })),
       } as any);
 
+      clearCart();
+      setShowCheckout(false);
       resetCheckoutForm();
       toast.success('Pedido confirmado', {
         description: `Gracias por tu compra, ${user?.nombre}. Tu pedido fue registrado exitosamente.`,

@@ -338,7 +338,7 @@ export function Pedidos() {
       clienteId: completo.clienteId,
       metodoPago: completo.metodoPago,
       porcentajeAbono: completo.porcentajeAbono,
-      fechaPedido: String(completo.fechaPedido || '').split('T')[0],
+      fechaPedido: new Date().toISOString().split('T')[0],
       fechaEntrega: String(completo.fechaEntrega || '').split('T')[0],
       direccion: completo.direccion || '',
       telefono: completo.telefono || ''
@@ -547,13 +547,13 @@ export function Pedidos() {
       return;
     }
 
-    const hoy = new Date().toISOString().split('T')[0];
+    const hoy = new Date().toLocaleDateString('en-CA');
     if (formData.fechaEntrega < hoy) {
       toast.error('La fecha de entrega no puede ser una fecha pasada');
       return;
     }
 
-    if (new Date(formData.fechaEntrega) < new Date(formData.fechaPedido)) {
+    if (!selectedPedido && new Date(formData.fechaEntrega) < new Date(formData.fechaPedido)) {
       toast.error('La fecha de entrega debe ser mayor o igual a la fecha del pedido');
       return;
     }
@@ -894,17 +894,16 @@ export function Pedidos() {
               value={formData.fechaEntrega}
               onChange={(value) => {
                 const fechaEnt = value as string;
-                const hoy = new Date().toISOString().split('T')[0];
+                const hoy = new Date().toLocaleDateString('en-CA');
                 if (fechaEnt < hoy) {
                   toast.warning('La fecha de entrega no puede ser una fecha pasada');
-                  return;
                 }
-                if (fechaEnt < formData.fechaPedido) {
+                if (!selectedPedido && fechaEnt < formData.fechaPedido) {
                   toast.warning('La fecha de entrega debe ser mayor o igual a la fecha del pedido');
                 }
                 setFormData({ ...formData, fechaEntrega: fechaEnt });
               }}
-              min={new Date().toISOString().split('T')[0]}
+              min={new Date().toLocaleDateString('en-CA')}
               required
             />
 

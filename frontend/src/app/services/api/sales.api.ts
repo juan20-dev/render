@@ -146,6 +146,12 @@ export const salesApi = {
           metodo_pago: updates.metodoPago ? metodoPagoDb(updates.metodoPago) : undefined,
           esquema_abono: updates.porcentajeAbono === 50 ? '50%' : updates.porcentajeAbono === 100 ? '100%' : undefined,
           estado: updates.estado ? pedidoEstadoDb(updates.estado) : undefined,
+          productos: updates.productos ? updates.productos.map(p => ({
+            productoId: p.productoId,
+            cantidad: p.cantidad,
+            precio: p.precio,
+            precioUnitario: p.precio
+          })) : undefined,
         },
       });
     },
